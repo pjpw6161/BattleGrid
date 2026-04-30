@@ -3,11 +3,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Components/PrimitiveComponent.h"
 #include "GameFramework/Actor.h"
 #include "BattleGridProjectile.generated.h"
 
 class UProjectileMovementComponent;
-class UPrimitiveComponent;
 class USphereComponent;
 class UStaticMeshComponent;
 
@@ -23,6 +23,9 @@ protected:
 	virtual void BeginPlay() override;
 
 private:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|Projectile", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+	float DamageAmount;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Projectile", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USphereComponent> CollisionComponent;
 
@@ -33,11 +36,11 @@ private:
 	TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
 
 	UFUNCTION()
-	void OnProjectileHit(
+	void OnHit(
 		UPrimitiveComponent* HitComponent,
 		AActor* OtherActor,
 		UPrimitiveComponent* OtherComp,
 		FVector NormalImpulse,
-		const FHitResult& Hit
+		const FHitResult& HitResult
 	);
 };

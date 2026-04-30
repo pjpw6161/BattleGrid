@@ -4,14 +4,18 @@
 
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
+#include "GameFramework/DamageType.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "UObject/ConstructorHelpers.h"
 
 ABattleGridProjectile::ABattleGridProjectile()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	InitialLifeSpan = 2.5f;
+	DamageAmount = 20.0f;
 
 	CollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionComponent"));
 	CollisionComponent->InitSphereRadius(16.0f);
@@ -41,7 +45,7 @@ ABattleGridProjectile::ABattleGridProjectile()
 	ProjectileMovement->bRotationFollowsVelocity = true;
 	ProjectileMovement->bShouldBounce = false;
 
-	CollisionComponent->OnComponentHit.AddDynamic(this, &ABattleGridProjectile::OnProjectileHit);
+	CollisionComponent->OnComponentHit.AddDynamic(this, &ABattleGridProjectile::OnHit);
 }
 
 void ABattleGridProjectile::BeginPlay()
@@ -59,18 +63,33 @@ void ABattleGridProjectile::BeginPlay()
 	}
 }
 
-void ABattleGridProjectile::OnProjectileHit(
+void ABattleGridProjectile::OnHit(
 	UPrimitiveComponent* HitComponent,
 	AActor* OtherActor,
 	UPrimitiveComponent* OtherComp,
 	FVector NormalImpulse,
-	const FHitResult& Hit
+	const FHitResult& HitResult
 )
 {
+	static_cast<void>(HitComponent);
+	static_cast<void>(OtherComp);
+	static_cast<void>(NormalImpulse);
+	static_cast<void>(HitResult);
+
 	if (!OtherActor || OtherActor == this || OtherActor == GetOwner())
 	{
 		return;
 	}
+
+	UGameplayStatics::ApplyDamage(
+		OtherActor,
+		DamageAmount,
+		GetInstigatorController(),
+		this,
+		UDamageType::StaticClass()
+	);
+
+	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Projectile hit: %s"), *GetNameSafe(OtherActor));
 
 	Destroy();
 }
