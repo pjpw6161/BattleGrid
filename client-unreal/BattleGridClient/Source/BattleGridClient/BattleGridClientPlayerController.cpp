@@ -1,138 +1,171 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "BattleGridClientPlayerController.h"
-#include "GameFramework/Pawn.h"
-#include "Blueprint/AIBlueprintHelperLibrary.h"
-#include "NiagaraSystem.h"
-#include "NiagaraFunctionLibrary.h"
-#include "BattleGridClientCharacter.h"
-#include "Engine/World.h"
+
 #include "EnhancedInputComponent.h"
-#include "Navigation/PathFollowingComponent.h"
-#include "InputActionValue.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
-#include "BattleGridClient.h"
+#include "GameFramework/Pawn.h"
+#include "InputAction.h"
+#include "InputActionValue.h"
+#include "InputMappingContext.h"
 
 ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 {
-	bIsTouch = false;
-	bMoveToMouseCursor = false;
-
-	// create the path following comp
-	PathFollowingComponent = CreateDefaultSubobject<UPathFollowingComponent>(TEXT("Path Following Component"));
-
-	// configure the controller
 	bShowMouseCursor = true;
-	DefaultMouseCursor = EMouseCursor::Default;
-	CachedDestination = FVector::ZeroVector;
-	FollowTime = 0.f;
+	DefaultMouseCursor = EMouseCursor::Crosshairs;
+
+	PrimaryActorTick.bCanEverTick = true;
+}
+
+void ABattleGridClientPlayerController::BeginPlay()
+{
+	Super::BeginPlay();
+
+	bShowMouseCursor = true;
+
+	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
+			LocalPlayer->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+		{
+			Subsystem->ClearAllMappings();
+
+			if (BattleGridMappingContext)
+			{
+				Subsystem->AddMappingContext(BattleGridMappingContext, 0);
+				UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Input Mapping Context added."));
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] BattleGridMappingContext is not assigned."));
+			}
+		}
+	}
 }
 
 void ABattleGridClientPlayerController::SetupInputComponent()
 {
-	// set up gameplay key bindings
 	Super::SetupInputComponent();
 
-	// Only set up input on local player controllers
-	if (IsLocalPlayerController())
+	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
+
+	if (!EnhancedInputComponent)
 	{
-		// Add Input Mapping Context
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
-		{
-			Subsystem->AddMappingContext(DefaultMappingContext, 0);
-		}
-
-		// Set up action bindings
-		if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
-		{
-			// Setup mouse input events
-			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Started, this, &ABattleGridClientPlayerController::OnInputStarted);
-			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Triggered, this, &ABattleGridClientPlayerController::OnSetDestinationTriggered);
-			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Completed, this, &ABattleGridClientPlayerController::OnSetDestinationReleased);
-			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Canceled, this, &ABattleGridClientPlayerController::OnSetDestinationReleased);
-
-			// Setup touch input events
-			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Started, this, &ABattleGridClientPlayerController::OnInputStarted);
-			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Triggered, this, &ABattleGridClientPlayerController::OnTouchTriggered);
-			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Completed, this, &ABattleGridClientPlayerController::OnTouchReleased);
-			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Canceled, this, &ABattleGridClientPlayerController::OnTouchReleased);
-		}
-		else
-		{
-			UE_LOG(LogBattleGridClient, Error, TEXT("'%s' Failed to find an Enhanced Input Component! This template is built to use the Enhanced Input system. If you intend to use the legacy system, then you will need to update this C++ file."), *GetNameSafe(this));
-		}
-	}
-}
-
-void ABattleGridClientPlayerController::OnInputStarted()
-{
-	StopMovement();
-
-	// Update the move destination to wherever the cursor is pointing at
-	UpdateCachedDestination();
-}
-
-void ABattleGridClientPlayerController::OnSetDestinationTriggered()
-{
-	// We flag that the input is being pressed
-	FollowTime += GetWorld()->GetDeltaSeconds();
-	
-	// Update the move destination to wherever the cursor is pointing at
-	UpdateCachedDestination();
-	
-	// Move towards mouse pointer or touch
-	APawn* ControlledPawn = GetPawn();
-	if (ControlledPawn != nullptr)
-	{
-		FVector WorldDirection = (CachedDestination - ControlledPawn->GetActorLocation()).GetSafeNormal();
-		ControlledPawn->AddMovementInput(WorldDirection, 1.0, false);
-	}
-}
-
-void ABattleGridClientPlayerController::OnSetDestinationReleased()
-{
-	// If it was a short press
-	if (FollowTime <= ShortPressThreshold)
-	{
-		// We move there and spawn some particles
-		UAIBlueprintHelperLibrary::SimpleMoveToLocation(this, CachedDestination);
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, FXCursor, CachedDestination, FRotator::ZeroRotator, FVector(1.f, 1.f, 1.f), true, true, ENCPoolMethod::None, true);
+		UE_LOG(LogTemp, Error, TEXT("[BattleGrid] EnhancedInputComponent is missing."));
+		return;
 	}
 
-	FollowTime = 0.f;
-}
-
-// Triggered every frame when the input is held down
-void ABattleGridClientPlayerController::OnTouchTriggered()
-{
-	bIsTouch = true;
-	OnSetDestinationTriggered();
-}
-
-void ABattleGridClientPlayerController::OnTouchReleased()
-{
-	bIsTouch = false;
-	OnSetDestinationReleased();
-}
-
-void ABattleGridClientPlayerController::UpdateCachedDestination()
-{
-	// We look for the location in the world where the player has pressed the input
-	FHitResult Hit;
-	bool bHitSuccessful = false;
-	if (bIsTouch)
+	if (MoveForwardAction)
 	{
-		bHitSuccessful = GetHitResultUnderFinger(ETouchIndex::Touch1, ECollisionChannel::ECC_Visibility, true, Hit);
+		EnhancedInputComponent->BindAction(
+			MoveForwardAction,
+			ETriggerEvent::Triggered,
+			this,
+			&ABattleGridClientPlayerController::MoveForward
+		);
 	}
 	else
 	{
-		bHitSuccessful = GetHitResultUnderCursor(ECollisionChannel::ECC_Visibility, true, Hit);
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] MoveForwardAction is not assigned."));
 	}
 
-	// If we hit a surface, cache the location
-	if (bHitSuccessful)
+	if (MoveRightAction)
 	{
-		CachedDestination = Hit.Location;
+		EnhancedInputComponent->BindAction(
+			MoveRightAction,
+			ETriggerEvent::Triggered,
+			this,
+			&ABattleGridClientPlayerController::MoveRight
+		);
 	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] MoveRightAction is not assigned."));
+	}
+
+	if (FireAction)
+	{
+		EnhancedInputComponent->BindAction(
+			FireAction,
+			ETriggerEvent::Started,
+			this,
+			&ABattleGridClientPlayerController::FireStarted
+		);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] FireAction is not assigned."));
+	}
+}
+
+void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+
+	UpdateAimRotation();
+}
+
+void ABattleGridClientPlayerController::MoveForward(const FInputActionValue& Value)
+{
+	const float AxisValue = Value.Get<float>();
+
+	if (FMath::IsNearlyZero(AxisValue))
+	{
+		return;
+	}
+
+	if (APawn* ControlledPawn = GetPawn())
+	{
+		ControlledPawn->AddMovementInput(FVector::ForwardVector, AxisValue);
+	}
+}
+
+void ABattleGridClientPlayerController::MoveRight(const FInputActionValue& Value)
+{
+	const float AxisValue = Value.Get<float>();
+
+	if (FMath::IsNearlyZero(AxisValue))
+	{
+		return;
+	}
+
+	if (APawn* ControlledPawn = GetPawn())
+	{
+		ControlledPawn->AddMovementInput(FVector::RightVector, AxisValue);
+	}
+}
+
+void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Value)
+{
+	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Fire input pressed."));
+}
+
+void ABattleGridClientPlayerController::UpdateAimRotation()
+{
+	APawn* ControlledPawn = GetPawn();
+
+	if (!ControlledPawn)
+	{
+		return;
+	}
+
+	FHitResult HitResult;
+	const bool bHit = GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+
+	if (!bHit)
+	{
+		return;
+	}
+
+	FVector Direction = HitResult.ImpactPoint - ControlledPawn->GetActorLocation();
+	Direction.Z = 0.0f;
+
+	if (Direction.SizeSquared() < 1.0f)
+	{
+		return;
+	}
+
+	const FRotator AimRotation = Direction.Rotation();
+	ControlledPawn->SetActorRotation(FRotator(0.0f, AimRotation.Yaw, 0.0f));
 }
