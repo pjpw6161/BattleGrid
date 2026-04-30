@@ -1,10 +1,76 @@
 #include "BattleGridHUD.h"
 
 #include "BattleGridClientPlayerController.h"
+#include "BattleGridCombatWidget.h"
+#include "Blueprint/UserWidget.h"
+
+ABattleGridHUD::ABattleGridHUD()
+{
+	PrimaryActorTick.bCanEverTick = true;
+	CombatWidget = nullptr;
+}
+
+void ABattleGridHUD::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (!CombatWidgetClass)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] CombatWidgetClass is not assigned."));
+		return;
+	}
+
+	APlayerController* OwningController = GetOwningPlayerController();
+	if (!OwningController)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] HUD has no owning player controller."));
+		return;
+	}
+
+	CombatWidget = CreateWidget<UBattleGridCombatWidget>(OwningController, CombatWidgetClass);
+	if (!CombatWidget)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] Failed to create combat HUD widget."));
+		return;
+	}
+
+	CombatWidget->AddToViewport();
+}
+
+void ABattleGridHUD::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!CombatWidget)
+	{
+		return;
+	}
+
+	ABattleGridClientPlayerController* BattleGridController =
+		Cast<ABattleGridClientPlayerController>(GetOwningPlayerController());
+
+	if (!BattleGridController)
+	{
+		return;
+	}
+
+	CombatWidget->UpdateHud(
+		BattleGridController->GetCurrentPlayerHealth(),
+		BattleGridController->GetMaxPlayerHealth(),
+		BattleGridController->GetScore(),
+		BattleGridController->GetCombatMessage(),
+		BattleGridController->HasActiveCombatMessage()
+	);
+}
 
 void ABattleGridHUD::DrawHUD()
 {
 	Super::DrawHUD();
+
+	if (CombatWidget)
+	{
+		return;
+	}
 
 	ABattleGridClientPlayerController* BattleGridController =
 		Cast<ABattleGridClientPlayerController>(GetOwningPlayerController());
@@ -22,7 +88,7 @@ void ABattleGridHUD::DrawHUD()
 	);
 
 	DrawText(
-		TEXT("BattleGrid Client"),
+		TEXT("BattleGrid Client - CombatWidgetClass not assigned"),
 		FLinearColor::Yellow,
 		HudX + 20.0f,
 		HudY + 15.0f,

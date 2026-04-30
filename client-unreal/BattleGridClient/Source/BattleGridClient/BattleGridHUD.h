@@ -2,13 +2,27 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/HUD.h"
+#include "Templates/SubclassOf.h"
 #include "BattleGridHUD.generated.h"
 
-UCLASS()
+class UBattleGridCombatWidget;
+
+UCLASS(Blueprintable)
 class BATTLEGRIDCLIENT_API ABattleGridHUD : public AHUD
 {
-    GENERATED_BODY()
+	GENERATED_BODY()
 
 public:
-    virtual void DrawHUD() override;
+	ABattleGridHUD();
+
+	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
+	virtual void DrawHUD() override;
+
+private:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|HUD", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UBattleGridCombatWidget> CombatWidgetClass;
+
+	UPROPERTY(Transient)
+	UBattleGridCombatWidget* CombatWidget;
 };
