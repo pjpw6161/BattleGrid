@@ -1,0 +1,46 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build outputs
+build/
+out/
+bin/
+obj/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# Unreal Engine - generated folders
+client-unreal/**/Binaries/
+client-unreal/**/DerivedDataCache/
+client-unreal/**/Intermediate/
+client-unreal/**/Saved/
+client-unreal/**/.vs/
+
+# Unreal Engine - generated files
+client-unreal/**/*.sln
+client-unreal/**/*.VC.db
+client-unreal/**/*.opensdf
+client-unreal/**/*.opendb
+client-unreal/**/*.sdf
+client-unreal/**/*.suo
+client-unreal/**/*.xcodeproj
+
+# Logs
+*.log
+
+# Docker / local env
+.env
