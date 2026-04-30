@@ -2,9 +2,11 @@
 
 #include "BattleGridClientPlayerController.h"
 
+#include "BattleGridProjectile.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "InputAction.h"
 #include "InputActionValue.h"
@@ -16,6 +18,10 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	DefaultMouseCursor = EMouseCursor::Crosshairs;
 
 	PrimaryActorTick.bCanEverTick = true;
+
+	ProjectileSpawnDistance = 120.0f;
+	FireCooldownSeconds = 0.2f;
+	LastFireTime = -100000.0f;
 }
 
 void ABattleGridClientPlayerController::BeginPlay()
@@ -138,7 +144,61 @@ void ABattleGridClientPlayerController::MoveRight(const FInputActionValue& Value
 
 void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Value)
 {
-	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Fire input pressed."));
+	static_cast<void>(Value);
+
+	UWorld* World = GetWorld();
+	APawn* ControlledPawn = GetPawn();
+
+	if (!World || !ControlledPawn)
+	{
+		return;
+	}
+
+	const float CurrentTime = World->GetTimeSeconds();
+	const float CooldownSeconds = FMath::Max(0.0f, FireCooldownSeconds);
+
+	if (CurrentTime - LastFireTime < CooldownSeconds)
+	{
+		return;
+	}
+
+	FVector FireDirection = ControlledPawn->GetActorForwardVector();
+	FireDirection.Z = 0.0f;
+	FireDirection.Normalize();
+
+	if (FireDirection.IsNearlyZero())
+	{
+		FireDirection = ControlledPawn->GetActorRotation().Vector();
+	}
+
+	const FVector ProjectileSpawnLocation =
+		ControlledPawn->GetActorLocation()
+		+ FireDirection * ProjectileSpawnDistance
+		+ FVector(0.0f, 0.0f, 50.0f);
+	const FRotator SpawnRotation = FireDirection.Rotation();
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = ControlledPawn;
+	SpawnParameters.Instigator = ControlledPawn;
+	SpawnParameters.SpawnCollisionHandlingOverride =
+		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	TSubclassOf<ABattleGridProjectile> ProjectileClassToSpawn = ProjectileClass;
+	if (!ProjectileClassToSpawn)
+	{
+		ProjectileClassToSpawn = ABattleGridProjectile::StaticClass();
+	}
+
+	if (World->SpawnActor<ABattleGridProjectile>(
+		ProjectileClassToSpawn,
+		ProjectileSpawnLocation,
+		SpawnRotation,
+		SpawnParameters
+	))
+	{
+		LastFireTime = CurrentTime;
+		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Projectile fired."));
+	}
 }
 
 void ABattleGridClientPlayerController::UpdateAimRotation()

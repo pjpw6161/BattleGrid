@@ -4,10 +4,12 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
+#include "Templates/SubclassOf.h"
 #include "BattleGridClientPlayerController.generated.h"
 
 class UInputMappingContext;
 class UInputAction;
+class ABattleGridProjectile;
 struct FInputActionValue;
 
 UCLASS(Blueprintable, BlueprintType)
@@ -30,6 +32,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputAction> FireAction;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|Combat")
+	TSubclassOf<ABattleGridProjectile> ProjectileClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|Combat", meta = (ClampMin = "0.0"))
+	float ProjectileSpawnDistance;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|Combat", meta = (ClampMin = "0.0"))
+	float FireCooldownSeconds;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -41,4 +52,6 @@ private:
 	void FireStarted(const FInputActionValue& Value);
 
 	void UpdateAimRotation();
+
+	float LastFireTime;
 };
