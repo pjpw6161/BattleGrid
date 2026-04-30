@@ -20,6 +20,14 @@ class BATTLEGRIDCLIENT_API ABattleGridClientPlayerController : public APlayerCon
 public:
 	ABattleGridClientPlayerController();
 
+	float GetMaxPlayerHealth() const;
+	float GetCurrentPlayerHealth() const;
+	int32 GetScore() const;
+	FString GetCombatMessage() const;
+	bool HasActiveCombatMessage() const;
+	void AddScore(int32 Amount);
+	void SetCombatMessage(const FString& Message, float DurationSeconds = 2.0f);
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputMappingContext> BattleGridMappingContext;
 
@@ -54,4 +62,9 @@ private:
 	void UpdateAimRotation();
 
 	float LastFireTime;
+	float MaxPlayerHealth;
+	float CurrentPlayerHealth;
+	int32 Score;
+	FString CombatMessage;
+	float CombatMessageExpireTime;
 };

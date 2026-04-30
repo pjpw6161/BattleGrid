@@ -22,6 +22,61 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	ProjectileSpawnDistance = 120.0f;
 	FireCooldownSeconds = 0.2f;
 	LastFireTime = -100000.0f;
+
+	MaxPlayerHealth = 100.0f;
+	CurrentPlayerHealth = 100.0f;
+	Score = 0;
+	CombatMessageExpireTime = 0.0f;
+}
+
+float ABattleGridClientPlayerController::GetMaxPlayerHealth() const
+{
+	return MaxPlayerHealth;
+}
+
+float ABattleGridClientPlayerController::GetCurrentPlayerHealth() const
+{
+	return CurrentPlayerHealth;
+}
+
+int32 ABattleGridClientPlayerController::GetScore() const
+{
+	return Score;
+}
+
+FString ABattleGridClientPlayerController::GetCombatMessage() const
+{
+	return CombatMessage;
+}
+
+bool ABattleGridClientPlayerController::HasActiveCombatMessage() const
+{
+	const UWorld* World = GetWorld();
+
+	return World
+		&& !CombatMessage.IsEmpty()
+		&& World->GetTimeSeconds() < CombatMessageExpireTime;
+}
+
+void ABattleGridClientPlayerController::AddScore(int32 Amount)
+{
+	Score += Amount;
+
+	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Score: %d"), Score);
+}
+
+void ABattleGridClientPlayerController::SetCombatMessage(const FString& Message, float DurationSeconds)
+{
+	CombatMessage = Message;
+
+	if (const UWorld* World = GetWorld())
+	{
+		CombatMessageExpireTime = World->GetTimeSeconds() + FMath::Max(0.0f, DurationSeconds);
+	}
+	else
+	{
+		CombatMessageExpireTime = 0.0f;
+	}
 }
 
 void ABattleGridClientPlayerController::BeginPlay()

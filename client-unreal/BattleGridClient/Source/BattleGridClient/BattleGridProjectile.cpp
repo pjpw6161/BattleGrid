@@ -5,6 +5,7 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "GameFramework/Controller.h"
 #include "GameFramework/DamageType.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/ProjectileMovementComponent.h"
@@ -81,10 +82,19 @@ void ABattleGridProjectile::OnHit(
 		return;
 	}
 
+	AController* DamageInstigatorController = GetInstigatorController();
+	if (!DamageInstigatorController)
+	{
+		if (APawn* OwnerPawn = Cast<APawn>(GetOwner()))
+		{
+			DamageInstigatorController = OwnerPawn->GetController();
+		}
+	}
+
 	UGameplayStatics::ApplyDamage(
 		OtherActor,
 		DamageAmount,
-		GetInstigatorController(),
+		DamageInstigatorController,
 		this,
 		UDamageType::StaticClass()
 	);
