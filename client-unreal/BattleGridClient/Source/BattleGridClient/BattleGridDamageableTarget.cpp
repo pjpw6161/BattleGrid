@@ -121,7 +121,10 @@ float ABattleGridDamageableTarget::TakeDamage(
 			FindBattleGridController(EventInstigator, DamageCauser))
 		{
 			BattleGridController->AddScore(1);
-			BattleGridController->SetCombatMessage(TEXT("Target eliminated! +1 Score"));
+			if (!BattleGridController->HasWon())
+			{
+				BattleGridController->SetCombatMessage(TEXT("Target eliminated! +1 Score"));
+			}
 		}
 
 		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Target died."));

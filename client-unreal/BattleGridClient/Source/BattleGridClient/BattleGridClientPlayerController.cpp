@@ -11,6 +11,7 @@
 #include "InputAction.h"
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
+#include "Kismet/GameplayStatics.h"
 
 ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 {
@@ -26,8 +27,10 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	MaxPlayerHealth = 100.0f;
 	CurrentPlayerHealth = 100.0f;
 	Score = 0;
+	TargetScore = 5;
 	CombatMessageExpireTime = 0.0f;
 	bPlayerDead = false;
+	bHasWon = false;
 }
 
 float ABattleGridClientPlayerController::GetMaxPlayerHealth() const
@@ -45,6 +48,11 @@ int32 ABattleGridClientPlayerController::GetScore() const
 	return Score;
 }
 
+int32 ABattleGridClientPlayerController::GetTargetScore() const
+{
+	return FMath::Max(1, TargetScore);
+}
+
 FString ABattleGridClientPlayerController::GetCombatMessage() const
 {
 	return CombatMessage;
@@ -59,6 +67,11 @@ bool ABattleGridClientPlayerController::HasActiveCombatMessage() const
 		&& World->GetTimeSeconds() < CombatMessageExpireTime;
 }
 
+bool ABattleGridClientPlayerController::HasWon() const
+{
+	return bHasWon;
+}
+
 bool ABattleGridClientPlayerController::IsPlayerDead() const
 {
 	return bPlayerDead;
@@ -66,9 +79,21 @@ bool ABattleGridClientPlayerController::IsPlayerDead() const
 
 void ABattleGridClientPlayerController::AddScore(int32 Amount)
 {
+	if (bHasWon)
+	{
+		return;
+	}
+
 	Score += Amount;
 
-	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Score: %d"), Score);
+	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Score: %d / %d"), Score, GetTargetScore());
+
+	if (Score >= GetTargetScore())
+	{
+		bHasWon = true;
+		SetCombatMessage(TEXT("Victory! Press R to Restart"), 3600.0f);
+		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Victory!"));
+	}
 }
 
 void ABattleGridClientPlayerController::SetCombatMessage(const FString& Message, float DurationSeconds)
@@ -102,6 +127,32 @@ void ABattleGridClientPlayerController::SetPlayerHealth(float Current, float Max
 void ABattleGridClientPlayerController::SetPlayerDead(bool bDead)
 {
 	bPlayerDead = bDead;
+}
+
+void ABattleGridClientPlayerController::RestartGame()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FString CurrentLevelName = UGameplayStatics::GetCurrentLevelName(this, true);
+	if (CurrentLevelName.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] Cannot restart level: current level name is empty."));
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Restarting level."));
+	UGameplayStatics::OpenLevel(this, FName(*CurrentLevelName));
+}
+
+void ABattleGridClientPlayerController::RestartStarted(const FInputActionValue& Value)
+{
+	static_cast<void>(Value);
+
+	RestartGame();
 }
 
 void ABattleGridClientPlayerController::BeginPlay()
@@ -183,6 +234,20 @@ void ABattleGridClientPlayerController::SetupInputComponent()
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] FireAction is not assigned."));
 	}
+
+	if (RestartAction)
+	{
+		EnhancedInputComponent->BindAction(
+			RestartAction,
+			ETriggerEvent::Started,
+			this,
+			&ABattleGridClientPlayerController::RestartStarted
+		);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] RestartAction is not assigned."));
+	}
 }
 
 void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
@@ -194,7 +259,7 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 
 void ABattleGridClientPlayerController::MoveForward(const FInputActionValue& Value)
 {
-	if (IsPlayerDead())
+	if (IsPlayerDead() || HasWon())
 	{
 		return;
 	}
@@ -214,7 +279,7 @@ void ABattleGridClientPlayerController::MoveForward(const FInputActionValue& Val
 
 void ABattleGridClientPlayerController::MoveRight(const FInputActionValue& Value)
 {
-	if (IsPlayerDead())
+	if (IsPlayerDead() || HasWon())
 	{
 		return;
 	}
@@ -236,7 +301,7 @@ void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Val
 {
 	static_cast<void>(Value);
 
-	if (IsPlayerDead())
+	if (IsPlayerDead() || HasWon())
 	{
 		return;
 	}

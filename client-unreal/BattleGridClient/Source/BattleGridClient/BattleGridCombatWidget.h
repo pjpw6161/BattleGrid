@@ -20,8 +20,10 @@ public:
 		float CurrentHealth,
 		float MaxHealth,
 		int32 Score,
+		int32 TargetScore,
 		const FString& CombatMessage,
-		bool bShowCombatMessage
+		bool bShowCombatMessage,
+		bool bHasWon
 	);
 
 private:

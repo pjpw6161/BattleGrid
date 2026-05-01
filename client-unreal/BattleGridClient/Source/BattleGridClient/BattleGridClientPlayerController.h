@@ -23,13 +23,17 @@ public:
 	float GetMaxPlayerHealth() const;
 	float GetCurrentPlayerHealth() const;
 	int32 GetScore() const;
+	int32 GetTargetScore() const;
 	FString GetCombatMessage() const;
 	bool HasActiveCombatMessage() const;
+	bool HasWon() const;
 	bool IsPlayerDead() const;
 	void AddScore(int32 Amount);
 	void SetCombatMessage(const FString& Message, float DurationSeconds = 2.0f);
 	void SetPlayerHealth(float Current, float Max);
 	void SetPlayerDead(bool bDead);
+	void RestartGame();
+	void RestartStarted(const FInputActionValue& Value);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputMappingContext> BattleGridMappingContext;
@@ -42,6 +46,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputAction> FireAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
+	TObjectPtr<UInputAction> RestartAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Game", meta = (ClampMin = "1"))
+	int32 TargetScore;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|Combat")
 	TSubclassOf<ABattleGridProjectile> ProjectileClass;
@@ -71,4 +81,5 @@ private:
 	FString CombatMessage;
 	float CombatMessageExpireTime;
 	bool bPlayerDead;
+	bool bHasWon;
 };

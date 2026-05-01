@@ -9,8 +9,10 @@ void UBattleGridCombatWidget::UpdateHud(
 	float CurrentHealth,
 	float MaxHealth,
 	int32 Score,
+	int32 TargetScore,
 	const FString& CombatMessage,
-	bool bShowCombatMessage
+	bool bShowCombatMessage,
+	bool bHasWon
 )
 {
 	const float HealthPercent = MaxHealth > 0.0f
@@ -33,20 +35,32 @@ void UBattleGridCombatWidget::UpdateHud(
 
 	if (ScoreText)
 	{
-		ScoreText->SetText(FText::FromString(FString::Printf(TEXT("Score: %d"), Score)));
+		ScoreText->SetText(FText::FromString(FString::Printf(
+			TEXT("Score: %d / %d"),
+			Score,
+			TargetScore
+		)));
 	}
 
 	if (CombatMessageText)
 	{
-		CombatMessageText->SetText(FText::FromString(CombatMessage));
+		const FString DisplayMessage = bHasWon
+			? FString(TEXT("Victory! Press R to Restart"))
+			: CombatMessage;
+
+		CombatMessageText->SetText(FText::FromString(DisplayMessage));
 		CombatMessageText->SetVisibility(
-			bShowCombatMessage ? ESlateVisibility::Visible : ESlateVisibility::Collapsed
+			(bShowCombatMessage || bHasWon) ? ESlateVisibility::Visible : ESlateVisibility::Collapsed
 		);
 	}
 
 	if (ControlsText)
 	{
-		ControlsText->SetText(FText::FromString(TEXT("WASD Move | Mouse Aim | LMB Fire")));
+		const FString ControlsMessage = bHasWon
+			? FString(TEXT("Victory! Press R to Restart"))
+			: FString(TEXT("WASD Move | Mouse Aim | LMB Fire"));
+
+		ControlsText->SetText(FText::FromString(ControlsMessage));
 	}
 
 	if (CrosshairText)

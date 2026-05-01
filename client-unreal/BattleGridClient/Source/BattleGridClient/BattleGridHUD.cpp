@@ -58,8 +58,10 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		BattleGridController->GetCurrentPlayerHealth(),
 		BattleGridController->GetMaxPlayerHealth(),
 		BattleGridController->GetScore(),
+		BattleGridController->GetTargetScore(),
 		BattleGridController->GetCombatMessage(),
-		BattleGridController->HasActiveCombatMessage()
+		BattleGridController->HasActiveCombatMessage(),
+		BattleGridController->HasWon()
 	);
 }
 
@@ -115,7 +117,11 @@ void ABattleGridHUD::DrawHUD()
 	);
 
 	DrawText(
-		FString::Printf(TEXT("Score: %d"), BattleGridController->GetScore()),
+		FString::Printf(
+			TEXT("Score: %d / %d"),
+			BattleGridController->GetScore(),
+			BattleGridController->GetTargetScore()
+		),
 		FLinearColor::White,
 		HudX + 20.0f,
 		HudY + 15.0f + LineHeight * 2.0f,
@@ -124,7 +130,9 @@ void ABattleGridHUD::DrawHUD()
 	);
 
 	DrawText(
-		TEXT("WASD Move | Mouse Aim | LMB Fire"),
+		BattleGridController->HasWon()
+			? TEXT("Victory! Press R to Restart")
+			: TEXT("WASD Move | Mouse Aim | LMB Fire"),
 		FLinearColor(0.8f, 0.9f, 1.0f, 1.0f),
 		HudX + 20.0f,
 		HudY + 15.0f + LineHeight * 3.0f,
@@ -132,10 +140,14 @@ void ABattleGridHUD::DrawHUD()
 		0.9f
 	);
 
-	if (BattleGridController->HasActiveCombatMessage())
+	if (BattleGridController->HasActiveCombatMessage() || BattleGridController->HasWon())
 	{
+		const FString CombatDisplayMessage = BattleGridController->HasWon()
+			? FString(TEXT("Victory! Press R to Restart"))
+			: BattleGridController->GetCombatMessage();
+
 		DrawText(
-			BattleGridController->GetCombatMessage(),
+			CombatDisplayMessage,
 			FLinearColor(0.2f, 1.0f, 0.35f, 1.0f),
 			HudX + 20.0f,
 			HudY + 15.0f + LineHeight * 4.0f,
