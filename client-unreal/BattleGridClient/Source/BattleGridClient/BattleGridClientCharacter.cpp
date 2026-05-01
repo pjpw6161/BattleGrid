@@ -1,6 +1,9 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "BattleGridClientCharacter.h"
+
+#include "BattleGridClientPlayerController.h"
+#include "BattleGridHealthComponent.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Camera/CameraComponent.h"
 #include "Components/DecalComponent.h"
@@ -15,6 +18,8 @@ ABattleGridClientCharacter::ABattleGridClientCharacter()
 {
 	// Set size for player capsule
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
+
+	HealthComponent = CreateDefaultSubobject<UBattleGridHealthComponent>(TEXT("HealthComponent"));
 
 	// Don't rotate character to camera direction
 	bUseControllerRotationPitch = false;
@@ -45,18 +50,143 @@ ABattleGridClientCharacter::ABattleGridClientCharacter()
 	// Activate ticking in order to update the cursor every frame.
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = true;
+
+	bIsDead = false;
+	RespawnDelaySeconds = 3.0f;
 }
 
 void ABattleGridClientCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// stub
+	RespawnLocation = GetActorLocation();
+	RespawnRotation = GetActorRotation();
+
+	if (HealthComponent)
+	{
+		HealthComponent->ResetHealth();
+	}
+
+	SyncHealthToPlayerController();
 }
 
 void ABattleGridClientCharacter::Tick(float DeltaSeconds)
 {
-    Super::Tick(DeltaSeconds);
+	Super::Tick(DeltaSeconds);
+}
 
-	// stub
+float ABattleGridClientCharacter::TakeDamage(
+	float DamageAmount,
+	FDamageEvent const& DamageEvent,
+	AController* EventInstigator,
+	AActor* DamageCauser
+)
+{
+	Super::TakeDamage(
+		DamageAmount,
+		DamageEvent,
+		EventInstigator,
+		DamageCauser
+	);
+
+	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Character TakeDamage called. Damage=%.1f"), DamageAmount);
+
+	if (bIsDead || !HealthComponent)
+	{
+		return 0.0f;
+	}
+
+	HealthComponent->ApplyDamage(DamageAmount);
+	SyncHealthToPlayerController();
+
+	if (HealthComponent->IsDead())
+	{
+		HandleDeath();
+	}
+
+	return DamageAmount;
+}
+
+void ABattleGridClientCharacter::HandleDeath()
+{
+	if (bIsDead)
+	{
+		return;
+	}
+
+	bIsDead = true;
+
+	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Player died."));
+
+	if (ABattleGridClientPlayerController* BattleGridController =
+		Cast<ABattleGridClientPlayerController>(GetController()))
+	{
+		BattleGridController->SetPlayerDead(true);
+		BattleGridController->SetCombatMessage(TEXT("You died! Respawning..."), RespawnDelaySeconds);
+	}
+
+	SetActorHiddenInGame(true);
+	SetActorEnableCollision(false);
+
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->DisableMovement();
+		MovementComponent->StopMovementImmediately();
+	}
+
+	GetWorldTimerManager().SetTimer(
+		RespawnTimerHandle,
+		this,
+		&ABattleGridClientCharacter::Respawn,
+		RespawnDelaySeconds,
+		false
+	);
+}
+
+void ABattleGridClientCharacter::Respawn()
+{
+	SetActorLocationAndRotation(RespawnLocation, RespawnRotation, false, nullptr, ETeleportType::TeleportPhysics);
+
+	if (HealthComponent)
+	{
+		HealthComponent->ResetHealth();
+	}
+
+	bIsDead = false;
+
+	SetActorHiddenInGame(false);
+	SetActorEnableCollision(true);
+
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->SetMovementMode(MOVE_Walking);
+	}
+
+	SyncHealthToPlayerController();
+
+	if (ABattleGridClientPlayerController* BattleGridController =
+		Cast<ABattleGridClientPlayerController>(GetController()))
+	{
+		BattleGridController->SetPlayerDead(false);
+		BattleGridController->SetCombatMessage(TEXT("Respawned!"), 2.0f);
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Player respawned."));
+}
+
+void ABattleGridClientCharacter::SyncHealthToPlayerController() const
+{
+	if (!HealthComponent)
+	{
+		return;
+	}
+
+	if (ABattleGridClientPlayerController* BattleGridController =
+		Cast<ABattleGridClientPlayerController>(GetController()))
+	{
+		BattleGridController->SetPlayerHealth(
+			HealthComponent->GetCurrentHealth(),
+			HealthComponent->GetMaxHealth()
+		);
+	}
 }

@@ -27,6 +27,7 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	CurrentPlayerHealth = 100.0f;
 	Score = 0;
 	CombatMessageExpireTime = 0.0f;
+	bPlayerDead = false;
 }
 
 float ABattleGridClientPlayerController::GetMaxPlayerHealth() const
@@ -58,6 +59,11 @@ bool ABattleGridClientPlayerController::HasActiveCombatMessage() const
 		&& World->GetTimeSeconds() < CombatMessageExpireTime;
 }
 
+bool ABattleGridClientPlayerController::IsPlayerDead() const
+{
+	return bPlayerDead;
+}
+
 void ABattleGridClientPlayerController::AddScore(int32 Amount)
 {
 	Score += Amount;
@@ -77,6 +83,25 @@ void ABattleGridClientPlayerController::SetCombatMessage(const FString& Message,
 	{
 		CombatMessageExpireTime = 0.0f;
 	}
+}
+
+void ABattleGridClientPlayerController::SetPlayerHealth(float Current, float Max)
+{
+	CurrentPlayerHealth = FMath::Max(0.0f, Current);
+	MaxPlayerHealth = FMath::Max(0.0f, Max);
+
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[BattleGrid] SetPlayerHealth: %.1f / %.1f"),
+		CurrentPlayerHealth,
+		MaxPlayerHealth
+	);
+}
+
+void ABattleGridClientPlayerController::SetPlayerDead(bool bDead)
+{
+	bPlayerDead = bDead;
 }
 
 void ABattleGridClientPlayerController::BeginPlay()
@@ -169,6 +194,11 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 
 void ABattleGridClientPlayerController::MoveForward(const FInputActionValue& Value)
 {
+	if (IsPlayerDead())
+	{
+		return;
+	}
+
 	const float AxisValue = Value.Get<float>();
 
 	if (FMath::IsNearlyZero(AxisValue))
@@ -184,6 +214,11 @@ void ABattleGridClientPlayerController::MoveForward(const FInputActionValue& Val
 
 void ABattleGridClientPlayerController::MoveRight(const FInputActionValue& Value)
 {
+	if (IsPlayerDead())
+	{
+		return;
+	}
+
 	const float AxisValue = Value.Get<float>();
 
 	if (FMath::IsNearlyZero(AxisValue))
@@ -200,6 +235,11 @@ void ABattleGridClientPlayerController::MoveRight(const FInputActionValue& Value
 void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Value)
 {
 	static_cast<void>(Value);
+
+	if (IsPlayerDead())
+	{
+		return;
+	}
 
 	UWorld* World = GetWorld();
 	APawn* ControlledPawn = GetPawn();
@@ -258,6 +298,11 @@ void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Val
 
 void ABattleGridClientPlayerController::UpdateAimRotation()
 {
+	if (IsPlayerDead())
+	{
+		return;
+	}
+
 	APawn* ControlledPawn = GetPawn();
 
 	if (!ControlledPawn)

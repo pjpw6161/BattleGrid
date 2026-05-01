@@ -17,6 +17,9 @@ public:
 	virtual void BeginPlay() override;
 
 	UFUNCTION(BlueprintCallable, Category = "BattleGrid|Health")
+	void ResetHealth();
+
+	UFUNCTION(BlueprintCallable, Category = "BattleGrid|Health")
 	void ApplyDamage(float DamageAmount);
 
 	UFUNCTION(BlueprintPure, Category = "BattleGrid|Health")

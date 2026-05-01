@@ -25,8 +25,11 @@ public:
 	int32 GetScore() const;
 	FString GetCombatMessage() const;
 	bool HasActiveCombatMessage() const;
+	bool IsPlayerDead() const;
 	void AddScore(int32 Amount);
 	void SetCombatMessage(const FString& Message, float DurationSeconds = 2.0f);
+	void SetPlayerHealth(float Current, float Max);
+	void SetPlayerDead(bool bDead);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputMappingContext> BattleGridMappingContext;
@@ -67,4 +70,5 @@ private:
 	int32 Score;
 	FString CombatMessage;
 	float CombatMessageExpireTime;
+	bool bPlayerDead;
 };

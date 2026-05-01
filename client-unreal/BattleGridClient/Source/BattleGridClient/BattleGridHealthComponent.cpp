@@ -14,6 +14,11 @@ void UBattleGridHealthComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
+	ResetHealth();
+}
+
+void UBattleGridHealthComponent::ResetHealth()
+{
 	CurrentHealth = FMath::Max(0.0f, MaxHealth);
 }
 
@@ -24,6 +29,14 @@ void UBattleGridHealthComponent::ApplyDamage(float DamageAmount)
 		return;
 	}
 
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[BattleGrid] HP before damage: %.1f / %.1f"),
+		CurrentHealth,
+		MaxHealth
+	);
+
 	CurrentHealth = FMath::Max(0.0f, CurrentHealth - DamageAmount);
 
 	UE_LOG(
@@ -31,6 +44,14 @@ void UBattleGridHealthComponent::ApplyDamage(float DamageAmount)
 		Log,
 		TEXT("[BattleGrid] Took %.1f damage. HP: %.1f / %.1f"),
 		DamageAmount,
+		CurrentHealth,
+		MaxHealth
+	);
+
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[BattleGrid] HP after damage: %.1f / %.1f"),
 		CurrentHealth,
 		MaxHealth
 	);
