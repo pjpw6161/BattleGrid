@@ -12,7 +12,8 @@ void UBattleGridCombatWidget::UpdateHud(
 	int32 TargetScore,
 	const FString& CombatMessage,
 	bool bShowCombatMessage,
-	bool bHasWon
+	bool bHasWon,
+	const FString& NetworkStatusText
 )
 {
 	const float HealthPercent = MaxHealth > 0.0f
@@ -56,9 +57,12 @@ void UBattleGridCombatWidget::UpdateHud(
 
 	if (ControlsText)
 	{
-		const FString ControlsMessage = bHasWon
+		const FString BaseControlsMessage = bHasWon
 			? FString(TEXT("Victory! Press R to Restart"))
 			: FString(TEXT("WASD Move | Mouse Aim | LMB Fire"));
+		const FString ControlsMessage = NetworkStatusText.IsEmpty()
+			? BaseControlsMessage
+			: FString::Printf(TEXT("%s | %s"), *BaseControlsMessage, *NetworkStatusText);
 
 		ControlsText->SetText(FText::FromString(ControlsMessage));
 	}

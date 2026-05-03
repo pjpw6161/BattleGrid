@@ -13,6 +13,7 @@ int main(int argc, char** argv)
 
         battlegrid::GameServer server(config);
         server.Run();
+        server.Shutdown();
         return 0;
     }
     catch (const std::exception& exception)

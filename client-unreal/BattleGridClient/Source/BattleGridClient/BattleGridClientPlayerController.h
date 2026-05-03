@@ -34,6 +34,11 @@ public:
 	void SetPlayerDead(bool bDead);
 	void RestartGame();
 	void RestartStarted(const FInputActionValue& Value);
+	FString GetNetworkStatusText() const;
+	bool IsServerConnected() const;
+	bool HasJoinedServer() const;
+	int32 GetServerPlayerId() const;
+	int32 GetServerRoomId() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputMappingContext> BattleGridMappingContext;
@@ -53,6 +58,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Game", meta = (ClampMin = "1"))
 	int32 TargetScore;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Network")
+	bool bAutoConnectToServer;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Network")
+	FString ServerUrl;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Network")
+	FString Nickname;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Network", meta = (ClampMin = "0.0"))
+	float InputSendIntervalSeconds;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|Combat")
 	TSubclassOf<ABattleGridProjectile> ProjectileClass;
 
@@ -70,9 +87,12 @@ protected:
 private:
 	void MoveForward(const FInputActionValue& Value);
 	void MoveRight(const FInputActionValue& Value);
+	void StopMoveForward(const FInputActionValue& Value);
+	void StopMoveRight(const FInputActionValue& Value);
 	void FireStarted(const FInputActionValue& Value);
 
 	void UpdateAimRotation();
+	void SendInputToServerIfNeeded();
 
 	float LastFireTime;
 	float MaxPlayerHealth;
@@ -82,4 +102,14 @@ private:
 	float CombatMessageExpireTime;
 	bool bPlayerDead;
 	bool bHasWon;
+	float CurrentMoveForward;
+	float CurrentMoveRight;
+	bool bPendingFireInput;
+	int32 InputSequence;
+	float LastInputSendTime;
+	float LastSentMoveForward;
+	float LastSentMoveRight;
+	float LastSentAimX;
+	float LastSentAimY;
+	bool bHasLastSentInput;
 };

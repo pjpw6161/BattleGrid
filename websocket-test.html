@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>BattleGrid WebSocket Test</title>
+</head>
+<body>
+  <h1>BattleGrid WebSocket Test</h1>
+
+  <button onclick="connect()">Connect</button>
+  <button onclick="sendHello()">Send Hello</button>
+  <button onclick="closeSocket()">Close</button>
+
+  <pre id="log"></pre>
+
+  <script>
+    let ws = null;
+
+    function log(message) {
+      const el = document.getElementById("log");
+      el.textContent += message + "\n";
+      console.log(message);
+    }
+
+    function connect() {
+      ws = new WebSocket("ws://127.0.0.1:7777");
+
+      ws.onopen = () => {
+        log("connected");
+      };
+
+      ws.onmessage = (event) => {
+        log("received: " + event.data);
+      };
+
+      ws.onerror = (event) => {
+        log("error");
+        console.log(event);
+      };
+
+      ws.onclose = () => {
+        log("closed");
+      };
+    }
+
+    function sendHello() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        log("socket is not open");
+        return;
+      }
+
+      log("send: hello");
+      ws.send("hello");
+    }
+
+    function closeSocket() {
+      if (ws) {
+        ws.close();
+      }
+    }
+  </script>
+</body>
+</html>

@@ -23,7 +23,8 @@ public:
 		int32 TargetScore,
 		const FString& CombatMessage,
 		bool bShowCombatMessage,
-		bool bHasWon
+		bool bHasWon,
+		const FString& NetworkStatusText
 	);
 
 private:

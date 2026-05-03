@@ -61,7 +61,8 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		BattleGridController->GetTargetScore(),
 		BattleGridController->GetCombatMessage(),
 		BattleGridController->HasActiveCombatMessage(),
-		BattleGridController->HasWon()
+		BattleGridController->HasWon(),
+		BattleGridController->GetNetworkStatusText()
 	);
 }
 
@@ -85,7 +86,7 @@ void ABattleGridHUD::DrawHUD()
 		FLinearColor(0.0f, 0.0f, 0.0f, 0.65f),
 		HudX,
 		HudY,
-		360.0f,
+		620.0f,
 		135.0f
 	);
 
@@ -130,9 +131,13 @@ void ABattleGridHUD::DrawHUD()
 	);
 
 	DrawText(
-		BattleGridController->HasWon()
-			? TEXT("Victory! Press R to Restart")
-			: TEXT("WASD Move | Mouse Aim | LMB Fire"),
+		FString::Printf(
+			TEXT("%s | %s"),
+			BattleGridController->HasWon()
+				? TEXT("Victory! Press R to Restart")
+				: TEXT("WASD Move | Mouse Aim | LMB Fire"),
+			*BattleGridController->GetNetworkStatusText()
+		),
 		FLinearColor(0.8f, 0.9f, 1.0f, 1.0f),
 		HudX + 20.0f,
 		HudY + 15.0f + LineHeight * 3.0f,

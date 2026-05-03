@@ -2,9 +2,11 @@
 
 #include "BattleGridClientPlayerController.h"
 
+#include "BattleGridNetworkSubsystem.h"
 #include "BattleGridProjectile.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -28,9 +30,23 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	CurrentPlayerHealth = 100.0f;
 	Score = 0;
 	TargetScore = 5;
+	bAutoConnectToServer = true;
+	ServerUrl = TEXT("ws://127.0.0.1:7777");
+	Nickname = TEXT("player1");
+	InputSendIntervalSeconds = 0.05f;
 	CombatMessageExpireTime = 0.0f;
 	bPlayerDead = false;
 	bHasWon = false;
+	CurrentMoveForward = 0.0f;
+	CurrentMoveRight = 0.0f;
+	bPendingFireInput = false;
+	InputSequence = 0;
+	LastInputSendTime = 0.0f;
+	LastSentMoveForward = 0.0f;
+	LastSentMoveRight = 0.0f;
+	LastSentAimX = 0.0f;
+	LastSentAimY = 0.0f;
+	bHasLastSentInput = false;
 }
 
 float ABattleGridClientPlayerController::GetMaxPlayerHealth() const
@@ -155,6 +171,76 @@ void ABattleGridClientPlayerController::RestartStarted(const FInputActionValue& 
 	RestartGame();
 }
 
+FString ABattleGridClientPlayerController::GetNetworkStatusText() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetConnectionStatusText();
+		}
+	}
+
+	return TEXT("Server: Disconnected");
+}
+
+bool ABattleGridClientPlayerController::IsServerConnected() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->IsConnected();
+		}
+	}
+
+	return false;
+}
+
+bool ABattleGridClientPlayerController::HasJoinedServer() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->HasJoined();
+		}
+	}
+
+	return false;
+}
+
+int32 ABattleGridClientPlayerController::GetServerPlayerId() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetPlayerId();
+		}
+	}
+
+	return 0;
+}
+
+int32 ABattleGridClientPlayerController::GetServerRoomId() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetRoomId();
+		}
+	}
+
+	return 0;
+}
+
 void ABattleGridClientPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
@@ -176,6 +262,23 @@ void ABattleGridClientPlayerController::BeginPlay()
 			else
 			{
 				UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] BattleGridMappingContext is not assigned."));
+			}
+		}
+	}
+
+	if (bAutoConnectToServer)
+	{
+		if (UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (UBattleGridNetworkSubsystem* NetworkSubsystem =
+				GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+			{
+				UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Connecting to server: %s"), *ServerUrl);
+				NetworkSubsystem->Connect(ServerUrl, Nickname);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] BattleGridNetworkSubsystem is missing."));
 			}
 		}
 	}
@@ -201,6 +304,18 @@ void ABattleGridClientPlayerController::SetupInputComponent()
 			this,
 			&ABattleGridClientPlayerController::MoveForward
 		);
+		EnhancedInputComponent->BindAction(
+			MoveForwardAction,
+			ETriggerEvent::Completed,
+			this,
+			&ABattleGridClientPlayerController::StopMoveForward
+		);
+		EnhancedInputComponent->BindAction(
+			MoveForwardAction,
+			ETriggerEvent::Canceled,
+			this,
+			&ABattleGridClientPlayerController::StopMoveForward
+		);
 	}
 	else
 	{
@@ -214,6 +329,18 @@ void ABattleGridClientPlayerController::SetupInputComponent()
 			ETriggerEvent::Triggered,
 			this,
 			&ABattleGridClientPlayerController::MoveRight
+		);
+		EnhancedInputComponent->BindAction(
+			MoveRightAction,
+			ETriggerEvent::Completed,
+			this,
+			&ABattleGridClientPlayerController::StopMoveRight
+		);
+		EnhancedInputComponent->BindAction(
+			MoveRightAction,
+			ETriggerEvent::Canceled,
+			this,
+			&ABattleGridClientPlayerController::StopMoveRight
 		);
 	}
 	else
@@ -255,19 +382,23 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 	Super::PlayerTick(DeltaTime);
 
 	UpdateAimRotation();
+	SendInputToServerIfNeeded();
 }
 
 void ABattleGridClientPlayerController::MoveForward(const FInputActionValue& Value)
 {
 	if (IsPlayerDead() || HasWon())
 	{
+		CurrentMoveForward = 0.0f;
 		return;
 	}
 
 	const float AxisValue = Value.Get<float>();
+	CurrentMoveForward = AxisValue;
 
 	if (FMath::IsNearlyZero(AxisValue))
 	{
+		CurrentMoveForward = 0.0f;
 		return;
 	}
 
@@ -281,13 +412,16 @@ void ABattleGridClientPlayerController::MoveRight(const FInputActionValue& Value
 {
 	if (IsPlayerDead() || HasWon())
 	{
+		CurrentMoveRight = 0.0f;
 		return;
 	}
 
 	const float AxisValue = Value.Get<float>();
+	CurrentMoveRight = AxisValue;
 
 	if (FMath::IsNearlyZero(AxisValue))
 	{
+		CurrentMoveRight = 0.0f;
 		return;
 	}
 
@@ -295,6 +429,20 @@ void ABattleGridClientPlayerController::MoveRight(const FInputActionValue& Value
 	{
 		ControlledPawn->AddMovementInput(FVector::RightVector, AxisValue);
 	}
+}
+
+void ABattleGridClientPlayerController::StopMoveForward(const FInputActionValue& Value)
+{
+	static_cast<void>(Value);
+
+	CurrentMoveForward = 0.0f;
+}
+
+void ABattleGridClientPlayerController::StopMoveRight(const FInputActionValue& Value)
+{
+	static_cast<void>(Value);
+
+	CurrentMoveRight = 0.0f;
 }
 
 void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Value)
@@ -313,6 +461,8 @@ void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Val
 	{
 		return;
 	}
+
+	bPendingFireInput = true;
 
 	const float CurrentTime = World->GetTimeSeconds();
 	const float CooldownSeconds = FMath::Max(0.0f, FireCooldownSeconds);
@@ -393,4 +543,99 @@ void ABattleGridClientPlayerController::UpdateAimRotation()
 
 	const FRotator AimRotation = Direction.Rotation();
 	ControlledPawn->SetActorRotation(FRotator(0.0f, AimRotation.Yaw, 0.0f));
+}
+
+void ABattleGridClientPlayerController::SendInputToServerIfNeeded()
+{
+	if (IsPlayerDead() || HasWon())
+	{
+		CurrentMoveForward = 0.0f;
+		CurrentMoveRight = 0.0f;
+		bPendingFireInput = false;
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const float CurrentTime = World->GetTimeSeconds();
+	const float SendInterval = FMath::Max(0.0f, InputSendIntervalSeconds);
+	if (CurrentTime - LastInputSendTime < SendInterval)
+	{
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		return;
+	}
+
+	UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	if (!NetworkSubsystem || !NetworkSubsystem->IsConnected() || !NetworkSubsystem->HasJoined())
+	{
+		bPendingFireInput = false;
+		return;
+	}
+
+	const bool bHasMovementInput =
+		!FMath::IsNearlyZero(CurrentMoveForward)
+		|| !FMath::IsNearlyZero(CurrentMoveRight);
+
+	float AimX = 0.0f;
+	float AimY = 0.0f;
+	if (const APawn* ControlledPawn = GetPawn())
+	{
+		FVector AimDirection = ControlledPawn->GetActorForwardVector();
+		AimDirection.Z = 0.0f;
+		if (!AimDirection.Normalize())
+		{
+			AimDirection = FVector::ForwardVector;
+		}
+
+		AimX = AimDirection.X;
+		AimY = AimDirection.Y;
+	}
+
+	constexpr float InputChangeThreshold = 0.01f;
+	const bool bMovementChanged =
+		!bHasLastSentInput
+		|| FMath::Abs(CurrentMoveForward - LastSentMoveForward) > InputChangeThreshold
+		|| FMath::Abs(CurrentMoveRight - LastSentMoveRight) > InputChangeThreshold;
+	const bool bAimChanged =
+		!bHasLastSentInput
+		|| FMath::Abs(AimX - LastSentAimX) > InputChangeThreshold
+		|| FMath::Abs(AimY - LastSentAimY) > InputChangeThreshold;
+	if (!bHasMovementInput && !bPendingFireInput && !bMovementChanged && !bAimChanged)
+	{
+		return;
+	}
+
+	const bool bFire = bPendingFireInput;
+	++InputSequence;
+	LastInputSendTime = CurrentTime;
+
+	NetworkSubsystem->SendInput(
+		InputSequence,
+		CurrentMoveRight,
+		CurrentMoveForward,
+		AimX,
+		AimY,
+		bFire
+	);
+
+	LastSentMoveForward = CurrentMoveForward;
+	LastSentMoveRight = CurrentMoveRight;
+	LastSentAimX = AimX;
+	LastSentAimY = AimY;
+	bHasLastSentInput = true;
+
+	if (bFire)
+	{
+		bPendingFireInput = false;
+	}
 }

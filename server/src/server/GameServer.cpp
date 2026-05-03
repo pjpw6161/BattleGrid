@@ -1,7 +1,9 @@
 #include "server/GameServer.h"
 
 #include "core/Logger.h"
+#include "net/WebSocketServer.h"
 
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -13,6 +15,8 @@ GameServer::GameServer(ServerConfig serverConfig)
 {
 }
 
+GameServer::~GameServer() = default;
+
 void GameServer::Run()
 {
     Logger::Info("Starting BattleGrid server.");
@@ -22,12 +26,21 @@ void GameServer::Run()
 
     gameLoop.Start();
 
+    webSocketServer = std::make_unique<WebSocketServer>(config);
+
     Logger::Info("Server initialized successfully.");
-    Logger::Info("Networking is not implemented yet.");
+    Logger::Info("WebSocket echo server is ready.");
+
+    webSocketServer->Run();
 }
 
 void GameServer::Shutdown()
 {
+    if (webSocketServer)
+    {
+        webSocketServer->Stop();
+    }
+
     gameLoop.Stop();
     Logger::Info("Server shutdown complete.");
 }

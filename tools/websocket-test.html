@@ -35,6 +35,7 @@
     <button id="connect">Connect</button>
     <button id="sendPing">Send Ping</button>
     <button id="sendJoin">Send Join</button>
+    <button id="sendInput">Send Input</button>
     <button id="sendInvalid">Send Invalid JSON</button>
     <button id="close">Close</button>
   </div>
@@ -81,6 +82,19 @@
 
     document.getElementById("sendJoin").addEventListener("click", () => {
       send(JSON.stringify({ type: "join", nickname: "player1" }));
+    });
+
+    document.getElementById("sendInput").addEventListener("click", () => {
+      send(JSON.stringify({
+        type: "input",
+        seq: 1,
+        player_id: 1,
+        move_x: 1,
+        move_y: 0,
+        aim_x: 1,
+        aim_y: 0,
+        fire: false
+      }));
     });
 
     document.getElementById("sendInvalid").addEventListener("click", () => {
