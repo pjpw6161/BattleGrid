@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BattleGrid WebSocket Test</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 24px;
+      color: #111827;
+      background: #f9fafb;
+    }
+
+    button {
+      margin: 0 8px 8px 0;
+      padding: 8px 12px;
+    }
+
+    pre {
+      min-height: 280px;
+      padding: 16px;
+      overflow: auto;
+      background: #111827;
+      color: #e5e7eb;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <h1>BattleGrid WebSocket Test</h1>
+  <p>Target: <code>ws://127.0.0.1:7777</code></p>
+
+  <div>
+    <button id="connect">Connect</button>
+    <button id="sendPing">Send Ping</button>
+    <button id="sendJoin">Send Join</button>
+    <button id="sendInvalid">Send Invalid JSON</button>
+    <button id="close">Close</button>
+  </div>
+
+  <pre id="log"></pre>
+
+  <script>
+    const serverUrl = "ws://127.0.0.1:7777";
+    const logElement = document.getElementById("log");
+    let socket = null;
+
+    function log(message) {
+      const timestamp = new Date().toLocaleTimeString();
+      logElement.textContent += `[${timestamp}] ${message}\n`;
+      logElement.scrollTop = logElement.scrollHeight;
+    }
+
+    function send(message) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        log("Cannot send: socket is not connected.");
+        return;
+      }
+
+      socket.send(message);
+      log(`sent: ${message}`);
+    }
+
+    document.getElementById("connect").addEventListener("click", () => {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        log("Already connected.");
+        return;
+      }
+
+      socket = new WebSocket(serverUrl);
+      socket.addEventListener("open", () => log("connected"));
+      socket.addEventListener("message", (event) => log(`received: ${event.data}`));
+      socket.addEventListener("close", () => log("closed"));
+      socket.addEventListener("error", () => log("socket error"));
+    });
+
+    document.getElementById("sendPing").addEventListener("click", () => {
+      send(JSON.stringify({ type: "ping" }));
+    });
+
+    document.getElementById("sendJoin").addEventListener("click", () => {
+      send(JSON.stringify({ type: "join", nickname: "player1" }));
+    });
+
+    document.getElementById("sendInvalid").addEventListener("click", () => {
+      send("{ invalid json");
+    });
+
+    document.getElementById("close").addEventListener("click", () => {
+      if (socket) {
+        socket.close();
+      }
+    });
+  </script>
+</body>
+</html>
