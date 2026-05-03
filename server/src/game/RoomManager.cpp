@@ -23,4 +23,14 @@ std::uint64_t RoomManager::GetDefaultRoomId() const
 {
     return DefaultRoomId;
 }
+
+void RoomManager::TickAll(double deltaSeconds, std::uint64_t tickNumber)
+{
+    defaultRoom->Tick(deltaSeconds, tickNumber);
+}
+
+nlohmann::json RoomManager::BuildDefaultRoomSnapshotJson(std::uint64_t tickNumber) const
+{
+    return defaultRoom->BuildSnapshotJson(tickNumber);
+}
 }

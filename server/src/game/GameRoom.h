@@ -24,6 +24,8 @@ public:
     bool HasPlayer(std::uint64_t playerId) const;
     bool UpdateInput(std::uint64_t playerId, const PlayerInput& input);
     std::size_t GetPlayerCount() const;
+    void Tick(double deltaSeconds, std::uint64_t tickNumber);
+    nlohmann::json BuildSnapshotJson(std::uint64_t tickNumber) const;
     nlohmann::json ToDebugJson() const;
 
 private:

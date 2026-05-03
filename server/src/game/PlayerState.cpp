@@ -13,7 +13,12 @@ PlayerState::PlayerState(
       roomId(inRoomId),
       nickname(std::move(inNickname)),
       latestInput(),
-      connected(true)
+      connected(true),
+      x(static_cast<double>(inPlayerId) * 100.0),
+      y(0.0),
+      speed(500.0),
+      hp(100),
+      score(0)
 {
 }
 }

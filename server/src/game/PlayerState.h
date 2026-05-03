@@ -17,5 +17,10 @@ struct PlayerState
     std::string nickname;
     PlayerInput latestInput;
     bool connected = true;
+    double x = 0.0;
+    double y = 0.0;
+    double speed = 500.0;
+    int hp = 100;
+    int score = 0;
 };
 }

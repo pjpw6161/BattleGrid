@@ -4,6 +4,7 @@
 #include "game/RoomManager.h"
 
 #include <boost/asio/buffer.hpp>
+#include <boost/asio/post.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/core/buffers_to_string.hpp>
 #include <boost/beast/http.hpp>
@@ -36,7 +37,7 @@ Session::Session(
       sessionState(),
       roomManager(std::move(inRoomManager)),
       allocatePlayerId(std::move(inAllocatePlayerId)),
-      outboundMessage()
+      outgoingMessages()
 {
     boost::system::error_code error;
     const tcp::endpoint endpoint = webSocket.next_layer().remote_endpoint(error);
@@ -80,6 +81,29 @@ void Session::OnAccept(const boost::system::error_code& error)
     Read();
 }
 
+void Session::SendText(const std::string& message)
+{
+    auto self = shared_from_this();
+    boost::asio::post(
+        webSocket.get_executor(),
+        [self, message]()
+        {
+            const bool writeInProgress = !self->outgoingMessages.empty();
+            self->outgoingMessages.push_back(message);
+
+            if (!writeInProgress)
+            {
+                self->DoWrite();
+            }
+        }
+    );
+}
+
+bool Session::IsJoined() const
+{
+    return sessionState.joined;
+}
+
 void Session::Read()
 {
     auto self = shared_from_this();
@@ -117,14 +141,25 @@ void Session::OnRead(
     Logger::Info("Received raw message from " + remoteEndpoint + ": " + message);
 
     MessageDispatcher dispatcher(sessionState, roomManager, allocatePlayerId);
-    outboundMessage = dispatcher.Dispatch(message);
+    const std::string response = dispatcher.Dispatch(message);
     buffer.consume(buffer.size());
+
+    SendText(response);
+    Read();
+}
+
+void Session::DoWrite()
+{
+    if (outgoingMessages.empty())
+    {
+        return;
+    }
 
     webSocket.text(true);
 
     auto self = shared_from_this();
     webSocket.async_write(
-        boost::asio::buffer(outboundMessage),
+        boost::asio::buffer(outgoingMessages.front()),
         [self](const boost::system::error_code& writeError, std::size_t writtenBytes)
         {
             self->OnWrite(writeError, writtenBytes);
@@ -153,8 +188,11 @@ void Session::OnWrite(
         return;
     }
 
-    outboundMessage.clear();
-    Read();
+    outgoingMessages.pop_front();
+    if (!outgoingMessages.empty())
+    {
+        DoWrite();
+    }
 }
 
 void Session::HandleDisconnect()

@@ -18,10 +18,13 @@ It includes:
 - `join` / `join_ok`
 - `input` / `input_ack`
 - fixed Room 1 state with `PlayerState` and latest `PlayerInput`
+- fixed-rate game tick using `--tick-rate`
+- simple server-side 2D movement simulation
+- `snapshot` broadcasts to joined sessions
 - `debug_room` / `room_state`
 - JSON error responses
 
-Multiple rooms, game simulation, snapshots, damage, score, and respawn are not implemented yet.
+Multiple rooms, projectile simulation, collision, damage, score updates, and respawn are not implemented yet.
 
 ## Dependencies
 
@@ -69,6 +72,8 @@ Use the page buttons:
 - `Send Join`
 - `Send Input`
 - `Send Fire Input`
+- `Start Moving Right`
+- `Stop Moving`
 - `Send Debug Room`
 - `Send Invalid JSON`
 - `Close`
@@ -79,6 +84,7 @@ Expected responses:
 {"type":"pong"}
 {"type":"join_ok","player_id":1,"room_id":1,"nickname":"player1"}
 {"type":"input_ack","seq":1,"player_id":1}
+{"type":"snapshot","tick":1,"room_id":1,"players":[...]}
 {"type":"room_state","room_id":1,"player_count":1,"players":[...]}
 {"type":"error","message":"invalid json"}
 ```
@@ -106,4 +112,4 @@ Expected PowerShell output:
 
 ## Next Planned Step
 
-Add server-side game state and movement validation.
+Add movement validation and authoritative gameplay rules.

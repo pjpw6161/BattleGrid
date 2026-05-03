@@ -37,6 +37,8 @@
     <button id="sendJoin">Send Join</button>
     <button id="sendInput">Send Input</button>
     <button id="sendFireInput">Send Fire Input</button>
+    <button id="startMovingRight">Start Moving Right</button>
+    <button id="stopMoving">Stop Moving</button>
     <button id="sendDebugRoom">Send Debug Room</button>
     <button id="sendInvalid">Send Invalid JSON</button>
     <button id="close">Close</button>
@@ -48,6 +50,9 @@
     const serverUrl = "ws://127.0.0.1:7777";
     const logElement = document.getElementById("log");
     let socket = null;
+    let joinedPlayerId = 1;
+    let inputSeq = 0;
+    let moveTimer = null;
 
     function log(message) {
       const timestamp = new Date().toLocaleTimeString();
@@ -65,6 +70,20 @@
       log(`sent: ${message}`);
     }
 
+    function sendInput(moveX, moveY, fire) {
+      inputSeq += 1;
+      send(JSON.stringify({
+        type: "input",
+        seq: inputSeq,
+        player_id: joinedPlayerId,
+        move_x: moveX,
+        move_y: moveY,
+        aim_x: 1,
+        aim_y: 0,
+        fire
+      }));
+    }
+
     document.getElementById("connect").addEventListener("click", () => {
       if (socket && socket.readyState === WebSocket.OPEN) {
         log("Already connected.");
@@ -73,8 +92,26 @@
 
       socket = new WebSocket(serverUrl);
       socket.addEventListener("open", () => log("connected"));
-      socket.addEventListener("message", (event) => log(`received: ${event.data}`));
-      socket.addEventListener("close", () => log("closed"));
+      socket.addEventListener("message", (event) => {
+        log(`received: ${event.data}`);
+
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === "join_ok") {
+            joinedPlayerId = message.player_id;
+            log(`joined player_id=${joinedPlayerId}`);
+          }
+        } catch {
+          log("received non-json message");
+        }
+      });
+      socket.addEventListener("close", () => {
+        if (moveTimer) {
+          clearInterval(moveTimer);
+          moveTimer = null;
+        }
+        log("closed");
+      });
       socket.addEventListener("error", () => log("socket error"));
     });
 
@@ -87,29 +124,30 @@
     });
 
     document.getElementById("sendInput").addEventListener("click", () => {
-      send(JSON.stringify({
-        type: "input",
-        seq: 1,
-        player_id: 1,
-        move_x: 1,
-        move_y: 0,
-        aim_x: 1,
-        aim_y: 0,
-        fire: false
-      }));
+      sendInput(1, 0, false);
     });
 
     document.getElementById("sendFireInput").addEventListener("click", () => {
-      send(JSON.stringify({
-        type: "input",
-        seq: 2,
-        player_id: 1,
-        move_x: 0,
-        move_y: 0,
-        aim_x: 1,
-        aim_y: 0,
-        fire: true
-      }));
+      sendInput(0, 0, true);
+    });
+
+    document.getElementById("startMovingRight").addEventListener("click", () => {
+      if (moveTimer) {
+        log("Already sending movement input.");
+        return;
+      }
+
+      sendInput(1, 0, false);
+      moveTimer = setInterval(() => sendInput(1, 0, false), 100);
+    });
+
+    document.getElementById("stopMoving").addEventListener("click", () => {
+      if (moveTimer) {
+        clearInterval(moveTimer);
+        moveTimer = null;
+      }
+
+      sendInput(0, 0, false);
     });
 
     document.getElementById("sendDebugRoom").addEventListener("click", () => {

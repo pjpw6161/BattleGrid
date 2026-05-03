@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <string>
@@ -28,11 +29,14 @@ public:
     );
 
     void Start();
+    void SendText(const std::string& message);
+    bool IsJoined() const;
 
 private:
     void OnAccept(const boost::system::error_code& error);
     void Read();
     void OnRead(const boost::system::error_code& error, std::size_t bytesTransferred);
+    void DoWrite();
     void OnWrite(const boost::system::error_code& error, std::size_t bytesTransferred);
     void HandleDisconnect();
     void LogError(std::string_view operation, const boost::system::error_code& error) const;
@@ -43,6 +47,6 @@ private:
     SessionState sessionState;
     std::shared_ptr<RoomManager> roomManager;
     std::function<std::uint64_t()> allocatePlayerId;
-    std::string outboundMessage;
+    std::deque<std::string> outgoingMessages;
 };
 }

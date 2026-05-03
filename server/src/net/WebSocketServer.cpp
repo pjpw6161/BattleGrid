@@ -4,10 +4,15 @@
 #include "game/RoomManager.h"
 #include "net/Session.h"
 
+#include <boost/asio/error.hpp>
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/socket_base.hpp>
 #include <boost/system/error_code.hpp>
 
+#include <nlohmann/json.hpp>
+
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -38,8 +43,15 @@ WebSocketServer::WebSocketServer(const ServerConfig& serverConfig)
     : config(serverConfig),
       ioContext(),
       acceptor(ioContext),
+      tickTimer(ioContext),
       roomManager(std::make_shared<RoomManager>()),
-      nextPlayerId(1)
+      nextPlayerId(1),
+      tickInterval(std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+          std::chrono::duration<double>(1.0 / static_cast<double>(std::max(1, config.tickRate)))
+      )),
+      tickNumber(0),
+      sessionsMutex(),
+      sessions()
 {
     boost::system::error_code error;
     const auto address = boost::asio::ip::make_address(config.host, error);
@@ -73,6 +85,7 @@ void WebSocketServer::Run()
     );
 
     StartAccept();
+    StartGameTickTimer();
     ioContext.run();
 }
 
@@ -87,6 +100,15 @@ void WebSocketServer::Stop()
         {
             Logger::Error("Close acceptor failed: " + error.message());
         }
+    }
+
+    try
+    {
+        tickTimer.cancel();
+    }
+    catch (const boost::system::system_error& cancelError)
+    {
+        Logger::Warn("Cancel tick timer failed: " + cancelError.code().message());
     }
 
     ioContext.stop();
@@ -133,15 +155,92 @@ void WebSocketServer::HandleAccept(
         return nextPlayerId.fetch_add(1, std::memory_order_relaxed);
     };
 
-    std::make_shared<Session>(
+    std::shared_ptr<Session> session = std::make_shared<Session>(
         std::move(socket),
         roomManager,
         std::move(allocatePlayerId)
-    )->Start();
+    );
+
+    {
+        std::lock_guard lock(sessionsMutex);
+        sessions.push_back(session);
+    }
+
+    session->Start();
 
     if (acceptor.is_open())
     {
         StartAccept();
+    }
+}
+
+void WebSocketServer::StartGameTickTimer()
+{
+    tickTimer.expires_after(tickInterval);
+    tickTimer.async_wait(
+        [this](const boost::system::error_code& error)
+        {
+            HandleGameTick(error);
+        }
+    );
+}
+
+void WebSocketServer::HandleGameTick(const boost::system::error_code& error)
+{
+    if (error == boost::asio::error::operation_aborted)
+    {
+        return;
+    }
+
+    if (error)
+    {
+        Logger::Error("Game tick timer failed: " + error.message());
+        return;
+    }
+
+    ++tickNumber;
+
+    const double deltaSeconds = std::chrono::duration<double>(tickInterval).count();
+    roomManager->TickAll(deltaSeconds, tickNumber);
+
+    const nlohmann::json snapshotJson =
+        roomManager->BuildDefaultRoomSnapshotJson(tickNumber);
+    BroadcastSnapshot(snapshotJson.dump());
+
+    if (tickNumber % 30 == 0)
+    {
+        Logger::Info(
+            "Snapshot tick=" + std::to_string(tickNumber)
+            + " players=" + std::to_string(snapshotJson["players"].size())
+        );
+    }
+
+    if (acceptor.is_open())
+    {
+        StartGameTickTimer();
+    }
+}
+
+void WebSocketServer::BroadcastSnapshot(const std::string& snapshot)
+{
+    std::lock_guard lock(sessionsMutex);
+
+    auto iterator = sessions.begin();
+    while (iterator != sessions.end())
+    {
+        if (std::shared_ptr<Session> session = iterator->lock())
+        {
+            if (session->IsJoined())
+            {
+                session->SendText(snapshot);
+            }
+
+            ++iterator;
+        }
+        else
+        {
+            iterator = sessions.erase(iterator);
+        }
     }
 }
 }

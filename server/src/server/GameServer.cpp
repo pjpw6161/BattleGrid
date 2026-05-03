@@ -29,7 +29,7 @@ void GameServer::Run()
     webSocketServer = std::make_unique<WebSocketServer>(config);
 
     Logger::Info("Server initialized successfully.");
-    Logger::Info("WebSocket echo server is ready.");
+    Logger::Info("WebSocket game server is ready.");
 
     webSocketServer->Run();
 }

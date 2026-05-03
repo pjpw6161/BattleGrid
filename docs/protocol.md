@@ -81,7 +81,32 @@ Server:
 }
 ```
 
-The server requires the session to be joined before accepting input. `player_id` must match the joined session. Accepted input updates the player's latest `PlayerInput` in Room 1, then acknowledges the sequence. The server does not simulate movement yet.
+The server requires the session to be joined before accepting input. `player_id` must match the joined session. Accepted input updates the player's latest `PlayerInput` in Room 1, then acknowledges the sequence. The fixed-rate server tick uses the latest movement axes to calculate authoritative `x` / `y` positions.
+
+## Snapshot
+
+Server broadcast:
+
+```json
+{
+  "type": "snapshot",
+  "tick": 30,
+  "room_id": 1,
+  "players": [
+    {
+      "player_id": 1,
+      "nickname": "player1",
+      "x": 600.0,
+      "y": 0.0,
+      "hp": 100,
+      "score": 0,
+      "last_seq": 10
+    }
+  ]
+}
+```
+
+Snapshots are sent to joined WebSocket sessions at the configured server tick rate. Current movement simulation is intentionally simple: latest input is treated as a continuous movement vector, normalized if its length is greater than 1, multiplied by player speed, and clamped to a `-2000..2000` arena on both axes.
 
 ## Debug Room
 
@@ -104,6 +129,11 @@ Server:
       "room_id": 1,
       "nickname": "player1",
       "connected": true,
+      "x": 600.0,
+      "y": 0.0,
+      "speed": 500.0,
+      "hp": 100,
+      "score": 0,
       "latest_input": {
         "seq": 1,
         "move_x": 1.0,
@@ -163,6 +193,6 @@ Input with a mismatched `player_id`:
 - Player IDs are process-local and reset when the server restarts.
 - No authentication.
 - No multiple-room management.
-- No game loop integration.
-- No server-side player movement simulation.
+- Movement simulation only supports simple 2D position integration from latest input.
+- Snapshots are JSON broadcasts only; Unreal does not render them yet.
 - No server-side combat messages.
