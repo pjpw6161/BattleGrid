@@ -24,7 +24,10 @@ public:
 		const FString& CombatMessage,
 		bool bShowCombatMessage,
 		bool bHasWon,
-		const FString& NetworkStatusText
+		const FString& NetworkStatusText,
+		float ServerPositionError,
+		bool bHasServerPositionError,
+		bool bUseServerCorrection
 	);
 
 private:

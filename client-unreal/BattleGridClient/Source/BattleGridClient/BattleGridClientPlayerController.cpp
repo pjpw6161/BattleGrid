@@ -52,9 +52,17 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bShowOwnServerGhost = true;
 	ServerToUnrealScale = 1.0f;
 	ServerGhostHeight = 100.0f;
+	bShowServerPositionError = true;
+	bUseServerPositionCorrection = false;
+	ServerCorrectionStrength = 8.0f;
+	ServerCorrectionSnapDistance = 500.0f;
 	ServerSnapshotOrigin = FVector::ZeroVector;
 	bServerSnapshotOriginInitialized = false;
 	LastProcessedSnapshotTick = 0;
+	LastServerPositionError = 0.0f;
+	LastOwnServerWorldLocation = FVector::ZeroVector;
+	bHasOwnServerWorldLocation = false;
+	LastServerPositionErrorLogSnapshotTick = 0;
 }
 
 float ABattleGridClientPlayerController::GetMaxPlayerHealth() const
@@ -249,6 +257,26 @@ int32 ABattleGridClientPlayerController::GetServerRoomId() const
 	return 0;
 }
 
+float ABattleGridClientPlayerController::GetLastServerPositionError() const
+{
+	return LastServerPositionError;
+}
+
+bool ABattleGridClientPlayerController::HasOwnServerWorldLocation() const
+{
+	return bHasOwnServerWorldLocation;
+}
+
+FVector ABattleGridClientPlayerController::GetLastOwnServerWorldLocation() const
+{
+	return LastOwnServerWorldLocation;
+}
+
+bool ABattleGridClientPlayerController::IsUsingServerPositionCorrection() const
+{
+	return bUseServerPositionCorrection;
+}
+
 void ABattleGridClientPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
@@ -402,6 +430,7 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 	UpdateAimRotation();
 	SendInputToServerIfNeeded();
 	UpdateServerGhostsFromSnapshot();
+	UpdateOwnServerPositionErrorAndCorrection(DeltaTime);
 }
 
 void ABattleGridClientPlayerController::MoveForward(const FInputActionValue& Value)
@@ -731,17 +760,11 @@ void ABattleGridClientPlayerController::UpdateServerGhostsFromSnapshot()
 			continue;
 		}
 
-		// The server uses logical 2D arena coordinates; this top-down template/camera
-		// orientation needs X/Y swapped for ghost visualization.
-		const float WorldX = PlayerSnapshot.Y * ServerToUnrealScale;
-		const float WorldY = PlayerSnapshot.X * ServerToUnrealScale;
-		const FVector WorldLocation =
-			ServerSnapshotOrigin
-			+ FVector(
-				WorldX,
-				WorldY,
-				ServerGhostHeight
-			);
+		const FVector WorldLocation = ConvertServerPositionToWorld(
+			PlayerSnapshot.X,
+			PlayerSnapshot.Y
+		);
+		const FVector WorldOffset = WorldLocation - ServerSnapshotOrigin;
 
 		if (SnapshotTick <= 5 || SnapshotTick % 60 == 0)
 		{
@@ -752,8 +775,8 @@ void ABattleGridClientPlayerController::UpdateServerGhostsFromSnapshot()
 				PlayerSnapshot.PlayerId,
 				PlayerSnapshot.X,
 				PlayerSnapshot.Y,
-				WorldX,
-				WorldY
+				WorldOffset.X,
+				WorldOffset.Y
 			);
 		}
 
@@ -797,4 +820,119 @@ void ABattleGridClientPlayerController::UpdateServerGhostsFromSnapshot()
 	}
 
 	LastProcessedSnapshotTick = SnapshotTick;
+}
+
+FVector ABattleGridClientPlayerController::ConvertServerPositionToWorld(
+	float ServerX,
+	float ServerY
+) const
+{
+	// The server uses logical 2D arena coordinates; this top-down template/camera
+	// orientation needs X/Y swapped for ghost visualization.
+	const float WorldX = ServerY * ServerToUnrealScale;
+	const float WorldY = ServerX * ServerToUnrealScale;
+
+	return ServerSnapshotOrigin + FVector(WorldX, WorldY, ServerGhostHeight);
+}
+
+void ABattleGridClientPlayerController::UpdateOwnServerPositionErrorAndCorrection(
+	float DeltaTime
+)
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	APawn* ControlledPawn = GetPawn();
+	if (!GameInstance || !ControlledPawn)
+	{
+		return;
+	}
+
+	UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	if (
+		!NetworkSubsystem
+		|| !NetworkSubsystem->IsConnected()
+		|| !NetworkSubsystem->HasJoined()
+	)
+	{
+		bHasOwnServerWorldLocation = false;
+		LastServerPositionError = 0.0f;
+		return;
+	}
+
+	const int32 LocalServerPlayerId = NetworkSubsystem->GetPlayerId();
+	if (LocalServerPlayerId <= 0)
+	{
+		bHasOwnServerWorldLocation = false;
+		LastServerPositionError = 0.0f;
+		return;
+	}
+
+	FBattleGridServerPlayerSnapshot OwnSnapshot;
+	if (!NetworkSubsystem->GetPlayerSnapshotById(LocalServerPlayerId, OwnSnapshot))
+	{
+		bHasOwnServerWorldLocation = false;
+		LastServerPositionError = 0.0f;
+		return;
+	}
+
+	const FVector ServerWorldLocation = ConvertServerPositionToWorld(
+		OwnSnapshot.X,
+		OwnSnapshot.Y
+	);
+
+	const FVector PawnLocation = ControlledPawn->GetActorLocation();
+	FVector ServerPawnLocation = ServerWorldLocation;
+	ServerPawnLocation.Z = PawnLocation.Z;
+
+	const FVector2D PawnLocation2D(PawnLocation.X, PawnLocation.Y);
+	const FVector2D ServerLocation2D(ServerPawnLocation.X, ServerPawnLocation.Y);
+	LastServerPositionError = FVector2D::Distance(PawnLocation2D, ServerLocation2D);
+	LastOwnServerWorldLocation = ServerPawnLocation;
+	bHasOwnServerWorldLocation = true;
+
+	const int32 SnapshotTick = NetworkSubsystem->GetLastSnapshotTick();
+	if (
+		SnapshotTick > 0
+		&& SnapshotTick != LastServerPositionErrorLogSnapshotTick
+		&& (SnapshotTick <= 5 || SnapshotTick % 60 == 0)
+	)
+	{
+		LastServerPositionErrorLogSnapshotTick = SnapshotTick;
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Server position error: %.1f"),
+			LastServerPositionError
+		);
+	}
+
+	if (
+		!bUseServerPositionCorrection
+		|| IsPlayerDead()
+		|| HasWon()
+	)
+	{
+		return;
+	}
+
+	FVector CorrectedLocation = PawnLocation;
+	if (LastServerPositionError > ServerCorrectionSnapDistance)
+	{
+		CorrectedLocation.X = ServerPawnLocation.X;
+		CorrectedLocation.Y = ServerPawnLocation.Y;
+	}
+	else
+	{
+		const FVector InterpolatedLocation = FMath::VInterpTo(
+			PawnLocation,
+			ServerPawnLocation,
+			DeltaTime,
+			FMath::Max(0.0f, ServerCorrectionStrength)
+		);
+		CorrectedLocation.X = InterpolatedLocation.X;
+		CorrectedLocation.Y = InterpolatedLocation.Y;
+	}
+	CorrectedLocation.Z = PawnLocation.Z;
+
+	ControlledPawn->SetActorLocation(CorrectedLocation);
 }

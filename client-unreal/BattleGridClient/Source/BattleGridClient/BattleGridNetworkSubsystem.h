@@ -63,6 +63,7 @@ public:
 	int32 GetLastSnapshotTick() const;
 	int32 GetLastSnapshotRoomId() const;
 	void GetLatestPlayerSnapshots(TArray<FBattleGridServerPlayerSnapshot>& OutSnapshots) const;
+	bool GetPlayerSnapshotById(int32 InPlayerId, FBattleGridServerPlayerSnapshot& OutSnapshot) const;
 
 private:
 	void HandleConnected();

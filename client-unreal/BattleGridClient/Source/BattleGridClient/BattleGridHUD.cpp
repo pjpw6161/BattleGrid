@@ -62,7 +62,11 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		BattleGridController->GetCombatMessage(),
 		BattleGridController->HasActiveCombatMessage(),
 		BattleGridController->HasWon(),
-		BattleGridController->GetNetworkStatusText()
+		BattleGridController->GetNetworkStatusText(),
+		BattleGridController->GetLastServerPositionError(),
+		BattleGridController->bShowServerPositionError
+			&& BattleGridController->HasOwnServerWorldLocation(),
+		BattleGridController->IsUsingServerPositionCorrection()
 	);
 }
 
@@ -132,11 +136,18 @@ void ABattleGridHUD::DrawHUD()
 
 	DrawText(
 		FString::Printf(
-			TEXT("%s | %s"),
+			TEXT("%s | %s | Error: %.1f | Correction: %s"),
 			BattleGridController->HasWon()
 				? TEXT("Victory! Press R to Restart")
 				: TEXT("WASD Move | Mouse Aim | LMB Fire"),
-			*BattleGridController->GetNetworkStatusText()
+			*BattleGridController->GetNetworkStatusText(),
+			BattleGridController->bShowServerPositionError
+				&& BattleGridController->HasOwnServerWorldLocation()
+					? BattleGridController->GetLastServerPositionError()
+					: 0.0f,
+			BattleGridController->IsUsingServerPositionCorrection()
+				? TEXT("On")
+				: TEXT("Off")
 		),
 		FLinearColor(0.8f, 0.9f, 1.0f, 1.0f),
 		HudX + 20.0f,

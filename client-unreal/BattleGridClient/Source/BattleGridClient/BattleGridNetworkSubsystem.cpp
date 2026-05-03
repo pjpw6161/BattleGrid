@@ -209,6 +209,21 @@ void UBattleGridNetworkSubsystem::GetLatestPlayerSnapshots(
 	LatestPlayerSnapshots.GenerateValueArray(OutSnapshots);
 }
 
+bool UBattleGridNetworkSubsystem::GetPlayerSnapshotById(
+	int32 InPlayerId,
+	FBattleGridServerPlayerSnapshot& OutSnapshot
+) const
+{
+	if (const FBattleGridServerPlayerSnapshot* PlayerSnapshot =
+		LatestPlayerSnapshots.Find(InPlayerId))
+	{
+		OutSnapshot = *PlayerSnapshot;
+		return true;
+	}
+
+	return false;
+}
+
 void UBattleGridNetworkSubsystem::HandleConnected()
 {
 	bIsConnected = true;

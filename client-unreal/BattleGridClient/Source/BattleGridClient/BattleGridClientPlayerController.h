@@ -40,6 +40,10 @@ public:
 	bool HasJoinedServer() const;
 	int32 GetServerPlayerId() const;
 	int32 GetServerRoomId() const;
+	float GetLastServerPositionError() const;
+	bool HasOwnServerWorldLocation() const;
+	FVector GetLastOwnServerWorldLocation() const;
+	bool IsUsingServerPositionCorrection() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputMappingContext> BattleGridMappingContext;
@@ -95,6 +99,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
 	float ServerGhostHeight;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	bool bShowServerPositionError;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	bool bUseServerPositionCorrection;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot", meta = (ClampMin = "0.0"))
+	float ServerCorrectionStrength;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot", meta = (ClampMin = "0.0"))
+	float ServerCorrectionSnapDistance;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -111,6 +127,8 @@ private:
 	void SendInputToServerIfNeeded();
 	void SendInputToServer(bool bForceSend);
 	void UpdateServerGhostsFromSnapshot();
+	FVector ConvertServerPositionToWorld(float ServerX, float ServerY) const;
+	void UpdateOwnServerPositionErrorAndCorrection(float DeltaTime);
 
 	float LastFireTime;
 	float MaxPlayerHealth;
@@ -135,4 +153,8 @@ private:
 	FVector ServerSnapshotOrigin;
 	bool bServerSnapshotOriginInitialized;
 	int32 LastProcessedSnapshotTick;
+	float LastServerPositionError;
+	FVector LastOwnServerWorldLocation;
+	bool bHasOwnServerWorldLocation;
+	int32 LastServerPositionErrorLogSnapshotTick;
 };

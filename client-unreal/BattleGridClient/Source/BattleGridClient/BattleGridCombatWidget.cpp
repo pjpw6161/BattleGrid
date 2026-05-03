@@ -13,7 +13,10 @@ void UBattleGridCombatWidget::UpdateHud(
 	const FString& CombatMessage,
 	bool bShowCombatMessage,
 	bool bHasWon,
-	const FString& NetworkStatusText
+	const FString& NetworkStatusText,
+	float ServerPositionError,
+	bool bHasServerPositionError,
+	bool bUseServerCorrection
 )
 {
 	const float HealthPercent = MaxHealth > 0.0f
@@ -64,7 +67,21 @@ void UBattleGridCombatWidget::UpdateHud(
 			? BaseControlsMessage
 			: FString::Printf(TEXT("%s | %s"), *BaseControlsMessage, *NetworkStatusText);
 
-		ControlsText->SetText(FText::FromString(ControlsMessage));
+		const FString CorrectionText = bUseServerCorrection ? TEXT("On") : TEXT("Off");
+		const FString FullControlsMessage = bHasServerPositionError
+			? FString::Printf(
+				TEXT("%s | Error: %.1f | Correction: %s"),
+				*ControlsMessage,
+				ServerPositionError,
+				*CorrectionText
+			)
+			: FString::Printf(
+				TEXT("%s | Correction: %s"),
+				*ControlsMessage,
+				*CorrectionText
+			);
+
+		ControlsText->SetText(FText::FromString(FullControlsMessage));
 	}
 
 	if (CrosshairText)
