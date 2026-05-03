@@ -1,6 +1,7 @@
 #include "net/WebSocketServer.h"
 
 #include "core/Logger.h"
+#include "game/RoomManager.h"
 #include "net/Session.h"
 
 #include <boost/asio/ip/address.hpp>
@@ -37,6 +38,7 @@ WebSocketServer::WebSocketServer(const ServerConfig& serverConfig)
     : config(serverConfig),
       ioContext(),
       acceptor(ioContext),
+      roomManager(std::make_shared<RoomManager>()),
       nextPlayerId(1)
 {
     boost::system::error_code error;
@@ -126,8 +128,16 @@ void WebSocketServer::HandleAccept(
         Logger::Info("Accepted WebSocket connection from " + EndpointToString(remoteEndpoint));
     }
 
-    const std::uint64_t playerId = nextPlayerId.fetch_add(1, std::memory_order_relaxed);
-    std::make_shared<Session>(std::move(socket), playerId)->Start();
+    auto allocatePlayerId = [this]()
+    {
+        return nextPlayerId.fetch_add(1, std::memory_order_relaxed);
+    };
+
+    std::make_shared<Session>(
+        std::move(socket),
+        roomManager,
+        std::move(allocatePlayerId)
+    )->Start();
 
     if (acceptor.is_open())
     {

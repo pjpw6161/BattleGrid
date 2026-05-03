@@ -25,6 +25,10 @@ add_executable(battlegrid-server
     src/config/ServerConfig.cpp
     src/server/GameServer.cpp
     src/game/GameLoop.cpp
+    src/game/PlayerInput.cpp
+    src/game/PlayerState.cpp
+    src/game/GameRoom.cpp
+    src/game/RoomManager.cpp
     src/net/WebSocketServer.cpp
     src/net/Session.cpp
     src/protocol/JsonProtocol.cpp

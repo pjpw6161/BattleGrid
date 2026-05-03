@@ -42,6 +42,7 @@ Server:
 ```
 
 If `nickname` is missing, not a string, or empty, the server uses `anonymous`.
+On the first `join` for a WebSocket session, the server allocates a `player_id` and creates a `PlayerState` in Room 1. Repeated `join` messages on the same session return the existing player state identity.
 
 ## Input
 
@@ -75,11 +76,48 @@ Server:
 ```json
 {
   "type": "input_ack",
-  "seq": 1
+  "seq": 1,
+  "player_id": 1
 }
 ```
 
-The server currently parses and logs input, then acknowledges the sequence. It does not simulate movement yet.
+The server requires the session to be joined before accepting input. `player_id` must match the joined session. Accepted input updates the player's latest `PlayerInput` in Room 1, then acknowledges the sequence. The server does not simulate movement yet.
+
+## Debug Room
+
+Client:
+
+```json
+{ "type": "debug_room" }
+```
+
+Server:
+
+```json
+{
+  "type": "room_state",
+  "room_id": 1,
+  "player_count": 1,
+  "players": [
+    {
+      "player_id": 1,
+      "room_id": 1,
+      "nickname": "player1",
+      "connected": true,
+      "latest_input": {
+        "seq": 1,
+        "move_x": 1.0,
+        "move_y": 0.0,
+        "aim_x": 0.7,
+        "aim_y": 0.2,
+        "fire": false
+      }
+    }
+  ]
+}
+```
+
+`debug_room` is for local browser testing only. It returns the current fixed room state and each player's latest stored input.
 
 ## Error
 
@@ -101,12 +139,30 @@ Unknown or missing message type:
 }
 ```
 
+Input before `join`:
+
+```json
+{
+  "type": "error",
+  "message": "not joined"
+}
+```
+
+Input with a mismatched `player_id`:
+
+```json
+{
+  "type": "error",
+  "message": "player_id mismatch"
+}
+```
+
 ## Current Limitations
 
 - `room_id` is fixed to `1`.
 - Player IDs are process-local and reset when the server restarts.
 - No authentication.
-- No room management.
+- No multiple-room management.
 - No game loop integration.
 - No server-side player movement simulation.
 - No server-side combat messages.

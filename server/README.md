@@ -17,9 +17,11 @@ It includes:
 - `ping` / `pong`
 - `join` / `join_ok`
 - `input` / `input_ack`
+- fixed Room 1 state with `PlayerState` and latest `PlayerInput`
+- `debug_room` / `room_state`
 - JSON error responses
 
-Rooms, game simulation, snapshots, damage, score, and respawn are not implemented yet.
+Multiple rooms, game simulation, snapshots, damage, score, and respawn are not implemented yet.
 
 ## Dependencies
 
@@ -66,6 +68,8 @@ Use the page buttons:
 - `Send Ping`
 - `Send Join`
 - `Send Input`
+- `Send Fire Input`
+- `Send Debug Room`
 - `Send Invalid JSON`
 - `Close`
 
@@ -74,7 +78,8 @@ Expected responses:
 ```json
 {"type":"pong"}
 {"type":"join_ok","player_id":1,"room_id":1,"nickname":"player1"}
-{"type":"input_ack","seq":1}
+{"type":"input_ack","seq":1,"player_id":1}
+{"type":"room_state","room_id":1,"player_count":1,"players":[...]}
 {"type":"error","message":"invalid json"}
 ```
 

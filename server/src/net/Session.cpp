@@ -1,6 +1,7 @@
 #include "net/Session.h"
 
 #include "core/Logger.h"
+#include "game/RoomManager.h"
 
 #include <boost/asio/buffer.hpp>
 #include <boost/beast/core.hpp>
@@ -24,12 +25,17 @@ std::string EndpointToString(const tcp::endpoint& endpoint)
 }
 }
 
-Session::Session(tcp::socket socket, std::uint64_t sessionPlayerId)
+Session::Session(
+    tcp::socket socket,
+    std::shared_ptr<RoomManager> inRoomManager,
+    std::function<std::uint64_t()> inAllocatePlayerId
+)
     : webSocket(std::move(socket)),
       buffer(),
       remoteEndpoint("unknown"),
-      playerId(sessionPlayerId),
-      dispatcher(sessionPlayerId),
+      sessionState(),
+      roomManager(std::move(inRoomManager)),
+      allocatePlayerId(std::move(inAllocatePlayerId)),
       outboundMessage()
 {
     boost::system::error_code error;
@@ -70,10 +76,7 @@ void Session::OnAccept(const boost::system::error_code& error)
         return;
     }
 
-    Logger::Info(
-        "WebSocket session connected: " + remoteEndpoint
-        + " player_id=" + std::to_string(playerId)
-    );
+    Logger::Info("WebSocket session connected: " + remoteEndpoint);
     Read();
 }
 
@@ -99,18 +102,21 @@ void Session::OnRead(
     if (error == websocket::error::closed)
     {
         Logger::Info("WebSocket session closed: " + remoteEndpoint);
+        HandleDisconnect();
         return;
     }
 
     if (error)
     {
         LogError("read", error);
+        HandleDisconnect();
         return;
     }
 
     const std::string message = beast::buffers_to_string(buffer.data());
     Logger::Info("Received raw message from " + remoteEndpoint + ": " + message);
 
+    MessageDispatcher dispatcher(sessionState, roomManager, allocatePlayerId);
     outboundMessage = dispatcher.Dispatch(message);
     buffer.consume(buffer.size());
 
@@ -136,17 +142,41 @@ void Session::OnWrite(
     if (error == websocket::error::closed)
     {
         Logger::Info("WebSocket session closed: " + remoteEndpoint);
+        HandleDisconnect();
         return;
     }
 
     if (error)
     {
         LogError("write", error);
+        HandleDisconnect();
         return;
     }
 
     outboundMessage.clear();
     Read();
+}
+
+void Session::HandleDisconnect()
+{
+    if (!sessionState.joined)
+    {
+        return;
+    }
+
+    if (roomManager)
+    {
+        if (std::shared_ptr<GameRoom> room = roomManager->GetDefaultRoom())
+        {
+            room->RemovePlayer(sessionState.playerId);
+        }
+    }
+
+    Logger::Info(
+        "Player disconnected player_id=" + std::to_string(sessionState.playerId)
+    );
+
+    sessionState.joined = false;
 }
 
 void Session::LogError(

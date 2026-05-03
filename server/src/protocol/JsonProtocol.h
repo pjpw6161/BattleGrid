@@ -21,6 +21,7 @@ public:
         std::uint64_t roomId,
         const std::string& nickname
     );
-    static std::string InputAck(std::int64_t sequence);
+    static std::string InputAck(std::uint64_t sequence, std::uint64_t playerId);
+    static std::string RoomState(const nlohmann::json& roomState);
 };
 }

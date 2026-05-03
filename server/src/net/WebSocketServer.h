@@ -7,9 +7,12 @@
 #include <boost/system/error_code.hpp>
 
 #include <atomic>
+#include <memory>
 
 namespace battlegrid
 {
+class RoomManager;
+
 class WebSocketServer
 {
 public:
@@ -32,6 +35,7 @@ private:
     ServerConfig config;
     boost::asio::io_context ioContext;
     boost::asio::ip::tcp::acceptor acceptor;
+    std::shared_ptr<RoomManager> roomManager;
     std::atomic_uint64_t nextPlayerId;
 };
 }

@@ -59,11 +59,24 @@ std::string JsonProtocol::JoinOk(
     return response.dump();
 }
 
-std::string JsonProtocol::InputAck(std::int64_t sequence)
+std::string JsonProtocol::InputAck(std::uint64_t sequence, std::uint64_t playerId)
 {
     nlohmann::ordered_json response;
     response["type"] = "input_ack";
     response["seq"] = sequence;
+    response["player_id"] = playerId;
+    return response.dump();
+}
+
+std::string JsonProtocol::RoomState(const nlohmann::json& roomState)
+{
+    nlohmann::ordered_json response;
+    response["type"] = "room_state";
+    response["room_id"] = roomState.value("room_id", 0);
+    response["player_count"] = roomState.value("player_count", 0);
+    response["players"] = roomState.contains("players")
+        ? roomState.at("players")
+        : nlohmann::json::array();
     return response.dump();
 }
 }

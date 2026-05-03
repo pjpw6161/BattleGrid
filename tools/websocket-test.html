@@ -36,6 +36,8 @@
     <button id="sendPing">Send Ping</button>
     <button id="sendJoin">Send Join</button>
     <button id="sendInput">Send Input</button>
+    <button id="sendFireInput">Send Fire Input</button>
+    <button id="sendDebugRoom">Send Debug Room</button>
     <button id="sendInvalid">Send Invalid JSON</button>
     <button id="close">Close</button>
   </div>
@@ -95,6 +97,23 @@
         aim_y: 0,
         fire: false
       }));
+    });
+
+    document.getElementById("sendFireInput").addEventListener("click", () => {
+      send(JSON.stringify({
+        type: "input",
+        seq: 2,
+        player_id: 1,
+        move_x: 0,
+        move_y: 0,
+        aim_x: 1,
+        aim_y: 0,
+        fire: true
+      }));
+    });
+
+    document.getElementById("sendDebugRoom").addEventListener("click", () => {
+      send(JSON.stringify({ type: "debug_room" }));
     });
 
     document.getElementById("sendInvalid").addEventListener("click", () => {

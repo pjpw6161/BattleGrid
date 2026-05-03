@@ -3,22 +3,41 @@
 #include <nlohmann/json.hpp>
 
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <string>
 
 namespace battlegrid
 {
+class RoomManager;
+
+struct SessionState
+{
+    std::uint64_t playerId = 0;
+    std::uint64_t roomId = 0;
+    std::string nickname;
+    bool joined = false;
+};
+
 class MessageDispatcher
 {
 public:
-    explicit MessageDispatcher(std::uint64_t playerId);
+    MessageDispatcher(
+        SessionState& sessionState,
+        std::shared_ptr<RoomManager> roomManager,
+        std::function<std::uint64_t()> allocatePlayerId
+    );
 
-    std::string Dispatch(const std::string& text) const;
+    std::string Dispatch(const std::string& text);
 
 private:
-    std::string DispatchParsedMessage(const nlohmann::json& message) const;
-    std::string HandleJoin(const nlohmann::json& message) const;
-    std::string HandleInput(const nlohmann::json& message) const;
+    std::string DispatchParsedMessage(const nlohmann::json& message);
+    std::string HandleJoin(const nlohmann::json& message);
+    std::string HandleInput(const nlohmann::json& message);
+    std::string HandleDebugRoom();
 
-    std::uint64_t playerId;
+    SessionState& sessionState;
+    std::shared_ptr<RoomManager> roomManager;
+    std::function<std::uint64_t()> allocatePlayerId;
 };
 }
