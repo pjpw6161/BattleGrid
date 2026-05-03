@@ -9,6 +9,33 @@
 class IWebSocket;
 class FJsonObject;
 
+USTRUCT(BlueprintType)
+struct BATTLEGRIDCLIENT_API FBattleGridServerPlayerSnapshot
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 PlayerId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	FString Nickname;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float X = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float Y = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 HP = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 Score = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 LastSeq = 0;
+};
+
 UCLASS()
 class BATTLEGRIDCLIENT_API UBattleGridNetworkSubsystem : public UGameInstanceSubsystem
 {
@@ -32,12 +59,17 @@ public:
 	FString GetLastServerMessage() const;
 	FString GetLastError() const;
 	FString GetConnectionStatusText() const;
+	bool HasSnapshot() const;
+	int32 GetLastSnapshotTick() const;
+	int32 GetLastSnapshotRoomId() const;
+	void GetLatestPlayerSnapshots(TArray<FBattleGridServerPlayerSnapshot>& OutSnapshots) const;
 
 private:
 	void HandleConnected();
 	void HandleConnectionError(const FString& Error);
 	void HandleClosed(int32 StatusCode, const FString& Reason, bool bWasClean);
 	void HandleMessage(const FString& Message);
+	void HandleSnapshotMessage(const TSharedPtr<FJsonObject>& JsonObject);
 	bool SendJsonObject(const TSharedRef<FJsonObject>& JsonObject, const TCHAR* LogLabel);
 
 private:
@@ -50,4 +82,7 @@ private:
 	int32 RoomId = 0;
 	FString LastServerMessage;
 	FString LastError;
+	int32 LastSnapshotTick = 0;
+	int32 LastSnapshotRoomId = 0;
+	TMap<int32, FBattleGridServerPlayerSnapshot> LatestPlayerSnapshots;
 };

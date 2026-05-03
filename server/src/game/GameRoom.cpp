@@ -1,7 +1,10 @@
 #include "game/GameRoom.h"
 
+#include "core/Logger.h"
+
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 #include <utility>
 
 namespace battlegrid
@@ -87,8 +90,6 @@ std::size_t GameRoom::GetPlayerCount() const
 
 void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
 {
-    static_cast<void>(tickNumber);
-
     std::lock_guard lock(mutex);
     for (auto& [playerId, player] : players)
     {
@@ -112,6 +113,18 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
         player.y += moveY * player.speed * deltaSeconds;
         player.x = std::clamp(player.x, ArenaMin, ArenaMax);
         player.y = std::clamp(player.y, ArenaMin, ArenaMax);
+
+        if (tickNumber % 60 == 0)
+        {
+            std::ostringstream logMessage;
+            logMessage
+                << "Player position player_id=" << player.playerId
+                << " x=" << player.x
+                << " y=" << player.y
+                << " move_x=" << moveX
+                << " move_y=" << moveY;
+            Logger::Info(logMessage.str());
+        }
     }
 }
 

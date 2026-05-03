@@ -3,6 +3,7 @@
 #include "BattleGridNetworkSubsystem.h"
 
 #include "Dom/JsonObject.h"
+#include "Dom/JsonValue.h"
 #include "IWebSocket.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
@@ -32,6 +33,9 @@ void UBattleGridNetworkSubsystem::Connect(const FString& InServerUrl, const FStr
 	bHasJoined = false;
 	LastServerMessage.Empty();
 	LastError.Empty();
+	LastSnapshotTick = 0;
+	LastSnapshotRoomId = 0;
+	LatestPlayerSnapshots.Empty();
 
 	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Connecting to server: %s"), *ServerUrl);
 
@@ -60,6 +64,9 @@ void UBattleGridNetworkSubsystem::Disconnect()
 
 	bIsConnected = false;
 	bHasJoined = false;
+	LastSnapshotTick = 0;
+	LastSnapshotRoomId = 0;
+	LatestPlayerSnapshots.Empty();
 }
 
 void UBattleGridNetworkSubsystem::SendPing()
@@ -153,6 +160,16 @@ FString UBattleGridNetworkSubsystem::GetConnectionStatusText() const
 {
 	if (bHasJoined)
 	{
+		if (HasSnapshot())
+		{
+			return FString::Printf(
+				TEXT("Server: Connected player=%d room=%d snapshot=%d"),
+				PlayerId,
+				RoomId,
+				LastSnapshotTick
+			);
+		}
+
 		return FString::Printf(TEXT("Server: Connected player=%d room=%d"), PlayerId, RoomId);
 	}
 
@@ -167,6 +184,29 @@ FString UBattleGridNetworkSubsystem::GetConnectionStatusText() const
 	}
 
 	return TEXT("Server: Disconnected");
+}
+
+bool UBattleGridNetworkSubsystem::HasSnapshot() const
+{
+	return LastSnapshotTick > 0;
+}
+
+int32 UBattleGridNetworkSubsystem::GetLastSnapshotTick() const
+{
+	return LastSnapshotTick;
+}
+
+int32 UBattleGridNetworkSubsystem::GetLastSnapshotRoomId() const
+{
+	return LastSnapshotRoomId;
+}
+
+void UBattleGridNetworkSubsystem::GetLatestPlayerSnapshots(
+	TArray<FBattleGridServerPlayerSnapshot>& OutSnapshots
+) const
+{
+	OutSnapshots.Reset();
+	LatestPlayerSnapshots.GenerateValueArray(OutSnapshots);
 }
 
 void UBattleGridNetworkSubsystem::HandleConnected()
@@ -198,6 +238,9 @@ void UBattleGridNetworkSubsystem::HandleClosed(
 {
 	bIsConnected = false;
 	bHasJoined = false;
+	LastSnapshotTick = 0;
+	LastSnapshotRoomId = 0;
+	LatestPlayerSnapshots.Empty();
 
 	UE_LOG(
 		LogTemp,
@@ -212,8 +255,6 @@ void UBattleGridNetworkSubsystem::HandleClosed(
 void UBattleGridNetworkSubsystem::HandleMessage(const FString& Message)
 {
 	LastServerMessage = Message;
-
-	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] WebSocket received raw message: %s"), *Message);
 
 	TSharedPtr<FJsonObject> JsonObject;
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Message);
@@ -230,6 +271,11 @@ void UBattleGridNetworkSubsystem::HandleMessage(const FString& Message)
 		LastError = TEXT("server message missing type");
 		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] Server message missing type."));
 		return;
+	}
+
+	if (Type != TEXT("snapshot"))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] WebSocket received raw message: %s"), *Message);
 	}
 
 	if (Type == TEXT("pong"))
@@ -289,7 +335,90 @@ void UBattleGridNetworkSubsystem::HandleMessage(const FString& Message)
 		return;
 	}
 
+	if (Type == TEXT("snapshot"))
+	{
+		HandleSnapshotMessage(JsonObject);
+		return;
+	}
+
 	UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] Unknown server message type: %s"), *Type);
+}
+
+void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonObject>& JsonObject)
+{
+	if (!JsonObject.IsValid())
+	{
+		return;
+	}
+
+	double SnapshotTickValue = 0.0;
+	double SnapshotRoomIdValue = 0.0;
+	JsonObject->TryGetNumberField(TEXT("tick"), SnapshotTickValue);
+	JsonObject->TryGetNumberField(TEXT("room_id"), SnapshotRoomIdValue);
+
+	const int32 SnapshotTick = static_cast<int32>(SnapshotTickValue);
+	const int32 SnapshotRoomId = static_cast<int32>(SnapshotRoomIdValue);
+
+	const TArray<TSharedPtr<FJsonValue>>* PlayersArray = nullptr;
+	if (!JsonObject->TryGetArrayField(TEXT("players"), PlayersArray))
+	{
+		return;
+	}
+
+	LatestPlayerSnapshots.Empty();
+
+	for (const TSharedPtr<FJsonValue>& PlayerValue : *PlayersArray)
+	{
+		const TSharedPtr<FJsonObject> PlayerObject =
+			PlayerValue.IsValid() ? PlayerValue->AsObject() : nullptr;
+		if (!PlayerObject.IsValid())
+		{
+			continue;
+		}
+
+		FBattleGridServerPlayerSnapshot PlayerSnapshot;
+		double PlayerIdValue = 0.0;
+		double XValue = 0.0;
+		double YValue = 0.0;
+		double HPValue = 0.0;
+		double ScoreValue = 0.0;
+		double LastSeqValue = 0.0;
+
+		PlayerObject->TryGetNumberField(TEXT("player_id"), PlayerIdValue);
+		PlayerObject->TryGetStringField(TEXT("nickname"), PlayerSnapshot.Nickname);
+		PlayerObject->TryGetNumberField(TEXT("x"), XValue);
+		PlayerObject->TryGetNumberField(TEXT("y"), YValue);
+		PlayerObject->TryGetNumberField(TEXT("hp"), HPValue);
+		PlayerObject->TryGetNumberField(TEXT("score"), ScoreValue);
+		PlayerObject->TryGetNumberField(TEXT("last_seq"), LastSeqValue);
+
+		PlayerSnapshot.PlayerId = static_cast<int32>(PlayerIdValue);
+		PlayerSnapshot.X = static_cast<float>(XValue);
+		PlayerSnapshot.Y = static_cast<float>(YValue);
+		PlayerSnapshot.HP = static_cast<int32>(HPValue);
+		PlayerSnapshot.Score = static_cast<int32>(ScoreValue);
+		PlayerSnapshot.LastSeq = static_cast<int32>(LastSeqValue);
+
+		if (PlayerSnapshot.PlayerId > 0)
+		{
+			LatestPlayerSnapshots.Add(PlayerSnapshot.PlayerId, PlayerSnapshot);
+		}
+	}
+
+	const bool bFirstSnapshot = LastSnapshotTick <= 0;
+	LastSnapshotTick = SnapshotTick;
+	LastSnapshotRoomId = SnapshotRoomId;
+
+	if (bFirstSnapshot || LastSnapshotTick % 30 == 0)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Snapshot received. tick=%d players=%d"),
+			LastSnapshotTick,
+			LatestPlayerSnapshots.Num()
+		);
+	}
 }
 
 bool UBattleGridNetworkSubsystem::SendJsonObject(

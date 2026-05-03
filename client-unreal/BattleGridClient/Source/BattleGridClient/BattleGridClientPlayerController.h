@@ -10,6 +10,7 @@
 class UInputMappingContext;
 class UInputAction;
 class ABattleGridProjectile;
+class ABattleGridServerGhostActor;
 struct FInputActionValue;
 
 UCLASS(Blueprintable, BlueprintType)
@@ -79,6 +80,21 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|Combat", meta = (ClampMin = "0.0"))
 	float FireCooldownSeconds;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	bool bShowServerGhosts;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	bool bShowOwnServerGhost;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	TSubclassOf<ABattleGridServerGhostActor> ServerGhostActorClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	float ServerToUnrealScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	float ServerGhostHeight;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -87,12 +103,14 @@ protected:
 private:
 	void MoveForward(const FInputActionValue& Value);
 	void MoveRight(const FInputActionValue& Value);
-	void StopMoveForward(const FInputActionValue& Value);
-	void StopMoveRight(const FInputActionValue& Value);
+	void MoveForwardReleased(const FInputActionValue& Value);
+	void MoveRightReleased(const FInputActionValue& Value);
 	void FireStarted(const FInputActionValue& Value);
 
 	void UpdateAimRotation();
 	void SendInputToServerIfNeeded();
+	void SendInputToServer(bool bForceSend);
+	void UpdateServerGhostsFromSnapshot();
 
 	float LastFireTime;
 	float MaxPlayerHealth;
@@ -112,4 +130,9 @@ private:
 	float LastSentAimX;
 	float LastSentAimY;
 	bool bHasLastSentInput;
+	UPROPERTY(Transient)
+	TMap<int32, TObjectPtr<ABattleGridServerGhostActor>> ServerGhostActors;
+	FVector ServerSnapshotOrigin;
+	bool bServerSnapshotOriginInitialized;
+	int32 LastProcessedSnapshotTick;
 };

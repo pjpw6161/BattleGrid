@@ -19,7 +19,7 @@ struct PlayerState
     bool connected = true;
     double x = 0.0;
     double y = 0.0;
-    double speed = 500.0;
+    double speed = 600.0;
     int hp = 100;
     int score = 0;
 };

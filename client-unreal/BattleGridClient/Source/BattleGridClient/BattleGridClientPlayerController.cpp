@@ -4,6 +4,7 @@
 
 #include "BattleGridNetworkSubsystem.h"
 #include "BattleGridProjectile.h"
+#include "BattleGridServerGhostActor.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/GameInstance.h"
@@ -47,6 +48,13 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	LastSentAimX = 0.0f;
 	LastSentAimY = 0.0f;
 	bHasLastSentInput = false;
+	bShowServerGhosts = true;
+	bShowOwnServerGhost = true;
+	ServerToUnrealScale = 1.0f;
+	ServerGhostHeight = 100.0f;
+	ServerSnapshotOrigin = FVector::ZeroVector;
+	bServerSnapshotOriginInitialized = false;
+	LastProcessedSnapshotTick = 0;
 }
 
 float ABattleGridClientPlayerController::GetMaxPlayerHealth() const
@@ -247,6 +255,16 @@ void ABattleGridClientPlayerController::BeginPlay()
 
 	bShowMouseCursor = true;
 
+	if (const APawn* ControlledPawn = GetPawn())
+	{
+		ServerSnapshotOrigin = ControlledPawn->GetActorLocation();
+	}
+	else
+	{
+		ServerSnapshotOrigin = FVector::ZeroVector;
+	}
+	bServerSnapshotOriginInitialized = true;
+
 	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
 	{
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
@@ -308,13 +326,13 @@ void ABattleGridClientPlayerController::SetupInputComponent()
 			MoveForwardAction,
 			ETriggerEvent::Completed,
 			this,
-			&ABattleGridClientPlayerController::StopMoveForward
+			&ABattleGridClientPlayerController::MoveForwardReleased
 		);
 		EnhancedInputComponent->BindAction(
 			MoveForwardAction,
 			ETriggerEvent::Canceled,
 			this,
-			&ABattleGridClientPlayerController::StopMoveForward
+			&ABattleGridClientPlayerController::MoveForwardReleased
 		);
 	}
 	else
@@ -334,13 +352,13 @@ void ABattleGridClientPlayerController::SetupInputComponent()
 			MoveRightAction,
 			ETriggerEvent::Completed,
 			this,
-			&ABattleGridClientPlayerController::StopMoveRight
+			&ABattleGridClientPlayerController::MoveRightReleased
 		);
 		EnhancedInputComponent->BindAction(
 			MoveRightAction,
 			ETriggerEvent::Canceled,
 			this,
-			&ABattleGridClientPlayerController::StopMoveRight
+			&ABattleGridClientPlayerController::MoveRightReleased
 		);
 	}
 	else
@@ -383,6 +401,7 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 
 	UpdateAimRotation();
 	SendInputToServerIfNeeded();
+	UpdateServerGhostsFromSnapshot();
 }
 
 void ABattleGridClientPlayerController::MoveForward(const FInputActionValue& Value)
@@ -431,18 +450,22 @@ void ABattleGridClientPlayerController::MoveRight(const FInputActionValue& Value
 	}
 }
 
-void ABattleGridClientPlayerController::StopMoveForward(const FInputActionValue& Value)
+void ABattleGridClientPlayerController::MoveForwardReleased(const FInputActionValue& Value)
 {
 	static_cast<void>(Value);
 
 	CurrentMoveForward = 0.0f;
+	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] MoveForward released."));
+	SendInputToServer(true);
 }
 
-void ABattleGridClientPlayerController::StopMoveRight(const FInputActionValue& Value)
+void ABattleGridClientPlayerController::MoveRightReleased(const FInputActionValue& Value)
 {
 	static_cast<void>(Value);
 
 	CurrentMoveRight = 0.0f;
+	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] MoveRight released."));
+	SendInputToServer(true);
 }
 
 void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Value)
@@ -463,6 +486,7 @@ void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Val
 	}
 
 	bPendingFireInput = true;
+	SendInputToServer(true);
 
 	const float CurrentTime = World->GetTimeSeconds();
 	const float CooldownSeconds = FMath::Max(0.0f, FireCooldownSeconds);
@@ -547,6 +571,11 @@ void ABattleGridClientPlayerController::UpdateAimRotation()
 
 void ABattleGridClientPlayerController::SendInputToServerIfNeeded()
 {
+	SendInputToServer(false);
+}
+
+void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
+{
 	if (IsPlayerDead() || HasWon())
 	{
 		CurrentMoveForward = 0.0f;
@@ -563,7 +592,7 @@ void ABattleGridClientPlayerController::SendInputToServerIfNeeded()
 
 	const float CurrentTime = World->GetTimeSeconds();
 	const float SendInterval = FMath::Max(0.0f, InputSendIntervalSeconds);
-	if (CurrentTime - LastInputSendTime < SendInterval)
+	if (!bForceSend && CurrentTime - LastInputSendTime < SendInterval)
 	{
 		return;
 	}
@@ -610,7 +639,13 @@ void ABattleGridClientPlayerController::SendInputToServerIfNeeded()
 		!bHasLastSentInput
 		|| FMath::Abs(AimX - LastSentAimX) > InputChangeThreshold
 		|| FMath::Abs(AimY - LastSentAimY) > InputChangeThreshold;
-	if (!bHasMovementInput && !bPendingFireInput && !bMovementChanged && !bAimChanged)
+	if (
+		!bForceSend
+		&& !bHasMovementInput
+		&& !bPendingFireInput
+		&& !bMovementChanged
+		&& !bAimChanged
+	)
 	{
 		return;
 	}
@@ -638,4 +673,128 @@ void ABattleGridClientPlayerController::SendInputToServerIfNeeded()
 	{
 		bPendingFireInput = false;
 	}
+}
+
+void ABattleGridClientPlayerController::UpdateServerGhostsFromSnapshot()
+{
+	if (!bShowServerGhosts)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!World || !GameInstance)
+	{
+		return;
+	}
+
+	UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	if (!NetworkSubsystem || !NetworkSubsystem->HasSnapshot())
+	{
+		return;
+	}
+
+	const int32 SnapshotTick = NetworkSubsystem->GetLastSnapshotTick();
+	if (SnapshotTick <= LastProcessedSnapshotTick)
+	{
+		return;
+	}
+
+	if (!bServerSnapshotOriginInitialized)
+	{
+		if (const APawn* ControlledPawn = GetPawn())
+		{
+			ServerSnapshotOrigin = ControlledPawn->GetActorLocation();
+		}
+		else
+		{
+			ServerSnapshotOrigin = FVector::ZeroVector;
+		}
+		bServerSnapshotOriginInitialized = true;
+	}
+
+	if (LastProcessedSnapshotTick == 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Processing snapshot tick=%d"), SnapshotTick);
+	}
+
+	TArray<FBattleGridServerPlayerSnapshot> PlayerSnapshots;
+	NetworkSubsystem->GetLatestPlayerSnapshots(PlayerSnapshots);
+
+	const int32 LocalServerPlayerId = NetworkSubsystem->GetPlayerId();
+	for (const FBattleGridServerPlayerSnapshot& PlayerSnapshot : PlayerSnapshots)
+	{
+		if (!bShowOwnServerGhost && PlayerSnapshot.PlayerId == LocalServerPlayerId)
+		{
+			continue;
+		}
+
+		// The server uses logical 2D arena coordinates; this top-down template/camera
+		// orientation needs X/Y swapped for ghost visualization.
+		const float WorldX = PlayerSnapshot.Y * ServerToUnrealScale;
+		const float WorldY = PlayerSnapshot.X * ServerToUnrealScale;
+		const FVector WorldLocation =
+			ServerSnapshotOrigin
+			+ FVector(
+				WorldX,
+				WorldY,
+				ServerGhostHeight
+			);
+
+		if (SnapshotTick <= 5 || SnapshotTick % 60 == 0)
+		{
+			UE_LOG(
+				LogTemp,
+				Log,
+				TEXT("[BattleGrid] ServerToWorld player_id=%d server=(%.1f,%.1f) world=(%.1f,%.1f)"),
+				PlayerSnapshot.PlayerId,
+				PlayerSnapshot.X,
+				PlayerSnapshot.Y,
+				WorldX,
+				WorldY
+			);
+		}
+
+		TObjectPtr<ABattleGridServerGhostActor>& GhostActor =
+			ServerGhostActors.FindOrAdd(PlayerSnapshot.PlayerId);
+		if (!GhostActor)
+		{
+			TSubclassOf<ABattleGridServerGhostActor> GhostClass = ServerGhostActorClass;
+			if (!GhostClass)
+			{
+				GhostClass = ABattleGridServerGhostActor::StaticClass();
+			}
+
+			FActorSpawnParameters SpawnParameters;
+			SpawnParameters.Owner = this;
+			SpawnParameters.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			GhostActor = World->SpawnActor<ABattleGridServerGhostActor>(
+				GhostClass,
+				WorldLocation,
+				FRotator::ZeroRotator,
+				SpawnParameters
+			);
+
+			if (GhostActor)
+			{
+				UE_LOG(
+					LogTemp,
+					Log,
+					TEXT("[BattleGrid] Spawned server ghost player_id=%d"),
+					PlayerSnapshot.PlayerId
+				);
+			}
+		}
+
+		if (GhostActor)
+		{
+			GhostActor->SetSnapshotData(PlayerSnapshot, WorldLocation);
+		}
+	}
+
+	LastProcessedSnapshotTick = SnapshotTick;
 }
