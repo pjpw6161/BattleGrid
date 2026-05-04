@@ -11,6 +11,7 @@ class UInputMappingContext;
 class UInputAction;
 class ABattleGridProjectile;
 class ABattleGridServerGhostActor;
+class ABattleGridServerProjectileGhostActor;
 struct FInputActionValue;
 
 UCLASS(Blueprintable, BlueprintType)
@@ -111,6 +112,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot", meta = (ClampMin = "0.0"))
 	float ServerCorrectionSnapDistance;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	bool bShowServerProjectileGhosts;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	TSubclassOf<ABattleGridServerProjectileGhostActor> ServerProjectileGhostActorClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	float ServerProjectileGhostHeight;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	float ServerAimSignX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	float ServerAimSignY;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -128,6 +144,10 @@ private:
 	void SendInputToServer(bool bForceSend);
 	void UpdateServerGhostsFromSnapshot();
 	FVector ConvertServerPositionToWorld(float ServerX, float ServerY) const;
+	FVector ConvertServerPositionToWorld(float ServerX, float ServerY, float WorldHeight) const;
+	FVector2D ConvertUnrealDirectionToServerDirection(const FVector& UnrealForward) const;
+	FVector2D ConvertServerDirectionToUnrealDirection(float ServerDirX, float ServerDirY) const;
+	void UpdateServerProjectileGhostsFromSnapshot();
 	void UpdateOwnServerPositionErrorAndCorrection(float DeltaTime);
 
 	float LastFireTime;
@@ -150,6 +170,8 @@ private:
 	bool bHasLastSentInput;
 	UPROPERTY(Transient)
 	TMap<int32, TObjectPtr<ABattleGridServerGhostActor>> ServerGhostActors;
+	UPROPERTY(Transient)
+	TMap<int32, TObjectPtr<ABattleGridServerProjectileGhostActor>> ServerProjectileGhostActors;
 	FVector ServerSnapshotOrigin;
 	bool bServerSnapshotOriginInitialized;
 	int32 LastProcessedSnapshotTick;

@@ -5,6 +5,7 @@
 #include "BattleGridNetworkSubsystem.h"
 #include "BattleGridProjectile.h"
 #include "BattleGridServerGhostActor.h"
+#include "BattleGridServerProjectileGhostActor.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/GameInstance.h"
@@ -56,6 +57,10 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bUseServerPositionCorrection = false;
 	ServerCorrectionStrength = 8.0f;
 	ServerCorrectionSnapDistance = 500.0f;
+	bShowServerProjectileGhosts = true;
+	ServerProjectileGhostHeight = 80.0f;
+	ServerAimSignX = 1.0f;
+	ServerAimSignY = 1.0f;
 	ServerSnapshotOrigin = FVector::ZeroVector;
 	bServerSnapshotOriginInitialized = false;
 	LastProcessedSnapshotTick = 0;
@@ -430,6 +435,7 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 	UpdateAimRotation();
 	SendInputToServerIfNeeded();
 	UpdateServerGhostsFromSnapshot();
+	UpdateServerProjectileGhostsFromSnapshot();
 	UpdateOwnServerPositionErrorAndCorrection(DeltaTime);
 }
 
@@ -646,17 +652,20 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 
 	float AimX = 0.0f;
 	float AimY = 0.0f;
+	FVector UnrealAimDirection = FVector::ForwardVector;
 	if (const APawn* ControlledPawn = GetPawn())
 	{
-		FVector AimDirection = ControlledPawn->GetActorForwardVector();
-		AimDirection.Z = 0.0f;
-		if (!AimDirection.Normalize())
+		UnrealAimDirection = ControlledPawn->GetActorForwardVector();
+		UnrealAimDirection.Z = 0.0f;
+		if (!UnrealAimDirection.Normalize())
 		{
-			AimDirection = FVector::ForwardVector;
+			UnrealAimDirection = FVector::ForwardVector;
 		}
 
-		AimX = AimDirection.X;
-		AimY = AimDirection.Y;
+		const FVector2D ServerAimDirection =
+			ConvertUnrealDirectionToServerDirection(UnrealAimDirection);
+		AimX = ServerAimDirection.X;
+		AimY = ServerAimDirection.Y;
 	}
 
 	constexpr float InputChangeThreshold = 0.01f;
@@ -682,6 +691,19 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 	const bool bFire = bPendingFireInput;
 	++InputSequence;
 	LastInputSendTime = CurrentTime;
+
+	if (bFire || InputSequence % 60 == 0)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Aim convert unreal=(%.2f,%.2f) server=(%.2f,%.2f)"),
+			UnrealAimDirection.X,
+			UnrealAimDirection.Y,
+			AimX,
+			AimY
+		);
+	}
 
 	NetworkSubsystem->SendInput(
 		InputSequence,
@@ -827,12 +849,184 @@ FVector ABattleGridClientPlayerController::ConvertServerPositionToWorld(
 	float ServerY
 ) const
 {
+	return ConvertServerPositionToWorld(ServerX, ServerY, ServerGhostHeight);
+}
+
+FVector ABattleGridClientPlayerController::ConvertServerPositionToWorld(
+	float ServerX,
+	float ServerY,
+	float WorldHeight
+) const
+{
 	// The server uses logical 2D arena coordinates; this top-down template/camera
 	// orientation needs X/Y swapped for ghost visualization.
 	const float WorldX = ServerY * ServerToUnrealScale;
 	const float WorldY = ServerX * ServerToUnrealScale;
 
-	return ServerSnapshotOrigin + FVector(WorldX, WorldY, ServerGhostHeight);
+	return ServerSnapshotOrigin + FVector(WorldX, WorldY, WorldHeight);
+}
+
+FVector2D ABattleGridClientPlayerController::ConvertUnrealDirectionToServerDirection(
+	const FVector& UnrealForward
+) const
+{
+	FVector NormalizedUnrealForward(UnrealForward.X, UnrealForward.Y, 0.0f);
+	if (!NormalizedUnrealForward.Normalize())
+	{
+		NormalizedUnrealForward = FVector::ForwardVector;
+	}
+
+	FVector2D ServerDirection(
+		NormalizedUnrealForward.Y * ServerAimSignX,
+		NormalizedUnrealForward.X * ServerAimSignY
+	);
+	if (!ServerDirection.Normalize())
+	{
+		ServerDirection = FVector2D(1.0f, 0.0f);
+	}
+
+	return ServerDirection;
+}
+
+FVector2D ABattleGridClientPlayerController::ConvertServerDirectionToUnrealDirection(
+	float ServerDirX,
+	float ServerDirY
+) const
+{
+	FVector2D UnrealDirection(ServerDirY, ServerDirX);
+	if (!UnrealDirection.Normalize())
+	{
+		UnrealDirection = FVector2D(1.0f, 0.0f);
+	}
+
+	return UnrealDirection;
+}
+
+void ABattleGridClientPlayerController::UpdateServerProjectileGhostsFromSnapshot()
+{
+	if (!bShowServerProjectileGhosts)
+	{
+		for (auto Iterator = ServerProjectileGhostActors.CreateIterator(); Iterator; ++Iterator)
+		{
+			if (Iterator.Value())
+			{
+				Iterator.Value()->Destroy();
+			}
+		}
+		ServerProjectileGhostActors.Empty();
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!World || !GameInstance)
+	{
+		return;
+	}
+
+	UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	if (!NetworkSubsystem || !NetworkSubsystem->HasSnapshot())
+	{
+		return;
+	}
+
+	if (!bServerSnapshotOriginInitialized)
+	{
+		if (const APawn* ControlledPawn = GetPawn())
+		{
+			ServerSnapshotOrigin = ControlledPawn->GetActorLocation();
+		}
+		else
+		{
+			ServerSnapshotOrigin = FVector::ZeroVector;
+		}
+		bServerSnapshotOriginInitialized = true;
+	}
+
+	TArray<FBattleGridServerProjectileSnapshot> ProjectileSnapshots;
+	NetworkSubsystem->GetLatestProjectileSnapshots(ProjectileSnapshots);
+
+	TSet<int32> ActiveProjectileIds;
+	for (const FBattleGridServerProjectileSnapshot& ProjectileSnapshot : ProjectileSnapshots)
+	{
+		if (ProjectileSnapshot.ProjectileId <= 0)
+		{
+			continue;
+		}
+
+		ActiveProjectileIds.Add(ProjectileSnapshot.ProjectileId);
+
+		const FVector WorldLocation = ConvertServerPositionToWorld(
+			ProjectileSnapshot.X,
+			ProjectileSnapshot.Y,
+			ServerProjectileGhostHeight
+		);
+		const FVector2D UnrealProjectileDirection =
+			ConvertServerDirectionToUnrealDirection(
+				ProjectileSnapshot.DirX,
+				ProjectileSnapshot.DirY
+			);
+
+		TObjectPtr<ABattleGridServerProjectileGhostActor>& GhostActor =
+			ServerProjectileGhostActors.FindOrAdd(ProjectileSnapshot.ProjectileId);
+		if (!GhostActor)
+		{
+			TSubclassOf<ABattleGridServerProjectileGhostActor> GhostClass =
+				ServerProjectileGhostActorClass;
+			if (!GhostClass)
+			{
+				GhostClass = ABattleGridServerProjectileGhostActor::StaticClass();
+			}
+
+			FActorSpawnParameters SpawnParameters;
+			SpawnParameters.Owner = this;
+			SpawnParameters.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			GhostActor = World->SpawnActor<ABattleGridServerProjectileGhostActor>(
+				GhostClass,
+				WorldLocation,
+				FRotator::ZeroRotator,
+				SpawnParameters
+			);
+
+			if (GhostActor)
+			{
+				UE_LOG(
+					LogTemp,
+					Log,
+					TEXT("[BattleGrid] Spawned server projectile ghost id=%d dir server=(%.2f,%.2f) unreal=(%.2f,%.2f)"),
+					ProjectileSnapshot.ProjectileId,
+					ProjectileSnapshot.DirX,
+					ProjectileSnapshot.DirY,
+					UnrealProjectileDirection.X,
+					UnrealProjectileDirection.Y
+				);
+			}
+		}
+
+		if (GhostActor)
+		{
+			GhostActor->SetSnapshotData(
+				ProjectileSnapshot,
+				WorldLocation,
+				FVector(UnrealProjectileDirection.X, UnrealProjectileDirection.Y, 0.0f)
+			);
+		}
+	}
+
+	for (auto Iterator = ServerProjectileGhostActors.CreateIterator(); Iterator; ++Iterator)
+	{
+		if (!Iterator.Value() || !ActiveProjectileIds.Contains(Iterator.Key()))
+		{
+			if (Iterator.Value())
+			{
+				Iterator.Value()->Destroy();
+			}
+			Iterator.RemoveCurrent();
+		}
+	}
 }
 
 void ABattleGridClientPlayerController::UpdateOwnServerPositionErrorAndCorrection(

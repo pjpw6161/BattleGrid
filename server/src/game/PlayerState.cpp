@@ -18,7 +18,8 @@ PlayerState::PlayerState(
       y(0.0),
       speed(600.0),
       hp(100),
-      score(0)
+      score(0),
+      lastProcessedFireSeq(0)
 {
 }
 }

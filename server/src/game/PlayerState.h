@@ -22,5 +22,6 @@ struct PlayerState
     double speed = 600.0;
     int hp = 100;
     int score = 0;
+    std::uint64_t lastProcessedFireSeq = 0;
 };
 }

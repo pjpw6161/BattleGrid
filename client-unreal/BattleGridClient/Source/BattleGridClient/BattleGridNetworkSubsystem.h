@@ -36,6 +36,30 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerPlayerSnapshot
 	int32 LastSeq = 0;
 };
 
+USTRUCT(BlueprintType)
+struct BATTLEGRIDCLIENT_API FBattleGridServerProjectileSnapshot
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 ProjectileId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 OwnerPlayerId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float X = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float Y = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float DirX = 1.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float DirY = 0.0f;
+};
+
 UCLASS()
 class BATTLEGRIDCLIENT_API UBattleGridNetworkSubsystem : public UGameInstanceSubsystem
 {
@@ -64,6 +88,7 @@ public:
 	int32 GetLastSnapshotRoomId() const;
 	void GetLatestPlayerSnapshots(TArray<FBattleGridServerPlayerSnapshot>& OutSnapshots) const;
 	bool GetPlayerSnapshotById(int32 InPlayerId, FBattleGridServerPlayerSnapshot& OutSnapshot) const;
+	void GetLatestProjectileSnapshots(TArray<FBattleGridServerProjectileSnapshot>& OutProjectiles) const;
 
 private:
 	void HandleConnected();
@@ -86,4 +111,5 @@ private:
 	int32 LastSnapshotTick = 0;
 	int32 LastSnapshotRoomId = 0;
 	TMap<int32, FBattleGridServerPlayerSnapshot> LatestPlayerSnapshots;
+	TMap<int32, FBattleGridServerProjectileSnapshot> LatestProjectileSnapshots;
 };

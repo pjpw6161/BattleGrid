@@ -74,8 +74,12 @@ std::string JsonProtocol::RoomState(const nlohmann::json& roomState)
     response["type"] = "room_state";
     response["room_id"] = roomState.value("room_id", 0);
     response["player_count"] = roomState.value("player_count", 0);
+    response["projectile_count"] = roomState.value("projectile_count", 0);
     response["players"] = roomState.contains("players")
         ? roomState.at("players")
+        : nlohmann::json::array();
+    response["projectiles"] = roomState.contains("projectiles")
+        ? roomState.at("projectiles")
         : nlohmann::json::array();
     return response.dump();
 }

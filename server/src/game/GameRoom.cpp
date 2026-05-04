@@ -13,6 +13,9 @@ namespace
 {
 constexpr double ArenaMin = -2000.0;
 constexpr double ArenaMax = 2000.0;
+constexpr double ProjectileArenaMin = -2500.0;
+constexpr double ProjectileArenaMax = 2500.0;
+constexpr double ProjectileSpawnForwardOffset = 50.0;
 
 nlohmann::json BuildPlayerSnapshotJson(const PlayerState& player)
 {
@@ -26,11 +29,25 @@ nlohmann::json BuildPlayerSnapshotJson(const PlayerState& player)
     playerJson["last_seq"] = player.latestInput.seq;
     return playerJson;
 }
+
+nlohmann::json BuildProjectileSnapshotJson(const ProjectileState& projectile)
+{
+    nlohmann::json projectileJson;
+    projectileJson["projectile_id"] = projectile.projectileId;
+    projectileJson["owner_player_id"] = projectile.ownerPlayerId;
+    projectileJson["x"] = projectile.x;
+    projectileJson["y"] = projectile.y;
+    projectileJson["dir_x"] = projectile.dirX;
+    projectileJson["dir_y"] = projectile.dirY;
+    return projectileJson;
+}
 }
 
 GameRoom::GameRoom(std::uint64_t inRoomId)
     : roomId(inRoomId),
       players(),
+      projectiles(),
+      nextProjectileId(1),
       mutex()
 {
 }
@@ -114,6 +131,19 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
         player.x = std::clamp(player.x, ArenaMin, ArenaMax);
         player.y = std::clamp(player.y, ArenaMin, ArenaMax);
 
+        if (
+            player.latestInput.fire
+            && player.latestInput.seq != player.lastProcessedFireSeq
+        )
+        {
+            SpawnProjectile(
+                player.playerId,
+                player.latestInput.aimX,
+                player.latestInput.aimY
+            );
+            player.lastProcessedFireSeq = player.latestInput.seq;
+        }
+
         if (tickNumber % 60 == 0)
         {
             std::ostringstream logMessage;
@@ -126,6 +156,9 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
             Logger::Info(logMessage.str());
         }
     }
+
+    UpdateProjectiles(deltaSeconds);
+    RemoveInactiveProjectiles();
 }
 
 nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
@@ -137,6 +170,7 @@ nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
     json["tick"] = tickNumber;
     json["room_id"] = roomId;
     json["players"] = nlohmann::json::array();
+    json["projectiles"] = nlohmann::json::array();
 
     for (const auto& [playerId, player] : players)
     {
@@ -150,6 +184,18 @@ nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
         json["players"].push_back(BuildPlayerSnapshotJson(player));
     }
 
+    for (const auto& [projectileId, projectile] : projectiles)
+    {
+        static_cast<void>(projectileId);
+
+        if (!projectile.active)
+        {
+            continue;
+        }
+
+        json["projectiles"].push_back(BuildProjectileSnapshotJson(projectile));
+    }
+
     return json;
 }
 
@@ -160,7 +206,9 @@ nlohmann::json GameRoom::ToDebugJson() const
     nlohmann::json json;
     json["room_id"] = roomId;
     json["player_count"] = players.size();
+    json["projectile_count"] = projectiles.size();
     json["players"] = nlohmann::json::array();
+    json["projectiles"] = nlohmann::json::array();
 
     for (const auto& [playerId, player] : players)
     {
@@ -189,6 +237,95 @@ nlohmann::json GameRoom::ToDebugJson() const
         json["players"].push_back(std::move(playerJson));
     }
 
+    for (const auto& [projectileId, projectile] : projectiles)
+    {
+        static_cast<void>(projectileId);
+
+        if (!projectile.active)
+        {
+            continue;
+        }
+
+        json["projectiles"].push_back(BuildProjectileSnapshotJson(projectile));
+    }
+
     return json;
+}
+
+void GameRoom::SpawnProjectile(
+    std::uint64_t ownerPlayerId,
+    double dirX,
+    double dirY
+)
+{
+    const auto owner = players.find(ownerPlayerId);
+    if (owner == players.end() || !owner->second.connected)
+    {
+        return;
+    }
+
+    ProjectileState projectile;
+    projectile.projectileId = nextProjectileId++;
+    projectile.ownerPlayerId = ownerPlayerId;
+    projectile.dirX = dirX;
+    projectile.dirY = dirY;
+    projectile.NormalizeDirection();
+    projectile.x = owner->second.x + (projectile.dirX * ProjectileSpawnForwardOffset);
+    projectile.y = owner->second.y + (projectile.dirY * ProjectileSpawnForwardOffset);
+
+    projectiles.emplace(projectile.projectileId, projectile);
+
+    std::ostringstream logMessage;
+    logMessage
+        << "Projectile spawned id=" << projectile.projectileId
+        << " owner=" << projectile.ownerPlayerId
+        << " x=" << projectile.x
+        << " y=" << projectile.y
+        << " dir_x=" << projectile.dirX
+        << " dir_y=" << projectile.dirY;
+    Logger::Info(logMessage.str());
+}
+
+void GameRoom::UpdateProjectiles(double deltaSeconds)
+{
+    for (auto& [projectileId, projectile] : projectiles)
+    {
+        static_cast<void>(projectileId);
+
+        if (!projectile.active)
+        {
+            continue;
+        }
+
+        projectile.x += projectile.dirX * projectile.speed * deltaSeconds;
+        projectile.y += projectile.dirY * projectile.speed * deltaSeconds;
+        projectile.ageSeconds += deltaSeconds;
+
+        if (
+            projectile.ageSeconds > projectile.maxLifetimeSeconds
+            || projectile.x < ProjectileArenaMin
+            || projectile.x > ProjectileArenaMax
+            || projectile.y < ProjectileArenaMin
+            || projectile.y > ProjectileArenaMax
+        )
+        {
+            projectile.active = false;
+        }
+    }
+}
+
+void GameRoom::RemoveInactiveProjectiles()
+{
+    for (auto iterator = projectiles.begin(); iterator != projectiles.end();)
+    {
+        if (!iterator->second.active)
+        {
+            iterator = projectiles.erase(iterator);
+        }
+        else
+        {
+            ++iterator;
+        }
+    }
 }
 }

@@ -102,11 +102,30 @@ Server broadcast:
       "score": 0,
       "last_seq": 10
     }
+  ],
+  "projectiles": [
+    {
+      "projectile_id": 1,
+      "owner_player_id": 1,
+      "x": 650.0,
+      "y": 0.0,
+      "dir_x": 1.0,
+      "dir_y": 0.0
+    }
   ]
 }
 ```
 
 Snapshots are sent to joined WebSocket sessions at the configured server tick rate. Current movement simulation is intentionally simple: latest input is treated as a continuous movement vector, normalized if its length is greater than 1, multiplied by player speed, and clamped to a `-2000..2000` arena on both axes.
+
+`projectiles` contains server-authoritative projectile visuals spawned from accepted `input` messages where `fire` is `true`. Projectile fields:
+
+- `projectile_id`: server-local projectile ID.
+- `owner_player_id`: player that fired the projectile.
+- `x`, `y`: server 2D arena position.
+- `dir_x`, `dir_y`: normalized projectile movement direction.
+
+Server projectiles currently move, expire after a short lifetime, and leave the snapshot when inactive. They do not apply damage or collision yet.
 
 ## Debug Room
 
@@ -123,6 +142,7 @@ Server:
   "type": "room_state",
   "room_id": 1,
   "player_count": 1,
+  "projectile_count": 1,
   "players": [
     {
       "player_id": 1,
@@ -131,7 +151,7 @@ Server:
       "connected": true,
       "x": 600.0,
       "y": 0.0,
-      "speed": 500.0,
+      "speed": 600.0,
       "hp": 100,
       "score": 0,
       "latest_input": {
@@ -142,6 +162,16 @@ Server:
         "aim_y": 0.2,
         "fire": false
       }
+    }
+  ],
+  "projectiles": [
+    {
+      "projectile_id": 1,
+      "owner_player_id": 1,
+      "x": 650.0,
+      "y": 0.0,
+      "dir_x": 1.0,
+      "dir_y": 0.0
     }
   ]
 }
@@ -194,5 +224,6 @@ Input with a mismatched `player_id`:
 - No authentication.
 - No multiple-room management.
 - Movement simulation only supports simple 2D position integration from latest input.
-- Snapshots are JSON broadcasts only; Unreal does not render them yet.
-- No server-side combat messages.
+- Server projectile simulation only covers spawn, movement, lifetime, and snapshot visualization.
+- Unreal renders server player and projectile snapshots as separate ghost actors; local gameplay remains offline.
+- No server-side projectile damage, collision, or combat messages.

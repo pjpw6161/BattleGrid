@@ -36,6 +36,7 @@ void UBattleGridNetworkSubsystem::Connect(const FString& InServerUrl, const FStr
 	LastSnapshotTick = 0;
 	LastSnapshotRoomId = 0;
 	LatestPlayerSnapshots.Empty();
+	LatestProjectileSnapshots.Empty();
 
 	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Connecting to server: %s"), *ServerUrl);
 
@@ -67,6 +68,7 @@ void UBattleGridNetworkSubsystem::Disconnect()
 	LastSnapshotTick = 0;
 	LastSnapshotRoomId = 0;
 	LatestPlayerSnapshots.Empty();
+	LatestProjectileSnapshots.Empty();
 }
 
 void UBattleGridNetworkSubsystem::SendPing()
@@ -224,6 +226,14 @@ bool UBattleGridNetworkSubsystem::GetPlayerSnapshotById(
 	return false;
 }
 
+void UBattleGridNetworkSubsystem::GetLatestProjectileSnapshots(
+	TArray<FBattleGridServerProjectileSnapshot>& OutProjectiles
+) const
+{
+	OutProjectiles.Reset();
+	LatestProjectileSnapshots.GenerateValueArray(OutProjectiles);
+}
+
 void UBattleGridNetworkSubsystem::HandleConnected()
 {
 	bIsConnected = true;
@@ -256,6 +266,7 @@ void UBattleGridNetworkSubsystem::HandleClosed(
 	LastSnapshotTick = 0;
 	LastSnapshotRoomId = 0;
 	LatestPlayerSnapshots.Empty();
+	LatestProjectileSnapshots.Empty();
 
 	UE_LOG(
 		LogTemp,
@@ -420,6 +431,51 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		}
 	}
 
+	LatestProjectileSnapshots.Empty();
+	const TArray<TSharedPtr<FJsonValue>>* ProjectilesArray = nullptr;
+	if (JsonObject->TryGetArrayField(TEXT("projectiles"), ProjectilesArray))
+	{
+		for (const TSharedPtr<FJsonValue>& ProjectileValue : *ProjectilesArray)
+		{
+			const TSharedPtr<FJsonObject> ProjectileObject =
+				ProjectileValue.IsValid() ? ProjectileValue->AsObject() : nullptr;
+			if (!ProjectileObject.IsValid())
+			{
+				continue;
+			}
+
+			FBattleGridServerProjectileSnapshot ProjectileSnapshot;
+			double ProjectileIdValue = 0.0;
+			double OwnerPlayerIdValue = 0.0;
+			double XValue = 0.0;
+			double YValue = 0.0;
+			double DirXValue = 1.0;
+			double DirYValue = 0.0;
+
+			ProjectileObject->TryGetNumberField(TEXT("projectile_id"), ProjectileIdValue);
+			ProjectileObject->TryGetNumberField(TEXT("owner_player_id"), OwnerPlayerIdValue);
+			ProjectileObject->TryGetNumberField(TEXT("x"), XValue);
+			ProjectileObject->TryGetNumberField(TEXT("y"), YValue);
+			ProjectileObject->TryGetNumberField(TEXT("dir_x"), DirXValue);
+			ProjectileObject->TryGetNumberField(TEXT("dir_y"), DirYValue);
+
+			ProjectileSnapshot.ProjectileId = static_cast<int32>(ProjectileIdValue);
+			ProjectileSnapshot.OwnerPlayerId = static_cast<int32>(OwnerPlayerIdValue);
+			ProjectileSnapshot.X = static_cast<float>(XValue);
+			ProjectileSnapshot.Y = static_cast<float>(YValue);
+			ProjectileSnapshot.DirX = static_cast<float>(DirXValue);
+			ProjectileSnapshot.DirY = static_cast<float>(DirYValue);
+
+			if (ProjectileSnapshot.ProjectileId > 0)
+			{
+				LatestProjectileSnapshots.Add(
+					ProjectileSnapshot.ProjectileId,
+					ProjectileSnapshot
+				);
+			}
+		}
+	}
+
 	const bool bFirstSnapshot = LastSnapshotTick <= 0;
 	LastSnapshotTick = SnapshotTick;
 	LastSnapshotRoomId = SnapshotRoomId;
@@ -432,6 +488,13 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			TEXT("[BattleGrid] Snapshot received. tick=%d players=%d"),
 			LastSnapshotTick,
 			LatestPlayerSnapshots.Num()
+		);
+
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Snapshot projectiles count=%d"),
+			LatestProjectileSnapshots.Num()
 		);
 	}
 }
