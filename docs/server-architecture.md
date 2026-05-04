@@ -15,10 +15,21 @@ The custom C++20 server currently accepts WebSocket JSON messages and stores min
 - `PlayerState`: server-side player identity, nickname, connection flag, latest input, position, HP, and score.
 - `PlayerInput`: latest client input packet fields for a player.
 - `ProjectileState`: server-side projectile ID, owner, position, direction, speed, age, lifetime, and active flag.
+- `TargetState`: fixed server-side target ID, position, HP, radius, and alive flag.
 
 ## Room Model
 
 `RoomManager` creates one default room with `room_id = 1`. This is intentionally fixed for the offline/network bring-up phase.
+
+`GameRoom` initializes five fixed server targets when the room is constructed:
+
+1. `(600, 0)`
+2. `(900, 300)`
+3. `(900, -300)`
+4. `(1200, 0)`
+5. `(1500, 400)`
+
+Each target starts with `100 / 100` HP, radius `80`, and `alive = true`.
 
 When a session sends `join`, the dispatcher:
 
@@ -52,7 +63,16 @@ On each tick:
 
 Movement is intentionally simple for now. The latest move vector is normalized if its length is greater than 1, applied at `PlayerState::speed`, then clamped to a square arena from `-2000` to `2000` on both axes.
 
-Projectile simulation is also intentionally simple. Projectiles spawn at the owning player's current `x` / `y`, offset slightly along the normalized aim direction, move at fixed speed, expire after their lifetime, and are removed when outside a `-2500` to `2500` square boundary. They do not collide or deal damage yet.
+Projectile simulation is also intentionally simple. Projectiles spawn at the owning player's current `x` / `y`, offset slightly along the normalized aim direction, move at fixed speed, expire after their lifetime, and are removed when outside a `-2500` to `2500` square boundary.
+
+After projectile movement, `GameRoom` checks each active projectile against each alive target using circular radius overlap. On hit:
+
+1. The target loses projectile damage.
+2. The projectile becomes inactive.
+3. If the target reaches 0 HP, it becomes dead.
+4. The projectile owner gains 1 server score.
+
+Target collision currently affects only fixed server targets. It does not affect Unreal-placed local target actors.
 
 ## Session Send Queue
 
@@ -62,12 +82,12 @@ This queue is used by both direct protocol responses and server-initiated snapsh
 
 ## Debugging
 
-`debug_room` returns the current Room 1 state as JSON, including all connected players, position fields, HP, score, latest stored input, and active projectiles. This is for browser testing only.
+`debug_room` returns the current Room 1 state as JSON, including all connected players, position fields, HP, score, latest stored input, active projectiles, and fixed server targets. This is for browser testing only.
 
 ## Current Limitations
 
 - Only one fixed room exists.
 - Player IDs reset when the process restarts.
 - Movement simulation is simple position integration, not validated against collisions or game rules.
-- Projectile simulation has no collision, damage, or ownership validation beyond the joined player input path.
-- There is no server-side score update, respawn, authentication, database, or multi-room matchmaking yet.
+- Target collision is server-side only and does not synchronize with Unreal-placed targets.
+- There is no target respawn, server-side player damage, respawn, authentication, database, or multi-room matchmaking yet.

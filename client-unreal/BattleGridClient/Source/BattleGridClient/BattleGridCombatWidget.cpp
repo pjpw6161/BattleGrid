@@ -10,6 +10,7 @@ void UBattleGridCombatWidget::UpdateHud(
 	float MaxHealth,
 	int32 Score,
 	int32 TargetScore,
+	int32 ServerScore,
 	const FString& CombatMessage,
 	bool bShowCombatMessage,
 	bool bHasWon,
@@ -19,6 +20,10 @@ void UBattleGridCombatWidget::UpdateHud(
 	bool bUseServerCorrection
 )
 {
+	static_cast<void>(ServerPositionError);
+	static_cast<void>(bHasServerPositionError);
+	static_cast<void>(bUseServerCorrection);
+
 	const float HealthPercent = MaxHealth > 0.0f
 		? FMath::Clamp(CurrentHealth / MaxHealth, 0.0f, 1.0f)
 		: 0.0f;
@@ -31,7 +36,7 @@ void UBattleGridCombatWidget::UpdateHud(
 	if (HealthText)
 	{
 		HealthText->SetText(FText::FromString(FString::Printf(
-			TEXT("HP: %.0f / %.0f"),
+			TEXT("Local HP: %.0f / %.0f"),
 			CurrentHealth,
 			MaxHealth
 		)));
@@ -40,9 +45,10 @@ void UBattleGridCombatWidget::UpdateHud(
 	if (ScoreText)
 	{
 		ScoreText->SetText(FText::FromString(FString::Printf(
-			TEXT("Score: %d / %d"),
+			TEXT("Local Score: %d / %d | Server Score: %d"),
 			Score,
-			TargetScore
+			TargetScore,
+			ServerScore
 		)));
 	}
 
@@ -62,24 +68,10 @@ void UBattleGridCombatWidget::UpdateHud(
 	{
 		const FString BaseControlsMessage = bHasWon
 			? FString(TEXT("Victory! Press R to Restart"))
-			: FString(TEXT("WASD Move | Mouse Aim | LMB Fire"));
-		const FString ControlsMessage = NetworkStatusText.IsEmpty()
+			: FString(TEXT("WASD Move | Mouse Aim | LMB Fire | R Restart"));
+		const FString FullControlsMessage = NetworkStatusText.IsEmpty()
 			? BaseControlsMessage
-			: FString::Printf(TEXT("%s | %s"), *BaseControlsMessage, *NetworkStatusText);
-
-		const FString CorrectionText = bUseServerCorrection ? TEXT("On") : TEXT("Off");
-		const FString FullControlsMessage = bHasServerPositionError
-			? FString::Printf(
-				TEXT("%s | Error: %.1f | Correction: %s"),
-				*ControlsMessage,
-				ServerPositionError,
-				*CorrectionText
-			)
-			: FString::Printf(
-				TEXT("%s | Correction: %s"),
-				*ControlsMessage,
-				*CorrectionText
-			);
+			: FString::Printf(TEXT("%s\n%s"), *BaseControlsMessage, *NetworkStatusText);
 
 		ControlsText->SetText(FText::FromString(FullControlsMessage));
 	}

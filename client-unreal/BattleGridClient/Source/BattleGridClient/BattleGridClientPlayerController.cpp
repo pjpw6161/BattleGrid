@@ -6,6 +6,7 @@
 #include "BattleGridProjectile.h"
 #include "BattleGridServerGhostActor.h"
 #include "BattleGridServerProjectileGhostActor.h"
+#include "BattleGridServerTargetGhostActor.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/GameInstance.h"
@@ -61,6 +62,8 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	ServerProjectileGhostHeight = 80.0f;
 	ServerAimSignX = 1.0f;
 	ServerAimSignY = 1.0f;
+	bShowServerTargetGhosts = true;
+	ServerTargetGhostHeight = 60.0f;
 	ServerSnapshotOrigin = FVector::ZeroVector;
 	bServerSnapshotOriginInitialized = false;
 	LastProcessedSnapshotTick = 0;
@@ -194,16 +197,42 @@ void ABattleGridClientPlayerController::RestartStarted(const FInputActionValue& 
 
 FString ABattleGridClientPlayerController::GetNetworkStatusText() const
 {
+	return GetDetailedNetworkStatusText();
+}
+
+FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
+{
 	if (const UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
 			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
 		{
-			return NetworkSubsystem->GetConnectionStatusText();
+			const FString CorrectionText = IsUsingServerPositionCorrection()
+				? FString(TEXT("On"))
+				: FString(TEXT("Off"));
+			const FString ServerSummary = NetworkSubsystem->GetServerSummaryText();
+
+			if (bShowServerPositionError && HasOwnServerWorldLocation())
+			{
+				return FString::Printf(
+					TEXT("%s | Error=%.1f | Correction=%s"),
+					*ServerSummary,
+					GetLastServerPositionError(),
+					*CorrectionText
+				);
+			}
+
+			return FString::Printf(
+				TEXT("%s | Correction=%s"),
+				*ServerSummary,
+				*CorrectionText
+			);
 		}
 	}
 
-	return TEXT("Server: Disconnected");
+	return IsUsingServerPositionCorrection()
+		? FString(TEXT("Server: Disconnected | Correction=On"))
+		: FString(TEXT("Server: Disconnected | Correction=Off"));
 }
 
 bool ABattleGridClientPlayerController::IsServerConnected() const
@@ -256,6 +285,62 @@ int32 ABattleGridClientPlayerController::GetServerRoomId() const
 			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
 		{
 			return NetworkSubsystem->GetRoomId();
+		}
+	}
+
+	return 0;
+}
+
+int32 ABattleGridClientPlayerController::GetOwnServerScore() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetOwnServerScore();
+		}
+	}
+
+	return 0;
+}
+
+int32 ABattleGridClientPlayerController::GetServerAliveTargetCount() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetServerAliveTargetCount();
+		}
+	}
+
+	return 0;
+}
+
+int32 ABattleGridClientPlayerController::GetServerTargetCount() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetServerTargetCount();
+		}
+	}
+
+	return 0;
+}
+
+int32 ABattleGridClientPlayerController::GetServerProjectileCount() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetServerProjectileCount();
 		}
 	}
 
@@ -436,6 +521,7 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 	SendInputToServerIfNeeded();
 	UpdateServerGhostsFromSnapshot();
 	UpdateServerProjectileGhostsFromSnapshot();
+	UpdateServerTargetGhostsFromSnapshot();
 	UpdateOwnServerPositionErrorAndCorrection(DeltaTime);
 }
 
@@ -1019,6 +1105,120 @@ void ABattleGridClientPlayerController::UpdateServerProjectileGhostsFromSnapshot
 	for (auto Iterator = ServerProjectileGhostActors.CreateIterator(); Iterator; ++Iterator)
 	{
 		if (!Iterator.Value() || !ActiveProjectileIds.Contains(Iterator.Key()))
+		{
+			if (Iterator.Value())
+			{
+				Iterator.Value()->Destroy();
+			}
+			Iterator.RemoveCurrent();
+		}
+	}
+}
+
+void ABattleGridClientPlayerController::UpdateServerTargetGhostsFromSnapshot()
+{
+	if (!bShowServerTargetGhosts)
+	{
+		for (auto Iterator = ServerTargetGhostActors.CreateIterator(); Iterator; ++Iterator)
+		{
+			if (Iterator.Value())
+			{
+				Iterator.Value()->Destroy();
+			}
+		}
+		ServerTargetGhostActors.Empty();
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!World || !GameInstance)
+	{
+		return;
+	}
+
+	UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	if (!NetworkSubsystem || !NetworkSubsystem->HasSnapshot())
+	{
+		return;
+	}
+
+	if (!bServerSnapshotOriginInitialized)
+	{
+		if (const APawn* ControlledPawn = GetPawn())
+		{
+			ServerSnapshotOrigin = ControlledPawn->GetActorLocation();
+		}
+		else
+		{
+			ServerSnapshotOrigin = FVector::ZeroVector;
+		}
+		bServerSnapshotOriginInitialized = true;
+	}
+
+	TArray<FBattleGridServerTargetSnapshot> TargetSnapshots;
+	NetworkSubsystem->GetLatestTargetSnapshots(TargetSnapshots);
+
+	TSet<int32> ActiveTargetIds;
+	for (const FBattleGridServerTargetSnapshot& TargetSnapshot : TargetSnapshots)
+	{
+		if (TargetSnapshot.TargetId <= 0)
+		{
+			continue;
+		}
+
+		ActiveTargetIds.Add(TargetSnapshot.TargetId);
+
+		const FVector WorldLocation = ConvertServerPositionToWorld(
+			TargetSnapshot.X,
+			TargetSnapshot.Y,
+			ServerTargetGhostHeight
+		);
+
+		TObjectPtr<ABattleGridServerTargetGhostActor>& GhostActor =
+			ServerTargetGhostActors.FindOrAdd(TargetSnapshot.TargetId);
+		if (!GhostActor)
+		{
+			TSubclassOf<ABattleGridServerTargetGhostActor> GhostClass =
+				ServerTargetGhostActorClass;
+			if (!GhostClass)
+			{
+				GhostClass = ABattleGridServerTargetGhostActor::StaticClass();
+			}
+
+			FActorSpawnParameters SpawnParameters;
+			SpawnParameters.Owner = this;
+			SpawnParameters.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			GhostActor = World->SpawnActor<ABattleGridServerTargetGhostActor>(
+				GhostClass,
+				WorldLocation,
+				FRotator::ZeroRotator,
+				SpawnParameters
+			);
+
+			if (GhostActor)
+			{
+				UE_LOG(
+					LogTemp,
+					Log,
+					TEXT("[BattleGrid] Spawned server target ghost id=%d"),
+					TargetSnapshot.TargetId
+				);
+			}
+		}
+
+		if (GhostActor)
+		{
+			GhostActor->SetSnapshotData(TargetSnapshot, WorldLocation);
+		}
+	}
+
+	for (auto Iterator = ServerTargetGhostActors.CreateIterator(); Iterator; ++Iterator)
+	{
+		if (!Iterator.Value() || !ActiveTargetIds.Contains(Iterator.Key()))
 		{
 			if (Iterator.Value())
 			{

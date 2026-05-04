@@ -3,6 +3,7 @@
 #include "game/PlayerInput.h"
 #include "game/PlayerState.h"
 #include "game/ProjectileState.h"
+#include "game/TargetState.h"
 
 #include <nlohmann/json.hpp>
 
@@ -30,14 +31,18 @@ public:
     nlohmann::json ToDebugJson() const;
 
 private:
+    void InitializeDefaultTargets() const;
     void SpawnProjectile(std::uint64_t ownerPlayerId, double dirX, double dirY);
     void UpdateProjectiles(double deltaSeconds);
+    void UpdateProjectileTargetCollisions();
     void RemoveInactiveProjectiles();
 
     std::uint64_t roomId;
     std::unordered_map<std::uint64_t, PlayerState> players;
     std::unordered_map<std::uint64_t, ProjectileState> projectiles;
+    mutable std::unordered_map<std::uint64_t, TargetState> targets;
     std::uint64_t nextProjectileId;
+    mutable bool targetsInitialized;
     mutable std::mutex mutex;
 };
 }

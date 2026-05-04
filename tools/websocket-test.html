@@ -105,12 +105,24 @@
             log(`joined player_id=${joinedPlayerId}`);
           } else if (message.type === "snapshot") {
             const projectiles = Array.isArray(message.projectiles) ? message.projectiles : [];
+            const targets = Array.isArray(message.targets) ? message.targets : [];
+            const players = Array.isArray(message.players) ? message.players : [];
+            const ownPlayer = players.find((player) => player.player_id === joinedPlayerId);
+            if (ownPlayer) {
+              log(`snapshot tick=${message.tick} player_score=${ownPlayer.score}`);
+            }
             if (projectiles.length > 0) {
               const latest = projectiles[projectiles.length - 1];
               log(
                 `snapshot tick=${message.tick} projectiles=${projectiles.length} ` +
                 `latest=(${latest.x.toFixed(1)}, ${latest.y.toFixed(1)})`
               );
+            }
+            if (targets.length > 0) {
+              const targetSummary = targets
+                .map((target) => `T${target.target_id}:${target.alive ? target.hp + "/" + target.max_hp : "DEAD"}`)
+                .join(" ");
+              log(`snapshot tick=${message.tick} targets=${targets.length} ${targetSummary}`);
             }
           }
         } catch {

@@ -41,15 +41,30 @@ nlohmann::json BuildProjectileSnapshotJson(const ProjectileState& projectile)
     projectileJson["dir_y"] = projectile.dirY;
     return projectileJson;
 }
+
+nlohmann::json BuildTargetSnapshotJson(const TargetState& target)
+{
+    nlohmann::json targetJson;
+    targetJson["target_id"] = target.targetId;
+    targetJson["x"] = target.x;
+    targetJson["y"] = target.y;
+    targetJson["hp"] = target.hp;
+    targetJson["max_hp"] = target.maxHp;
+    targetJson["alive"] = target.alive;
+    return targetJson;
+}
 }
 
 GameRoom::GameRoom(std::uint64_t inRoomId)
     : roomId(inRoomId),
       players(),
       projectiles(),
+      targets(),
       nextProjectileId(1),
+      targetsInitialized(false),
       mutex()
 {
+    InitializeDefaultTargets();
 }
 
 std::uint64_t GameRoom::GetRoomId() const
@@ -108,6 +123,8 @@ std::size_t GameRoom::GetPlayerCount() const
 void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
 {
     std::lock_guard lock(mutex);
+    InitializeDefaultTargets();
+
     for (auto& [playerId, player] : players)
     {
         static_cast<void>(playerId);
@@ -158,12 +175,14 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
     }
 
     UpdateProjectiles(deltaSeconds);
+    UpdateProjectileTargetCollisions();
     RemoveInactiveProjectiles();
 }
 
 nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
 {
     std::lock_guard lock(mutex);
+    InitializeDefaultTargets();
 
     nlohmann::json json;
     json["type"] = "snapshot";
@@ -171,6 +190,7 @@ nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
     json["room_id"] = roomId;
     json["players"] = nlohmann::json::array();
     json["projectiles"] = nlohmann::json::array();
+    json["targets"] = nlohmann::json::array();
 
     for (const auto& [playerId, player] : players)
     {
@@ -196,19 +216,28 @@ nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
         json["projectiles"].push_back(BuildProjectileSnapshotJson(projectile));
     }
 
+    for (const auto& [targetId, target] : targets)
+    {
+        static_cast<void>(targetId);
+        json["targets"].push_back(BuildTargetSnapshotJson(target));
+    }
+
     return json;
 }
 
 nlohmann::json GameRoom::ToDebugJson() const
 {
     std::lock_guard lock(mutex);
+    InitializeDefaultTargets();
 
     nlohmann::json json;
     json["room_id"] = roomId;
     json["player_count"] = players.size();
     json["projectile_count"] = projectiles.size();
+    json["target_count"] = targets.size();
     json["players"] = nlohmann::json::array();
     json["projectiles"] = nlohmann::json::array();
+    json["targets"] = nlohmann::json::array();
 
     for (const auto& [playerId, player] : players)
     {
@@ -249,7 +278,54 @@ nlohmann::json GameRoom::ToDebugJson() const
         json["projectiles"].push_back(BuildProjectileSnapshotJson(projectile));
     }
 
+    for (const auto& [targetId, target] : targets)
+    {
+        static_cast<void>(targetId);
+        json["targets"].push_back(BuildTargetSnapshotJson(target));
+    }
+
     return json;
+}
+
+void GameRoom::InitializeDefaultTargets() const
+{
+    if (targetsInitialized && !targets.empty())
+    {
+        return;
+    }
+
+    targets.clear();
+
+    struct TargetSpawn
+    {
+        std::uint64_t id;
+        double x;
+        double y;
+    };
+
+    const TargetSpawn targetSpawns[] = {
+        {1, 600.0, 0.0},
+        {2, 900.0, 300.0},
+        {3, 900.0, -300.0},
+        {4, 1200.0, 0.0},
+        {5, 1500.0, 400.0},
+    };
+
+    for (const TargetSpawn& spawn : targetSpawns)
+    {
+        TargetState target;
+        target.targetId = spawn.id;
+        target.x = spawn.x;
+        target.y = spawn.y;
+        target.hp = 100;
+        target.maxHp = 100;
+        target.radius = 80.0;
+        target.alive = true;
+        targets.emplace(target.targetId, target);
+    }
+
+    targetsInitialized = true;
+    Logger::Info("Initialized default server targets count=" + std::to_string(targets.size()));
 }
 
 void GameRoom::SpawnProjectile(
@@ -310,6 +386,66 @@ void GameRoom::UpdateProjectiles(double deltaSeconds)
         )
         {
             projectile.active = false;
+        }
+    }
+}
+
+void GameRoom::UpdateProjectileTargetCollisions()
+{
+    for (auto& [projectileId, projectile] : projectiles)
+    {
+        if (!projectile.active)
+        {
+            continue;
+        }
+
+        for (auto& [targetId, target] : targets)
+        {
+            if (!target.IsAlive())
+            {
+                continue;
+            }
+
+            const double deltaX = projectile.x - target.x;
+            const double deltaY = projectile.y - target.y;
+            const double collisionRadius = projectile.radius + target.radius;
+            const double distanceSquared = (deltaX * deltaX) + (deltaY * deltaY);
+
+            if (distanceSquared > collisionRadius * collisionRadius)
+            {
+                continue;
+            }
+
+            target.ApplyDamage(projectile.damage);
+            projectile.active = false;
+
+            std::ostringstream hitLogMessage;
+            hitLogMessage
+                << "Projectile hit target projectile_id=" << projectileId
+                << " target_id=" << targetId
+                << " hp=" << target.hp
+                << "/" << target.maxHp;
+            Logger::Info(hitLogMessage.str());
+
+            if (!target.IsAlive())
+            {
+                const auto owner = players.find(projectile.ownerPlayerId);
+                int score = 0;
+                if (owner != players.end())
+                {
+                    owner->second.score += 1;
+                    score = owner->second.score;
+                }
+
+                std::ostringstream destroyLogMessage;
+                destroyLogMessage
+                    << "Target destroyed target_id=" << targetId
+                    << " owner=" << projectile.ownerPlayerId
+                    << " score=" << score;
+                Logger::Info(destroyLogMessage.str());
+            }
+
+            break;
         }
     }
 }

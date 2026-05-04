@@ -21,6 +21,7 @@ public:
 		float MaxHealth,
 		int32 Score,
 		int32 TargetScore,
+		int32 ServerScore,
 		const FString& CombatMessage,
 		bool bShowCombatMessage,
 		bool bHasWon,

@@ -112,6 +112,16 @@ Server broadcast:
       "dir_x": 1.0,
       "dir_y": 0.0
     }
+  ],
+  "targets": [
+    {
+      "target_id": 1,
+      "x": 600.0,
+      "y": 0.0,
+      "hp": 80,
+      "max_hp": 100,
+      "alive": true
+    }
   ]
 }
 ```
@@ -125,7 +135,16 @@ Snapshots are sent to joined WebSocket sessions at the configured server tick ra
 - `x`, `y`: server 2D arena position.
 - `dir_x`, `dir_y`: normalized projectile movement direction.
 
-Server projectiles currently move, expire after a short lifetime, and leave the snapshot when inactive. They do not apply damage or collision yet.
+Server projectiles currently move, expire after a short lifetime, leave the snapshot when inactive, and apply damage only to fixed server targets.
+
+`targets` contains fixed server-authoritative targets for the current room. Target fields:
+
+- `target_id`: fixed target ID.
+- `x`, `y`: server 2D arena position.
+- `hp`, `max_hp`: target health.
+- `alive`: whether the target can still be damaged.
+
+Server projectiles collide with alive server targets. On hit, the projectile becomes inactive and the target loses projectile damage. When target HP reaches `0`, `alive` becomes `false` and the projectile owner gains `1` server score. Server targets are fixed test targets and are not synchronized with Unreal-placed local targets yet.
 
 ## Debug Room
 
@@ -143,6 +162,7 @@ Server:
   "room_id": 1,
   "player_count": 1,
   "projectile_count": 1,
+  "target_count": 5,
   "players": [
     {
       "player_id": 1,
@@ -172,6 +192,16 @@ Server:
       "y": 0.0,
       "dir_x": 1.0,
       "dir_y": 0.0
+    }
+  ],
+  "targets": [
+    {
+      "target_id": 1,
+      "x": 600.0,
+      "y": 0.0,
+      "hp": 80,
+      "max_hp": 100,
+      "alive": true
     }
   ]
 }
@@ -224,6 +254,7 @@ Input with a mismatched `player_id`:
 - No authentication.
 - No multiple-room management.
 - Movement simulation only supports simple 2D position integration from latest input.
-- Server projectile simulation only covers spawn, movement, lifetime, and snapshot visualization.
-- Unreal renders server player and projectile snapshots as separate ghost actors; local gameplay remains offline.
-- No server-side projectile damage, collision, or combat messages.
+- Server target simulation uses fixed room targets and does not synchronize with Unreal-placed target actors yet.
+- Server projectile simulation covers spawn, movement, lifetime, target collision, target HP, and server score.
+- Unreal renders server player, projectile, and target snapshots as separate ghost actors; local gameplay remains offline.
+- No server-side player damage, target respawn, or combat messages.

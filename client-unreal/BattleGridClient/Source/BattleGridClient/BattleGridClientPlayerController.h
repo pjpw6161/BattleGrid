@@ -12,6 +12,7 @@ class UInputAction;
 class ABattleGridProjectile;
 class ABattleGridServerGhostActor;
 class ABattleGridServerProjectileGhostActor;
+class ABattleGridServerTargetGhostActor;
 struct FInputActionValue;
 
 UCLASS(Blueprintable, BlueprintType)
@@ -37,10 +38,15 @@ public:
 	void RestartGame();
 	void RestartStarted(const FInputActionValue& Value);
 	FString GetNetworkStatusText() const;
+	FString GetDetailedNetworkStatusText() const;
 	bool IsServerConnected() const;
 	bool HasJoinedServer() const;
 	int32 GetServerPlayerId() const;
 	int32 GetServerRoomId() const;
+	int32 GetOwnServerScore() const;
+	int32 GetServerAliveTargetCount() const;
+	int32 GetServerTargetCount() const;
+	int32 GetServerProjectileCount() const;
 	float GetLastServerPositionError() const;
 	bool HasOwnServerWorldLocation() const;
 	FVector GetLastOwnServerWorldLocation() const;
@@ -127,6 +133,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
 	float ServerAimSignY;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	bool bShowServerTargetGhosts;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	TSubclassOf<ABattleGridServerTargetGhostActor> ServerTargetGhostActorClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	float ServerTargetGhostHeight;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -148,6 +163,7 @@ private:
 	FVector2D ConvertUnrealDirectionToServerDirection(const FVector& UnrealForward) const;
 	FVector2D ConvertServerDirectionToUnrealDirection(float ServerDirX, float ServerDirY) const;
 	void UpdateServerProjectileGhostsFromSnapshot();
+	void UpdateServerTargetGhostsFromSnapshot();
 	void UpdateOwnServerPositionErrorAndCorrection(float DeltaTime);
 
 	float LastFireTime;
@@ -172,6 +188,8 @@ private:
 	TMap<int32, TObjectPtr<ABattleGridServerGhostActor>> ServerGhostActors;
 	UPROPERTY(Transient)
 	TMap<int32, TObjectPtr<ABattleGridServerProjectileGhostActor>> ServerProjectileGhostActors;
+	UPROPERTY(Transient)
+	TMap<int32, TObjectPtr<ABattleGridServerTargetGhostActor>> ServerTargetGhostActors;
 	FVector ServerSnapshotOrigin;
 	bool bServerSnapshotOriginInitialized;
 	int32 LastProcessedSnapshotTick;

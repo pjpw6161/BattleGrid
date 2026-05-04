@@ -60,6 +60,30 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerProjectileSnapshot
 	float DirY = 0.0f;
 };
 
+USTRUCT(BlueprintType)
+struct BATTLEGRIDCLIENT_API FBattleGridServerTargetSnapshot
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 TargetId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float X = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float Y = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 HP = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 MaxHP = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	bool bAlive = false;
+};
+
 UCLASS()
 class BATTLEGRIDCLIENT_API UBattleGridNetworkSubsystem : public UGameInstanceSubsystem
 {
@@ -89,6 +113,14 @@ public:
 	void GetLatestPlayerSnapshots(TArray<FBattleGridServerPlayerSnapshot>& OutSnapshots) const;
 	bool GetPlayerSnapshotById(int32 InPlayerId, FBattleGridServerPlayerSnapshot& OutSnapshot) const;
 	void GetLatestProjectileSnapshots(TArray<FBattleGridServerProjectileSnapshot>& OutProjectiles) const;
+	void GetLatestTargetSnapshots(TArray<FBattleGridServerTargetSnapshot>& OutTargets) const;
+	int32 GetServerProjectileCount() const;
+	int32 GetServerTargetCount() const;
+	int32 GetServerAliveTargetCount() const;
+	bool GetOwnPlayerSnapshot(FBattleGridServerPlayerSnapshot& OutSnapshot) const;
+	int32 GetOwnServerScore() const;
+	int32 GetOwnServerHP() const;
+	FString GetServerSummaryText() const;
 
 private:
 	void HandleConnected();
@@ -112,4 +144,6 @@ private:
 	int32 LastSnapshotRoomId = 0;
 	TMap<int32, FBattleGridServerPlayerSnapshot> LatestPlayerSnapshots;
 	TMap<int32, FBattleGridServerProjectileSnapshot> LatestProjectileSnapshots;
+	TMap<int32, FBattleGridServerTargetSnapshot> LatestTargetSnapshots;
+	bool bHasLoggedServerSummary = false;
 };

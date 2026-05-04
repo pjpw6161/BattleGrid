@@ -59,10 +59,11 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		BattleGridController->GetMaxPlayerHealth(),
 		BattleGridController->GetScore(),
 		BattleGridController->GetTargetScore(),
+		BattleGridController->GetOwnServerScore(),
 		BattleGridController->GetCombatMessage(),
 		BattleGridController->HasActiveCombatMessage(),
 		BattleGridController->HasWon(),
-		BattleGridController->GetNetworkStatusText(),
+		BattleGridController->GetDetailedNetworkStatusText(),
 		BattleGridController->GetLastServerPositionError(),
 		BattleGridController->bShowServerPositionError
 			&& BattleGridController->HasOwnServerWorldLocation(),
@@ -110,7 +111,7 @@ void ABattleGridHUD::DrawHUD()
 
 	DrawText(
 		FString::Printf(
-			TEXT("HP: %.0f / %.0f"),
+			TEXT("Local HP: %.0f / %.0f"),
 			BattleGridController->GetCurrentPlayerHealth(),
 			BattleGridController->GetMaxPlayerHealth()
 		),
@@ -123,9 +124,10 @@ void ABattleGridHUD::DrawHUD()
 
 	DrawText(
 		FString::Printf(
-			TEXT("Score: %d / %d"),
+			TEXT("Local Score: %d / %d | Server Score: %d"),
 			BattleGridController->GetScore(),
-			BattleGridController->GetTargetScore()
+			BattleGridController->GetTargetScore(),
+			BattleGridController->GetOwnServerScore()
 		),
 		FLinearColor::White,
 		HudX + 20.0f,
@@ -136,18 +138,11 @@ void ABattleGridHUD::DrawHUD()
 
 	DrawText(
 		FString::Printf(
-			TEXT("%s | %s | Error: %.1f | Correction: %s"),
+			TEXT("%s | %s"),
 			BattleGridController->HasWon()
 				? TEXT("Victory! Press R to Restart")
-				: TEXT("WASD Move | Mouse Aim | LMB Fire"),
-			*BattleGridController->GetNetworkStatusText(),
-			BattleGridController->bShowServerPositionError
-				&& BattleGridController->HasOwnServerWorldLocation()
-					? BattleGridController->GetLastServerPositionError()
-					: 0.0f,
-			BattleGridController->IsUsingServerPositionCorrection()
-				? TEXT("On")
-				: TEXT("Off")
+				: TEXT("WASD Move | Mouse Aim | LMB Fire | R Restart"),
+			*BattleGridController->GetDetailedNetworkStatusText()
 		),
 		FLinearColor(0.8f, 0.9f, 1.0f, 1.0f),
 		HudX + 20.0f,
