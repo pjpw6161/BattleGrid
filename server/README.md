@@ -1,95 +1,92 @@
 # BattleGrid Server
 
-BattleGrid Server is the planned custom C++20 authoritative server for the BattleGrid arena shooter.
+BattleGrid Server is a custom C++20 WebSocket game server for the BattleGrid arena shooter portfolio project.
 
-## Current Status
+It currently supports local development and demo testing. It is not production-ready networking.
 
-This is the initial server skeleton with a Boost.Beast WebSocket JSON protocol server.
-It includes:
+## Implemented Features
 
-- CMake C++20 console application setup
-- command-line configuration parsing
-- simple standard-output logging
-- `GameServer` startup/shutdown structure
-- `GameLoop` placeholder structure
-- WebSocket listen/accept/session handling
-- JSON message parsing and dispatch
-- `ping` / `pong`
-- `join` / `join_ok`
-- `input` / `input_ack`
-- fixed Room 1 state with `PlayerState` and latest `PlayerInput`
-- fixed-rate game tick using `--tick-rate`
-- simple server-side 2D movement simulation
-- `snapshot` broadcasts to joined sessions
-- `debug_room` / `room_state`
-- JSON error responses
-
-Multiple rooms, projectile simulation, collision, damage, score updates, and respawn are not implemented yet.
+- CMake C++20 console application.
+- Command-line config parsing.
+- Simple logging.
+- Boost.Beast WebSocket listen/accept/session handling.
+- JSON protocol with nlohmann-json.
+- `ping` / `pong`.
+- `join` / `join_ok`.
+- `input` / `input_ack`.
+- `debug_room` / `room_state`.
+- Fixed Room 1.
+- Player ID allocation.
+- `PlayerState` and latest `PlayerInput`.
+- Fixed-rate server tick using `--tick-rate`.
+- Server-side 2D player movement.
+- Snapshot broadcasts to joined sessions.
+- Server projectile spawn, movement, lifetime, and snapshot state.
+- Fixed server targets.
+- Projectile-target collision.
+- Server target HP.
+- Server score when targets are destroyed.
+- Async session send queue for responses and snapshots.
 
 ## Dependencies
 
-Install Boost.Beast, Boost.System, and nlohmann-json with vcpkg:
+Install vcpkg packages:
 
 ```powershell
 C:\tools\vcpkg\vcpkg.exe install boost-beast:x64-windows boost-system:x64-windows nlohmann-json:x64-windows
 ```
 
-The server also includes `server/vcpkg.json`, so the vcpkg toolchain can restore these dependencies during CMake configure.
+The repository also includes `server/vcpkg.json`, so vcpkg manifest mode can restore dependencies during CMake configure when the vcpkg toolchain is used.
 
-## Build on Windows PowerShell
+## Configure
 
 From the repository root:
 
 ```powershell
 cmake -S server -B server/build -DCMAKE_TOOLCHAIN_FILE=C:/tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+```
+
+## Build
+
+```powershell
 cmake --build server/build --config Debug
 ```
 
 ## Run
 
 ```powershell
-.\server\build\Debug\battlegrid-server.exe --host 0.0.0.0 --port 7777 --tick-rate 30
+.\server\build\Debug\battlegrid-server.exe --host 127.0.0.1 --port 7777 --tick-rate 30
 ```
 
-For help:
+Help:
 
 ```powershell
 .\server\build\Debug\battlegrid-server.exe --help
 ```
 
-## Test WebSocket JSON Protocol
+## WebSocket Browser Test
 
-Start the server, then open:
+1. Start the server.
+2. Open `tools/websocket-test.html`.
+3. Click `Connect`.
+4. Click `Send Ping`.
+5. Click `Send Join`.
+6. Click `Send Debug Room`.
+7. Click `Start Moving Right`.
+8. Click `Send Fire Input`.
+9. Watch snapshots for players, projectiles, targets, target HP, and score.
 
-```text
-tools/websocket-test.html
-```
-
-Use the page buttons:
-
-- `Connect`
-- `Send Ping`
-- `Send Join`
-- `Send Input`
-- `Send Fire Input`
-- `Start Moving Right`
-- `Stop Moving`
-- `Send Debug Room`
-- `Send Invalid JSON`
-- `Close`
-
-Expected responses:
+Expected response examples:
 
 ```json
 {"type":"pong"}
 {"type":"join_ok","player_id":1,"room_id":1,"nickname":"player1"}
 {"type":"input_ack","seq":1,"player_id":1}
-{"type":"snapshot","tick":1,"room_id":1,"players":[...]}
-{"type":"room_state","room_id":1,"player_count":1,"players":[...]}
-{"type":"error","message":"invalid json"}
+{"type":"snapshot","tick":1,"room_id":1,"players":[...],"projectiles":[...],"targets":[...]}
+{"type":"room_state","room_id":1,"player_count":1,"projectile_count":0,"target_count":5}
 ```
 
-You can also test from PowerShell:
+## PowerShell Ping Test
 
 ```powershell
 $ws = [System.Net.WebSockets.ClientWebSocket]::new()
@@ -104,12 +101,29 @@ $result = $ws.ReceiveAsync([ArraySegment[byte]]::new($buffer), $ct).GetAwaiter()
 $ws.Dispose()
 ```
 
-Expected PowerShell output:
+Expected:
 
 ```json
 {"type":"pong"}
 ```
 
-## Next Planned Step
+## Current Limitations
 
-Add movement validation and authoritative gameplay rules.
+- Fixed single room.
+- Player IDs reset on server restart.
+- No authentication.
+- No database.
+- No binary protocol.
+- No server-side player damage.
+- No target respawn.
+- No deployment automation.
+- No bot benchmark yet.
+- Unreal local targets and server targets are separate layers.
+
+## Next Planned Work
+
+- Dockerize the server.
+- Deploy to GCP.
+- Add bot client and benchmark scripts.
+- Add server-side player damage and respawn.
+- Improve reconciliation and eventually replace local-only combat with server-authoritative state.

@@ -1,0 +1,128 @@
+# Troubleshooting
+
+## `cmake` Not Found
+
+Install CMake and ensure it is on `PATH`.
+
+Verify:
+
+```powershell
+cmake --version
+```
+
+## Server Executable Not Found
+
+Build the server first:
+
+```powershell
+cmake -S server -B server/build -DCMAKE_TOOLCHAIN_FILE=C:/tools/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build server/build --config Debug
+```
+
+Then run:
+
+```powershell
+.\server\build\Debug\battlegrid-server.exe --host 127.0.0.1 --port 7777 --tick-rate 30
+```
+
+## Port 7777 Already In Use
+
+An old server process may still be running. Close the terminal running it, stop the process in Task Manager, or run the server on another port:
+
+```powershell
+.\server\build\Debug\battlegrid-server.exe --port 7788
+```
+
+If the port changes, update the Unreal PlayerController `ServerUrl`.
+
+## Browser WebSocket CSP Error
+
+Do not test WebSockets from `chrome://` pages or other restricted browser pages. Open `tools/websocket-test.html` directly or serve it from a normal local web page.
+
+## Unreal WebSocket Connection Fails
+
+Check:
+
+- The C++ server is running.
+- The server URL is `ws://127.0.0.1:7777`.
+- Windows firewall is not blocking the process.
+- `BattleGridClient.Build.cs` includes `WebSockets`, `Json`, and `JsonUtilities`.
+- The Output Log contains either connected, closed, or connection error messages.
+
+## Blueprint Class Variables Not Visible
+
+Check:
+
+- The C++ class uses `UCLASS(Blueprintable)` where needed.
+- Properties use `UPROPERTY` with `EditDefaultsOnly` or `EditAnywhere`.
+- The project was rebuilt in Visual Studio.
+- Unreal Editor was restarted if hot reload did not refresh metadata.
+- The Blueprint parent class is the expected C++ class.
+- In stubborn cases, recreate the Blueprint from the updated C++ parent.
+
+## New C++ Files Not Visible In Visual Studio
+
+Regenerate project files from the `.uproject` context menu or Unreal Editor project tools, then reopen the solution.
+
+## Actor Overlap Works But Damage Does Not Apply
+
+Check:
+
+- The overlapping actor is the expected character class.
+- The damage path calls `UGameplayStatics::ApplyDamage`.
+- The target/character overrides `TakeDamage`.
+- Logs show `TakeDamage` and health before/after.
+- Collision presets allow overlap or hit events as expected.
+
+## Hazard Overlap Fires But Player HP Does Not Decrease
+
+Check:
+
+- The active pawn derives from `ABattleGridClientCharacter`.
+- `ABattleGridHazardActor` logs actor-level overlap.
+- `TryDamageActor` logs a successful cast.
+- `ABattleGridClientCharacter::TakeDamage` logs damage.
+- `UBattleGridHealthComponent::ApplyDamage` logs HP before and after.
+
+## Ghost Direction Is Wrong
+
+The server uses logical 2D arena coordinates. The Unreal top-down template currently swaps axes for visualization:
+
+```text
+WorldX = ServerY
+WorldY = ServerX
+```
+
+If projectile direction is mirrored, check `ServerAimSignX` and `ServerAimSignY` on the PlayerController.
+
+## Ghost Movement Speed Mismatch
+
+Check:
+
+- Movement release events are bound to `Completed` and `Canceled`.
+- Unreal sends immediate zero input on release.
+- Server player speed is close to Unreal CharacterMovement speed.
+- Ghost interpolation speed is high enough for debugging.
+- Optional snap mode is enabled on ghost actors only when needed.
+
+## Targets Missing From Snapshot
+
+Check:
+
+- `TargetState.cpp` is listed in `server/CMakeLists.txt`.
+- `GameRoom` initializes default targets.
+- `BuildSnapshotJson` always emits `targets`.
+- `debug_room` includes `target_count` and `targets`.
+- The running server process is the rebuilt executable, not an old process.
+
+Expected snapshot field:
+
+```json
+"targets": [
+  { "target_id": 1, "x": 600.0, "y": 0.0, "hp": 100, "max_hp": 100, "alive": true }
+]
+```
+
+## `server/build` Should Not Be Committed
+
+`server/build` is generated output. Do not commit it. Keep generated build directories, Unreal `Binaries`, `Intermediate`, `Saved`, and `DerivedDataCache` out of source control.

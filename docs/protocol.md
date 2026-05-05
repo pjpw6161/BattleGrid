@@ -1,36 +1,35 @@
-# BattleGrid WebSocket Protocol
+# BattleGrid WebSocket JSON Protocol
 
-BattleGrid currently uses a small JSON-over-WebSocket protocol for local server testing.
+BattleGrid currently uses UTF-8 JSON text frames over WebSocket for local client/server testing.
 
 ## Transport
 
-- WebSocket endpoint: `ws://127.0.0.1:7777`
-- Messages are UTF-8 JSON text frames.
-- Binary messages are not part of the protocol yet.
+- Default endpoint: `ws://127.0.0.1:7777`
+- Transport: WebSocket
+- Payload: compact JSON text
+- Binary protocol: not implemented yet
 
-## Ping
+## Client To Server Messages
 
-Client:
+### `ping`
 
 ```json
 { "type": "ping" }
 ```
 
-Server:
+Expected response:
 
 ```json
 { "type": "pong" }
 ```
 
-## Join
-
-Client:
+### `join`
 
 ```json
 { "type": "join", "nickname": "player1" }
 ```
 
-Server:
+Expected response:
 
 ```json
 {
@@ -41,12 +40,13 @@ Server:
 }
 ```
 
-If `nickname` is missing, not a string, or empty, the server uses `anonymous`.
-On the first `join` for a WebSocket session, the server allocates a `player_id` and creates a `PlayerState` in Room 1. Repeated `join` messages on the same session return the existing player state identity.
+Rules:
 
-## Input
+- If nickname is missing, empty, or not a string, the server uses `anonymous`.
+- The first join on a WebSocket session creates `PlayerState` in Room 1.
+- Repeated join messages on the same session return the existing identity.
 
-Client:
+### `input`
 
 ```json
 {
@@ -55,8 +55,8 @@ Client:
   "player_id": 1,
   "move_x": 1.0,
   "move_y": 0.0,
-  "aim_x": 0.7,
-  "aim_y": 0.2,
+  "aim_x": 1.0,
+  "aim_y": 0.0,
   "fire": false
 }
 ```
@@ -64,14 +64,14 @@ Client:
 Fields:
 
 - `seq`: client input sequence number.
-- `player_id`: player ID assigned by `join_ok`.
-- `move_x`: local right movement axis.
-- `move_y`: local forward movement axis.
-- `aim_x`: normalized aim direction X.
-- `aim_y`: normalized aim direction Y.
-- `fire`: whether a fire input occurred on this input packet.
+- `player_id`: ID assigned by `join_ok`.
+- `move_x`: server logical X movement axis.
+- `move_y`: server logical Y movement axis.
+- `aim_x`: server logical X aim direction.
+- `aim_y`: server logical Y aim direction.
+- `fire`: true when a fire input occurred on this packet.
 
-Server:
+Expected response:
 
 ```json
 {
@@ -81,80 +81,66 @@ Server:
 }
 ```
 
-The server requires the session to be joined before accepting input. `player_id` must match the joined session. Accepted input updates the player's latest `PlayerInput` in Room 1, then acknowledges the sequence. The fixed-rate server tick uses the latest movement axes to calculate authoritative `x` / `y` positions.
+Rules:
 
-## Snapshot
+- The session must be joined.
+- Message `player_id` must match the joined session.
+- Accepted input replaces the player's latest stored `PlayerInput`.
+- Fire input spawns one projectile during the server tick when the sequence has not already been processed.
 
-Server broadcast:
-
-```json
-{
-  "type": "snapshot",
-  "tick": 30,
-  "room_id": 1,
-  "players": [
-    {
-      "player_id": 1,
-      "nickname": "player1",
-      "x": 600.0,
-      "y": 0.0,
-      "hp": 100,
-      "score": 0,
-      "last_seq": 10
-    }
-  ],
-  "projectiles": [
-    {
-      "projectile_id": 1,
-      "owner_player_id": 1,
-      "x": 650.0,
-      "y": 0.0,
-      "dir_x": 1.0,
-      "dir_y": 0.0
-    }
-  ],
-  "targets": [
-    {
-      "target_id": 1,
-      "x": 600.0,
-      "y": 0.0,
-      "hp": 80,
-      "max_hp": 100,
-      "alive": true
-    }
-  ]
-}
-```
-
-Snapshots are sent to joined WebSocket sessions at the configured server tick rate. Current movement simulation is intentionally simple: latest input is treated as a continuous movement vector, normalized if its length is greater than 1, multiplied by player speed, and clamped to a `-2000..2000` arena on both axes.
-
-`projectiles` contains server-authoritative projectile visuals spawned from accepted `input` messages where `fire` is `true`. Projectile fields:
-
-- `projectile_id`: server-local projectile ID.
-- `owner_player_id`: player that fired the projectile.
-- `x`, `y`: server 2D arena position.
-- `dir_x`, `dir_y`: normalized projectile movement direction.
-
-Server projectiles currently move, expire after a short lifetime, leave the snapshot when inactive, and apply damage only to fixed server targets.
-
-`targets` contains fixed server-authoritative targets for the current room. Target fields:
-
-- `target_id`: fixed target ID.
-- `x`, `y`: server 2D arena position.
-- `hp`, `max_hp`: target health.
-- `alive`: whether the target can still be damaged.
-
-Server projectiles collide with alive server targets. On hit, the projectile becomes inactive and the target loses projectile damage. When target HP reaches `0`, `alive` becomes `false` and the projectile owner gains `1` server score. Server targets are fixed test targets and are not synchronized with Unreal-placed local targets yet.
-
-## Debug Room
-
-Client:
+### `debug_room`
 
 ```json
 { "type": "debug_room" }
 ```
 
-Server:
+Expected response:
+
+```json
+{
+  "type": "room_state",
+  "room_id": 1,
+  "player_count": 1,
+  "projectile_count": 0,
+  "target_count": 5,
+  "players": [],
+  "projectiles": [],
+  "targets": []
+}
+```
+
+`debug_room` is intended for browser testing and inspection.
+
+## Server To Client Messages
+
+### `pong`
+
+```json
+{ "type": "pong" }
+```
+
+### `join_ok`
+
+```json
+{
+  "type": "join_ok",
+  "player_id": 1,
+  "room_id": 1,
+  "nickname": "player1"
+}
+```
+
+### `input_ack`
+
+```json
+{
+  "type": "input_ack",
+  "seq": 1,
+  "player_id": 1
+}
+```
+
+### `room_state`
 
 ```json
 {
@@ -169,17 +155,17 @@ Server:
       "room_id": 1,
       "nickname": "player1",
       "connected": true,
-      "x": 600.0,
+      "x": 100.0,
       "y": 0.0,
       "speed": 600.0,
       "hp": 100,
       "score": 0,
       "latest_input": {
-        "seq": 1,
+        "seq": 10,
         "move_x": 1.0,
         "move_y": 0.0,
-        "aim_x": 0.7,
-        "aim_y": 0.2,
+        "aim_x": 1.0,
+        "aim_y": 0.0,
         "fire": false
       }
     }
@@ -188,7 +174,50 @@ Server:
     {
       "projectile_id": 1,
       "owner_player_id": 1,
-      "x": 650.0,
+      "x": 150.0,
+      "y": 0.0,
+      "dir_x": 1.0,
+      "dir_y": 0.0
+    }
+  ],
+  "targets": [
+    {
+      "target_id": 1,
+      "x": 600.0,
+      "y": 0.0,
+      "hp": 100,
+      "max_hp": 100,
+      "alive": true
+    }
+  ]
+}
+```
+
+### `snapshot`
+
+Snapshots are broadcast to joined sessions at the configured tick rate.
+
+```json
+{
+  "type": "snapshot",
+  "tick": 30,
+  "room_id": 1,
+  "players": [
+    {
+      "player_id": 1,
+      "nickname": "player1",
+      "x": 100.0,
+      "y": 0.0,
+      "hp": 100,
+      "score": 0,
+      "last_seq": 10
+    }
+  ],
+  "projectiles": [
+    {
+      "projectile_id": 1,
+      "owner_player_id": 1,
+      "x": 150.0,
       "y": 0.0,
       "dir_x": 1.0,
       "dir_y": 0.0
@@ -207,54 +236,71 @@ Server:
 }
 ```
 
-`debug_room` is for local browser testing only. It returns the current fixed room state and each player's latest stored input.
+Player fields:
 
-## Error
+- `player_id`: server player ID.
+- `nickname`: player nickname from join.
+- `x`, `y`: server logical 2D position.
+- `hp`: server player HP placeholder.
+- `score`: server score from destroyed server targets.
+- `last_seq`: latest input sequence stored for the player.
+
+Projectile fields:
+
+- `projectile_id`: server projectile ID.
+- `owner_player_id`: player that fired the projectile.
+- `x`, `y`: server logical 2D projectile position.
+- `dir_x`, `dir_y`: normalized server logical movement direction.
+
+Target fields:
+
+- `target_id`: fixed server target ID.
+- `x`, `y`: server logical 2D target position.
+- `hp`, `max_hp`: server target health.
+- `alive`: whether the target can still be damaged.
+
+### `error`
 
 Invalid JSON:
 
 ```json
-{
-  "type": "error",
-  "message": "invalid json"
-}
+{ "type": "error", "message": "invalid json" }
 ```
 
-Unknown or missing message type:
+Unknown message type:
 
 ```json
-{
-  "type": "error",
-  "message": "unknown message type"
-}
+{ "type": "error", "message": "unknown message type" }
 ```
 
-Input before `join`:
+Input before join:
 
 ```json
-{
-  "type": "error",
-  "message": "not joined"
-}
+{ "type": "error", "message": "not joined" }
 ```
 
-Input with a mismatched `player_id`:
+Mismatched player ID:
 
 ```json
-{
-  "type": "error",
-  "message": "player_id mismatch"
-}
+{ "type": "error", "message": "player_id mismatch" }
 ```
+
+## Current Server Simulation
+
+- Room ID is fixed to `1`.
+- Player IDs are process-local and reset when the server restarts.
+- Movement integrates latest input at a fixed speed and clamps to the arena.
+- Fire input creates server projectiles.
+- Server projectiles move, expire, and collide with fixed server targets.
+- Server target HP decreases on projectile hit.
+- The projectile owner gains server score when a server target dies.
 
 ## Current Limitations
 
-- `room_id` is fixed to `1`.
-- Player IDs are process-local and reset when the server restarts.
+- No binary protocol.
 - No authentication.
-- No multiple-room management.
-- Movement simulation only supports simple 2D position integration from latest input.
-- Server target simulation uses fixed room targets and does not synchronize with Unreal-placed target actors yet.
-- Server projectile simulation covers spawn, movement, lifetime, target collision, target HP, and server score.
-- Unreal renders server player, projectile, and target snapshots as separate ghost actors; local gameplay remains offline.
-- No server-side player damage, target respawn, or combat messages.
+- No real multiple-room support.
+- No server-side player damage.
+- No target respawn.
+- No authoritative synchronization with Unreal-placed local targets.
+- No persistence or database.
