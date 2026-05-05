@@ -159,6 +159,17 @@ Check:
 - The Unreal Output Log shows `Server profile: Remote`.
 - The Unreal Output Log shows either WebSocket connected or a connection error.
 
+## Profile Shows Local Even When Remote Is Checked
+
+Check:
+
+- `RemoteServerUrl` is not empty.
+- `RemoteServerUrl` uses the full WebSocket URL, for example `ws://<GCP_EXTERNAL_IP>:7777`.
+- You edited the PlayerController Blueprint used by the active GameMode.
+- The Blueprint defaults were saved before pressing Play.
+- Unreal was restarted or the project was rebuilt if C++ metadata did not refresh.
+- The Output Log shows `Server profile: Remote`.
+
 ## Browser WebSocket CSP Error
 
 Do not test WebSockets from `chrome://` pages or other restricted browser pages. Open `tools/websocket-test.html` directly or serve it from a normal local web page.
@@ -172,6 +183,16 @@ Check:
 - Windows firewall is not blocking the process.
 - `BattleGridClient.Build.cs` includes `WebSockets`, `Json`, and `JsonUtilities`.
 - The Output Log contains either connected, closed, or connection error messages.
+
+## Too Many Unreal Logs
+
+For a clean demo recording, use the PlayerController Blueprint defaults:
+
+- Set `bDemoMode` to true.
+- Keep `bVerboseNetworkLogs`, `bVerboseSnapshotLogs`, and `bVerboseInputLogs` false.
+- Keep `SnapshotLogInterval` and `InputAckLogInterval` at `60` or higher.
+
+Important logs such as server profile, connect, connection error, join, ghost spawns, victory, and respawn should still appear. Repetitive input, input ack, snapshot, coordinate conversion, and server position error logs are throttled.
 
 ## Blueprint Class Variables Not Visible
 

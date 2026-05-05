@@ -92,7 +92,7 @@ void ABattleGridHUD::DrawHUD()
 		HudX,
 		HudY,
 		620.0f,
-		135.0f
+		185.0f
 	);
 
 	DrawText(
@@ -137,16 +137,21 @@ void ABattleGridHUD::DrawHUD()
 	);
 
 	DrawText(
-		FString::Printf(
-			TEXT("%s | %s"),
-			BattleGridController->HasWon()
-				? TEXT("Victory! Press R to Restart")
-				: TEXT("WASD Move | Mouse Aim | LMB Fire | R Restart"),
-			*BattleGridController->GetDetailedNetworkStatusText()
-		),
+		BattleGridController->GetDetailedNetworkStatusText(),
 		FLinearColor(0.8f, 0.9f, 1.0f, 1.0f),
 		HudX + 20.0f,
 		HudY + 15.0f + LineHeight * 3.0f,
+		nullptr,
+		0.9f
+	);
+
+	DrawText(
+		BattleGridController->HasWon()
+			? FString(TEXT("Victory! Press R to Restart"))
+			: FString(TEXT("WASD Move | Mouse Aim | LMB Fire | R Restart")),
+		FLinearColor(0.8f, 0.9f, 1.0f, 1.0f),
+		HudX + 20.0f,
+		HudY + 15.0f + LineHeight * 5.0f,
 		nullptr,
 		0.9f
 	);
@@ -161,7 +166,7 @@ void ABattleGridHUD::DrawHUD()
 			CombatDisplayMessage,
 			FLinearColor(0.2f, 1.0f, 0.35f, 1.0f),
 			HudX + 20.0f,
-			HudY + 15.0f + LineHeight * 4.0f,
+			HudY + 15.0f + LineHeight * 6.0f,
 			nullptr,
 			1.0f
 		);

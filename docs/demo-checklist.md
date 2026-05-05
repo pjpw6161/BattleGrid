@@ -2,6 +2,31 @@
 
 Use this checklist to run the current portfolio demo.
 
+## Polished Portfolio Demo Script
+
+1. Start the GCP Docker server:
+
+   ```bash
+   docker compose up -d --build
+   docker compose logs -f battlegrid-server
+   ```
+
+2. Open `tools/websocket-test.html`.
+3. Connect to `ws://<GCP_EXTERNAL_IP>:7777`.
+4. Click `Send Join`, then `Send Debug Room`.
+5. Confirm the browser output shows Room 1 and `targets=5`.
+6. Open Unreal Editor.
+7. In the PlayerController Blueprint defaults, use the remote profile and confirm the HUD shows `Profile: Remote` and `Server: Connected`.
+8. Move with WASD.
+9. Show the local character and the server player ghost moving together.
+10. Fire with left mouse button and show both the local projectile and server projectile ghost.
+11. Show server target ghosts with HP labels.
+12. Hit a local target and show local score increasing.
+13. Hit a server target and show server score / target HP changing in the HUD and browser snapshots.
+14. Walk into the hazard and show local HP decrease, death, and respawn.
+15. Toggle optional server position correction on/off if useful for the recording.
+16. Stop the server or switch back to the Local profile and show that offline gameplay still runs.
+
 ## Server Smoke Test
 
 ### Option A: Docker Compose
@@ -96,7 +121,7 @@ Use this checklist to run the current portfolio demo.
    - Local score.
    - Server score.
    - Server connection.
-   - Profile label, either `Profile=Local` or `Profile=Remote`.
+   - Profile label, either `Profile: Local` or `Profile: Remote`.
    - Player ID and room ID.
    - Snapshot tick.
    - Server target count.

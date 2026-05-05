@@ -71,7 +71,7 @@ void UBattleGridCombatWidget::UpdateHud(
 			: FString(TEXT("WASD Move | Mouse Aim | LMB Fire | R Restart"));
 		const FString FullControlsMessage = NetworkStatusText.IsEmpty()
 			? BaseControlsMessage
-			: FString::Printf(TEXT("%s\n%s"), *BaseControlsMessage, *NetworkStatusText);
+			: FString::Printf(TEXT("%s\n%s"), *NetworkStatusText, *BaseControlsMessage);
 
 		ControlsText->SetText(FText::FromString(FullControlsMessage));
 	}

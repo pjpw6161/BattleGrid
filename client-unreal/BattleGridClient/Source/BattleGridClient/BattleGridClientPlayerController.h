@@ -96,6 +96,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Network", meta = (ClampMin = "0.0"))
 	float InputSendIntervalSeconds;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
+	bool bDemoMode;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
+	bool bVerboseNetworkLogs;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
+	bool bVerboseSnapshotLogs;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
+	bool bVerboseInputLogs;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo", meta = (ClampMin = "1"))
+	int32 SnapshotLogInterval;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo", meta = (ClampMin = "1"))
+	int32 InputAckLogInterval;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|Combat")
 	TSubclassOf<ABattleGridProjectile> ProjectileClass;
 
@@ -169,7 +187,6 @@ private:
 	void FireStarted(const FInputActionValue& Value);
 
 	FString ResolveServerProfileLabel() const;
-	FString InsertServerProfileIntoSummary(const FString& ServerSummary) const;
 	void UpdateAimRotation();
 	void SendInputToServerIfNeeded();
 	void SendInputToServer(bool bForceSend);

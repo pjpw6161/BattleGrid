@@ -24,6 +24,12 @@
 20. Server projectile simulation and Unreal projectile ghosts.
 21. Server targets, projectile-target collision, server score, and target ghosts.
 22. HUD server-authoritative summary.
+23. Documentation pass for the portfolio repository.
+24. Docker Compose deployment for the custom C++ server.
+25. Local Docker validation and server operation cleanup.
+26. GCP VM Docker deployment validation.
+27. Unreal local/remote server profile support and GCP deployment documentation.
+28. Demo polish, log throttling, and recording-oriented HUD text.
 
 ## Notable Troubleshooting
 
@@ -38,6 +44,7 @@
 - Server projectile direction used the wrong coordinate mapping until aim vectors were converted consistently.
 - Short movement taps caused ghost overshoot because release input was not sent immediately. Binding Enhanced Input `Completed` and `Canceled` events fixed stale movement.
 - Server targets were missing from browser snapshots until target initialization and snapshot/debug serialization were checked and reinforced.
+- Demo recording became hard to follow when input, snapshot, and ack logs printed too often. Step 28 added demo log settings and throttled repetitive logs.
 
 ## Current State
 
@@ -45,9 +52,8 @@ BattleGrid is a playable local Unreal arena shooter with a visible custom C++ se
 
 ## Next Engineering Focus
 
-- Dockerize the C++ server.
-- Deploy to GCP.
 - Add bot client and benchmark scripts.
+- Polish the demo video and capture repeatable presentation footage.
 - Replace local-only target and projectile rules with server-authoritative rules.
 - Add prediction history and reconciliation.
 - Add server-side player damage and respawn.

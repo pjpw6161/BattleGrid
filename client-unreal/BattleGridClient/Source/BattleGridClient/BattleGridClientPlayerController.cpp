@@ -41,6 +41,12 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	ServerProfileLabel = TEXT("Local");
 	Nickname = TEXT("player1");
 	InputSendIntervalSeconds = 0.05f;
+	bDemoMode = true;
+	bVerboseNetworkLogs = false;
+	bVerboseSnapshotLogs = false;
+	bVerboseInputLogs = false;
+	SnapshotLogInterval = 60;
+	InputAckLogInterval = 60;
 	CombatMessageExpireTime = 0.0f;
 	bPlayerDead = false;
 	bHasWon = false;
@@ -235,39 +241,65 @@ FString ABattleGridClientPlayerController::GetNetworkStatusText() const
 
 FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 {
+	const FString ProfileLabel = ResolveServerProfileLabel();
+	const FString CorrectionText = IsUsingServerPositionCorrection()
+		? FString(TEXT("On"))
+		: FString(TEXT("Off"));
+	const FString ErrorText = bShowServerPositionError && HasOwnServerWorldLocation()
+		? FString::Printf(TEXT("%.1f"), GetLastServerPositionError())
+		: FString(TEXT("-"));
+
 	if (const UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
 			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
 		{
-			const FString CorrectionText = IsUsingServerPositionCorrection()
-				? FString(TEXT("On"))
-				: FString(TEXT("Off"));
-			const FString ServerSummary = InsertServerProfileIntoSummary(
-				NetworkSubsystem->GetServerSummaryText()
-			);
-
-			if (bShowServerPositionError && HasOwnServerWorldLocation())
+			if (NetworkSubsystem->HasJoined())
 			{
 				return FString::Printf(
-					TEXT("%s | Error=%.1f | Correction=%s"),
-					*ServerSummary,
-					GetLastServerPositionError(),
+					TEXT("Profile: %s | Server: Connected | Player=%d Room=%d Snapshot=%d\nTargets: %d/%d | Projectiles: %d | Error: %s | Correction: %s"),
+					*ProfileLabel,
+					NetworkSubsystem->GetPlayerId(),
+					NetworkSubsystem->GetRoomId(),
+					NetworkSubsystem->GetLastSnapshotTick(),
+					NetworkSubsystem->GetServerAliveTargetCount(),
+					NetworkSubsystem->GetServerTargetCount(),
+					NetworkSubsystem->GetServerProjectileCount(),
+					*ErrorText,
 					*CorrectionText
 				);
 			}
 
-			return FString::Printf(
-				TEXT("%s | Correction=%s"),
-				*ServerSummary,
-				*CorrectionText
-			);
+			if (NetworkSubsystem->IsConnected())
+			{
+				return FString::Printf(
+					TEXT("Profile: %s | Server: Connected | Joining...\nTargets: - | Projectiles: - | Error: %s | Correction: %s"),
+					*ProfileLabel,
+					*ErrorText,
+					*CorrectionText
+				);
+			}
+
+			const FString LastNetworkError = NetworkSubsystem->GetLastError();
+			if (!LastNetworkError.IsEmpty())
+			{
+				return FString::Printf(
+					TEXT("Profile: %s | Server: Error | %s\nTargets: - | Projectiles: - | Error: %s | Correction: %s"),
+					*ProfileLabel,
+					*LastNetworkError,
+					*ErrorText,
+					*CorrectionText
+				);
+			}
 		}
 	}
 
-	return IsUsingServerPositionCorrection()
-		? FString::Printf(TEXT("Server: Disconnected | %s | Correction=On"), *GetServerProfileText())
-		: FString::Printf(TEXT("Server: Disconnected | %s | Correction=Off"), *GetServerProfileText());
+	return FString::Printf(
+		TEXT("Profile: %s | Server: Disconnected\nTargets: - | Projectiles: - | Error: %s | Correction: %s"),
+		*ProfileLabel,
+		*ErrorText,
+		*CorrectionText
+	);
 }
 
 bool ABattleGridClientPlayerController::IsServerConnected() const
@@ -450,6 +482,14 @@ void ABattleGridClientPlayerController::BeginPlay()
 
 				UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Server profile: %s"), *ServerProfileLabel);
 				UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Connecting to server: %s"), *ResolvedServerUrl);
+				const bool bUseVerboseDefaults = !bDemoMode;
+				NetworkSubsystem->ConfigureDemoLogging(
+					bVerboseNetworkLogs || bUseVerboseDefaults,
+					bVerboseSnapshotLogs || bUseVerboseDefaults,
+					bVerboseInputLogs || bUseVerboseDefaults,
+					SnapshotLogInterval,
+					InputAckLogInterval
+				);
 				NetworkSubsystem->Connect(ResolvedServerUrl, Nickname);
 			}
 			else
@@ -465,48 +505,6 @@ FString ABattleGridClientPlayerController::ResolveServerProfileLabel() const
 	return bUseRemoteServer && !RemoteServerUrl.IsEmpty()
 		? FString(TEXT("Remote"))
 		: FString(TEXT("Local"));
-}
-
-FString ABattleGridClientPlayerController::InsertServerProfileIntoSummary(
-	const FString& ServerSummary
-) const
-{
-	const FString ProfileText = GetServerProfileText();
-	const FString ConnectedPrefix = TEXT("Server: Connected");
-	const FString ErrorPrefix = TEXT("Server: Error");
-	const FString DisconnectedPrefix = TEXT("Server: Disconnected");
-
-	if (ServerSummary.StartsWith(ConnectedPrefix))
-	{
-		return FString::Printf(
-			TEXT("%s | %s%s"),
-			*ConnectedPrefix,
-			*ProfileText,
-			*ServerSummary.RightChop(ConnectedPrefix.Len())
-		);
-	}
-
-	if (ServerSummary.StartsWith(ErrorPrefix))
-	{
-		return FString::Printf(
-			TEXT("%s | %s%s"),
-			*ErrorPrefix,
-			*ProfileText,
-			*ServerSummary.RightChop(ErrorPrefix.Len())
-		);
-	}
-
-	if (ServerSummary.StartsWith(DisconnectedPrefix))
-	{
-		return FString::Printf(
-			TEXT("%s | %s%s"),
-			*DisconnectedPrefix,
-			*ProfileText,
-			*ServerSummary.RightChop(DisconnectedPrefix.Len())
-		);
-	}
-
-	return FString::Printf(TEXT("%s | %s"), *ServerSummary, *ProfileText);
 }
 
 void ABattleGridClientPlayerController::SetupInputComponent()
@@ -665,7 +663,10 @@ void ABattleGridClientPlayerController::MoveForwardReleased(const FInputActionVa
 	static_cast<void>(Value);
 
 	CurrentMoveForward = 0.0f;
-	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] MoveForward released."));
+	if (bVerboseInputLogs || !bDemoMode)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] MoveForward released."));
+	}
 	SendInputToServer(true);
 }
 
@@ -674,7 +675,10 @@ void ABattleGridClientPlayerController::MoveRightReleased(const FInputActionValu
 	static_cast<void>(Value);
 
 	CurrentMoveRight = 0.0f;
-	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] MoveRight released."));
+	if (bVerboseInputLogs || !bDemoMode)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] MoveRight released."));
+	}
 	SendInputToServer(true);
 }
 
@@ -867,7 +871,8 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 	++InputSequence;
 	LastInputSendTime = CurrentTime;
 
-	if (bFire || InputSequence % 60 == 0)
+	const int32 InputLogInterval = FMath::Max(1, InputAckLogInterval);
+	if ((bVerboseInputLogs || !bDemoMode) && (bFire || InputSequence % InputLogInterval == 0))
 	{
 		UE_LOG(
 			LogTemp,
@@ -963,7 +968,11 @@ void ABattleGridClientPlayerController::UpdateServerGhostsFromSnapshot()
 		);
 		const FVector WorldOffset = WorldLocation - ServerSnapshotOrigin;
 
-		if (SnapshotTick <= 5 || SnapshotTick % 60 == 0)
+		const int32 EffectiveSnapshotLogInterval = FMath::Max(1, SnapshotLogInterval);
+		if (
+			(bVerboseSnapshotLogs || !bDemoMode)
+			&& (SnapshotTick <= 5 || SnapshotTick % EffectiveSnapshotLogInterval == 0)
+		)
 		{
 			UE_LOG(
 				LogTemp,
@@ -1374,10 +1383,12 @@ void ABattleGridClientPlayerController::UpdateOwnServerPositionErrorAndCorrectio
 	bHasOwnServerWorldLocation = true;
 
 	const int32 SnapshotTick = NetworkSubsystem->GetLastSnapshotTick();
+	const int32 EffectiveSnapshotLogInterval = FMath::Max(1, SnapshotLogInterval);
 	if (
 		SnapshotTick > 0
 		&& SnapshotTick != LastServerPositionErrorLogSnapshotTick
-		&& (SnapshotTick <= 5 || SnapshotTick % 60 == 0)
+		&& (bVerboseSnapshotLogs || !bDemoMode)
+		&& (SnapshotTick <= 5 || SnapshotTick % EffectiveSnapshotLogInterval == 0)
 	)
 	{
 		LastServerPositionErrorLogSnapshotTick = SnapshotTick;

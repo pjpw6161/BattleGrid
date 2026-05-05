@@ -97,6 +97,13 @@ public:
 	void SendPing();
 	void SendJoin();
 	void SendInput(int32 Seq, float MoveX, float MoveY, float AimX, float AimY, bool bFire);
+	void ConfigureDemoLogging(
+		bool bInVerboseNetworkLogs,
+		bool bInVerboseSnapshotLogs,
+		bool bInVerboseInputLogs,
+		int32 InSnapshotLogInterval,
+		int32 InInputAckLogInterval
+	);
 
 	bool IsConnected() const;
 	bool HasJoined() const;
@@ -146,4 +153,12 @@ private:
 	TMap<int32, FBattleGridServerProjectileSnapshot> LatestProjectileSnapshots;
 	TMap<int32, FBattleGridServerTargetSnapshot> LatestTargetSnapshots;
 	bool bHasLoggedServerSummary = false;
+	bool bVerboseNetworkLogs = false;
+	bool bVerboseSnapshotLogs = false;
+	bool bVerboseInputLogs = false;
+	int32 SnapshotLogInterval = 60;
+	int32 InputAckLogInterval = 60;
+	int32 InputAckLogCounter = 0;
+	int32 InputSendLogCounter = 0;
+	int32 SnapshotLogCounter = 0;
 };

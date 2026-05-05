@@ -39,6 +39,9 @@ void UBattleGridNetworkSubsystem::Connect(const FString& InServerUrl, const FStr
 	LatestProjectileSnapshots.Empty();
 	LatestTargetSnapshots.Empty();
 	bHasLoggedServerSummary = false;
+	InputAckLogCounter = 0;
+	InputSendLogCounter = 0;
+	SnapshotLogCounter = 0;
 
 	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Connecting to server: %s"), *ServerUrl);
 
@@ -73,6 +76,9 @@ void UBattleGridNetworkSubsystem::Disconnect()
 	LatestProjectileSnapshots.Empty();
 	LatestTargetSnapshots.Empty();
 	bHasLoggedServerSummary = false;
+	InputAckLogCounter = 0;
+	InputSendLogCounter = 0;
+	SnapshotLogCounter = 0;
 }
 
 void UBattleGridNetworkSubsystem::SendPing()
@@ -118,8 +124,32 @@ void UBattleGridNetworkSubsystem::SendInput(
 
 	if (SendJsonObject(JsonObject, nullptr))
 	{
-		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Sent input seq=%d"), Seq);
+		++InputSendLogCounter;
+		const int32 EffectiveInputLogInterval = FMath::Max(1, InputAckLogInterval);
+		if (
+			bVerboseInputLogs
+			|| InputSendLogCounter <= 3
+			|| InputSendLogCounter % EffectiveInputLogInterval == 0
+		)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Sent input seq=%d"), Seq);
+		}
 	}
+}
+
+void UBattleGridNetworkSubsystem::ConfigureDemoLogging(
+	bool bInVerboseNetworkLogs,
+	bool bInVerboseSnapshotLogs,
+	bool bInVerboseInputLogs,
+	int32 InSnapshotLogInterval,
+	int32 InInputAckLogInterval
+)
+{
+	bVerboseNetworkLogs = bInVerboseNetworkLogs;
+	bVerboseSnapshotLogs = bInVerboseSnapshotLogs;
+	bVerboseInputLogs = bInVerboseInputLogs;
+	SnapshotLogInterval = FMath::Max(1, InSnapshotLogInterval);
+	InputAckLogInterval = FMath::Max(1, InInputAckLogInterval);
 }
 
 bool UBattleGridNetworkSubsystem::IsConnected() const
@@ -328,6 +358,9 @@ void UBattleGridNetworkSubsystem::HandleClosed(
 	LatestProjectileSnapshots.Empty();
 	LatestTargetSnapshots.Empty();
 	bHasLoggedServerSummary = false;
+	InputAckLogCounter = 0;
+	InputSendLogCounter = 0;
+	SnapshotLogCounter = 0;
 
 	UE_LOG(
 		LogTemp,
@@ -360,7 +393,7 @@ void UBattleGridNetworkSubsystem::HandleMessage(const FString& Message)
 		return;
 	}
 
-	if (Type != TEXT("snapshot"))
+	if (bVerboseNetworkLogs && Type != TEXT("snapshot"))
 	{
 		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] WebSocket received raw message: %s"), *Message);
 	}
@@ -418,7 +451,21 @@ void UBattleGridNetworkSubsystem::HandleMessage(const FString& Message)
 	{
 		double SequenceValue = 0.0;
 		JsonObject->TryGetNumberField(TEXT("seq"), SequenceValue);
-		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Input ack received. seq=%d"), static_cast<int32>(SequenceValue));
+		++InputAckLogCounter;
+		const int32 EffectiveInputLogInterval = FMath::Max(1, InputAckLogInterval);
+		if (
+			bVerboseInputLogs
+			|| InputAckLogCounter <= 3
+			|| InputAckLogCounter % EffectiveInputLogInterval == 0
+		)
+		{
+			UE_LOG(
+				LogTemp,
+				Log,
+				TEXT("[BattleGrid] Input ack received. seq=%d"),
+				static_cast<int32>(SequenceValue)
+			);
+		}
 		return;
 	}
 
@@ -582,28 +629,23 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 	const bool bFirstSnapshot = LastSnapshotTick <= 0;
 	LastSnapshotTick = SnapshotTick;
 	LastSnapshotRoomId = SnapshotRoomId;
+	++SnapshotLogCounter;
 
-	if (bFirstSnapshot || LastSnapshotTick % 30 == 0)
+	const int32 EffectiveSnapshotLogInterval = FMath::Max(1, SnapshotLogInterval);
+	if (
+		bVerboseSnapshotLogs
+		|| bFirstSnapshot
+		|| SnapshotLogCounter <= 3
+		|| SnapshotLogCounter % EffectiveSnapshotLogInterval == 0
+	)
 	{
 		UE_LOG(
 			LogTemp,
 			Log,
-			TEXT("[BattleGrid] Snapshot received. tick=%d players=%d"),
+			TEXT("[BattleGrid] Snapshot received. tick=%d players=%d projectiles=%d targets=%d"),
 			LastSnapshotTick,
-			LatestPlayerSnapshots.Num()
-		);
-
-		UE_LOG(
-			LogTemp,
-			Log,
-			TEXT("[BattleGrid] Snapshot projectiles count=%d"),
-			LatestProjectileSnapshots.Num()
-		);
-
-		UE_LOG(
-			LogTemp,
-			Log,
-			TEXT("[BattleGrid] Snapshot targets count=%d"),
+			LatestPlayerSnapshots.Num(),
+			LatestProjectileSnapshots.Num(),
 			LatestTargetSnapshots.Num()
 		);
 	}
