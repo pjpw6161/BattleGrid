@@ -37,6 +37,8 @@ public:
 	void SetPlayerDead(bool bDead);
 	void RestartGame();
 	void RestartStarted(const FInputActionValue& Value);
+	FString ResolveServerUrl() const;
+	FString GetServerProfileText() const;
 	FString GetNetworkStatusText() const;
 	FString GetDetailedNetworkStatusText() const;
 	bool IsServerConnected() const;
@@ -75,6 +77,18 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Network")
 	FString ServerUrl;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Network")
+	bool bUseRemoteServer;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Network")
+	FString LocalServerUrl;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Network")
+	FString RemoteServerUrl;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Network")
+	FString ServerProfileLabel;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Network")
 	FString Nickname;
@@ -154,6 +168,8 @@ private:
 	void MoveRightReleased(const FInputActionValue& Value);
 	void FireStarted(const FInputActionValue& Value);
 
+	FString ResolveServerProfileLabel() const;
+	FString InsertServerProfileIntoSummary(const FString& ServerSummary) const;
 	void UpdateAimRotation();
 	void SendInputToServerIfNeeded();
 	void SendInputToServer(bool bForceSend);

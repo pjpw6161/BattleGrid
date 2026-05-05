@@ -35,6 +35,10 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	TargetScore = 5;
 	bAutoConnectToServer = true;
 	ServerUrl = TEXT("ws://127.0.0.1:7777");
+	bUseRemoteServer = false;
+	LocalServerUrl = TEXT("ws://127.0.0.1:7777");
+	RemoteServerUrl = TEXT("");
+	ServerProfileLabel = TEXT("Local");
 	Nickname = TEXT("player1");
 	InputSendIntervalSeconds = 0.05f;
 	CombatMessageExpireTime = 0.0f;
@@ -195,6 +199,35 @@ void ABattleGridClientPlayerController::RestartStarted(const FInputActionValue& 
 	RestartGame();
 }
 
+FString ABattleGridClientPlayerController::ResolveServerUrl() const
+{
+	if (bUseRemoteServer && !RemoteServerUrl.IsEmpty())
+	{
+		return RemoteServerUrl;
+	}
+
+	if (!LocalServerUrl.IsEmpty())
+	{
+		return LocalServerUrl;
+	}
+
+	if (!ServerUrl.IsEmpty())
+	{
+		return ServerUrl;
+	}
+
+	return TEXT("ws://127.0.0.1:7777");
+}
+
+FString ABattleGridClientPlayerController::GetServerProfileText() const
+{
+	return FString::Printf(
+		TEXT("Profile=%s URL=%s"),
+		*ResolveServerProfileLabel(),
+		*ResolveServerUrl()
+	);
+}
+
 FString ABattleGridClientPlayerController::GetNetworkStatusText() const
 {
 	return GetDetailedNetworkStatusText();
@@ -210,7 +243,9 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 			const FString CorrectionText = IsUsingServerPositionCorrection()
 				? FString(TEXT("On"))
 				: FString(TEXT("Off"));
-			const FString ServerSummary = NetworkSubsystem->GetServerSummaryText();
+			const FString ServerSummary = InsertServerProfileIntoSummary(
+				NetworkSubsystem->GetServerSummaryText()
+			);
 
 			if (bShowServerPositionError && HasOwnServerWorldLocation())
 			{
@@ -231,8 +266,8 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 	}
 
 	return IsUsingServerPositionCorrection()
-		? FString(TEXT("Server: Disconnected | Correction=On"))
-		: FString(TEXT("Server: Disconnected | Correction=Off"));
+		? FString::Printf(TEXT("Server: Disconnected | %s | Correction=On"), *GetServerProfileText())
+		: FString::Printf(TEXT("Server: Disconnected | %s | Correction=Off"), *GetServerProfileText());
 }
 
 bool ABattleGridClientPlayerController::IsServerConnected() const
@@ -409,8 +444,13 @@ void ABattleGridClientPlayerController::BeginPlay()
 			if (UBattleGridNetworkSubsystem* NetworkSubsystem =
 				GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
 			{
-				UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Connecting to server: %s"), *ServerUrl);
-				NetworkSubsystem->Connect(ServerUrl, Nickname);
+				ServerProfileLabel = ResolveServerProfileLabel();
+				const FString ResolvedServerUrl = ResolveServerUrl();
+				ServerUrl = ResolvedServerUrl;
+
+				UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Server profile: %s"), *ServerProfileLabel);
+				UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Connecting to server: %s"), *ResolvedServerUrl);
+				NetworkSubsystem->Connect(ResolvedServerUrl, Nickname);
 			}
 			else
 			{
@@ -418,6 +458,55 @@ void ABattleGridClientPlayerController::BeginPlay()
 			}
 		}
 	}
+}
+
+FString ABattleGridClientPlayerController::ResolveServerProfileLabel() const
+{
+	return bUseRemoteServer && !RemoteServerUrl.IsEmpty()
+		? FString(TEXT("Remote"))
+		: FString(TEXT("Local"));
+}
+
+FString ABattleGridClientPlayerController::InsertServerProfileIntoSummary(
+	const FString& ServerSummary
+) const
+{
+	const FString ProfileText = GetServerProfileText();
+	const FString ConnectedPrefix = TEXT("Server: Connected");
+	const FString ErrorPrefix = TEXT("Server: Error");
+	const FString DisconnectedPrefix = TEXT("Server: Disconnected");
+
+	if (ServerSummary.StartsWith(ConnectedPrefix))
+	{
+		return FString::Printf(
+			TEXT("%s | %s%s"),
+			*ConnectedPrefix,
+			*ProfileText,
+			*ServerSummary.RightChop(ConnectedPrefix.Len())
+		);
+	}
+
+	if (ServerSummary.StartsWith(ErrorPrefix))
+	{
+		return FString::Printf(
+			TEXT("%s | %s%s"),
+			*ErrorPrefix,
+			*ProfileText,
+			*ServerSummary.RightChop(ErrorPrefix.Len())
+		);
+	}
+
+	if (ServerSummary.StartsWith(DisconnectedPrefix))
+	{
+		return FString::Printf(
+			TEXT("%s | %s%s"),
+			*DisconnectedPrefix,
+			*ProfileText,
+			*ServerSummary.RightChop(DisconnectedPrefix.Len())
+		);
+	}
+
+	return FString::Printf(TEXT("%s | %s"), *ServerSummary, *ProfileText);
 }
 
 void ABattleGridClientPlayerController::SetupInputComponent()

@@ -102,7 +102,26 @@ The host can connect through:
 ws://127.0.0.1:7777
 ```
 
-More detail: `docs/deployment-docker.md`.
+More detail: `../docs/deployment-docker.md`.
+
+## GCP VM Docker Deployment
+
+The same Compose service can run on an Ubuntu 24.04 GCP VM:
+
+```bash
+git clone https://github.com/pjpw6161/BattleGrid.git
+cd BattleGrid
+docker compose up -d --build
+docker compose logs -f battlegrid-server
+```
+
+The VM must allow TCP `7777` through a firewall rule. Test from a local browser or Unreal with:
+
+```text
+ws://<GCP_EXTERNAL_IP>:7777
+```
+
+More detail: `../docs/deployment-gcp.md`.
 
 ## WebSocket Browser Test
 
@@ -156,7 +175,7 @@ Expected:
 - No binary protocol.
 - No server-side player damage.
 - No target respawn.
-- No cloud deployment automation.
+- GCP deployment is manual and not automated.
 - No bot benchmark yet.
 - Unreal local targets and server targets are separate layers.
 

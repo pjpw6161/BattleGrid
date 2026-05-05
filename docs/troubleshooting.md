@@ -97,6 +97,68 @@ Check:
 - Browser test uses `ws://127.0.0.1:7777`.
 - Windows firewall is not blocking Docker networking.
 
+## GCP Firewall TCP 7777 Not Open
+
+If the server works on the VM but cannot be reached from your local machine, check the GCP firewall rule:
+
+- Ingress rule exists.
+- Target tag is `battlegrid-server`.
+- VM has the `battlegrid-server` network tag.
+- Protocol/port includes `tcp:7777`.
+- Source range includes your local client IP.
+
+## VM Missing Network Tag
+
+A firewall rule with target tag `battlegrid-server` does nothing unless the VM has the same network tag. Add the tag to the VM network settings, then test again:
+
+```text
+ws://<GCP_EXTERNAL_IP>:7777
+```
+
+## Docker Container Running But External Connection Fails
+
+Check on the VM:
+
+```bash
+docker compose ps
+docker compose logs battlegrid-server
+sudo ss -ltnp | grep 7777
+```
+
+The server must listen on `0.0.0.0:7777`, not only `127.0.0.1:7777`, for external clients to connect.
+
+## Old Server Process Occupying 7777 On VM
+
+Stop old containers or native processes:
+
+```bash
+docker compose down
+sudo ss -ltnp | grep 7777
+```
+
+If a native process is still using the port, stop that process before restarting Docker Compose.
+
+## `RemoteServerUrl` Accidentally Committed With Personal IP
+
+Do not hardcode or commit personal VM IPs in C++ defaults or documentation. Use:
+
+```text
+ws://<GCP_EXTERNAL_IP>:7777
+```
+
+The actual `RemoteServerUrl` should be set manually in Unreal Editor Blueprint defaults for local testing and demos.
+
+## Browser Connects But Unreal Fails
+
+Check:
+
+- Unreal `bUseRemoteServer` is true for GCP mode.
+- `RemoteServerUrl` is exactly `ws://<GCP_EXTERNAL_IP>:7777`.
+- There is no trailing whitespace in the URL.
+- The browser test and Unreal are using the same network.
+- The Unreal Output Log shows `Server profile: Remote`.
+- The Unreal Output Log shows either WebSocket connected or a connection error.
+
 ## Browser WebSocket CSP Error
 
 Do not test WebSockets from `chrome://` pages or other restricted browser pages. Open `tools/websocket-test.html` directly or serve it from a normal local web page.
