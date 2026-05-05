@@ -4,6 +4,34 @@ Use this checklist to run the current portfolio demo.
 
 ## Server Smoke Test
 
+### Option A: Docker Compose
+
+1. Start the server container:
+
+   ```powershell
+   docker compose up -d --build
+   ```
+
+2. Verify logs:
+
+   ```powershell
+   docker compose logs -f battlegrid-server
+   ```
+
+3. Verify the container exposes port `7777`:
+
+   ```powershell
+   docker compose ps
+   ```
+
+4. Open `tools/websocket-test.html`.
+5. Connect to `ws://127.0.0.1:7777`.
+6. Click `Send Ping` and verify `pong`.
+7. Click `Send Join` and verify `join_ok`.
+8. Click `Send Debug Room` and verify Room 1, player state, and targets.
+
+### Option B: Native Windows Build
+
 1. Build the server:
 
    ```powershell
@@ -21,16 +49,20 @@ Use this checklist to run the current portfolio demo.
 5. Click `Send Ping` and verify `pong`.
 6. Click `Send Join` and verify `join_ok`.
 7. Click `Send Debug Room` and verify Room 1, player state, and targets.
-8. Click `Start Moving Right` and watch snapshots update player `x` / `y`.
-9. Click `Send Fire Input` and watch projectiles appear in snapshots.
-10. Watch target HP and server score change after projectile hits.
+
+### Shared Server Test Steps
+
+1. Click `Start Moving Right` and watch snapshots update player `x` / `y`.
+2. Click `Send Fire Input` and watch projectiles appear in snapshots.
+3. Watch target HP and server score change after projectile hits.
 
 ## Unreal Demo
 
 1. Build `BattleGridClientEditor` in Visual Studio with `Development Editor | Win64`.
 2. Open `client-unreal/BattleGridClient/BattleGridClient.uproject`.
-3. Press Play.
-4. Verify the HUD shows:
+3. Ensure the PlayerController `ServerUrl` is `ws://127.0.0.1:7777`.
+4. Press Play.
+5. Verify the HUD shows:
    - Local HP.
    - Local score.
    - Server score.
@@ -40,17 +72,17 @@ Use this checklist to run the current portfolio demo.
    - Server target count.
    - Server projectile count.
    - Position error and correction state.
-5. Move with WASD.
-6. Aim with the mouse.
-7. Fire with left mouse button.
-8. Show local projectile and local target damage.
-9. Show local player hazard damage, death, and respawn.
-10. Show server player ghost movement.
-11. Show server projectile ghost movement.
-12. Show server target ghost labels and HP.
-13. Show server score increasing when server targets are destroyed.
-14. Toggle optional server position correction in the PlayerController Blueprint defaults if needed, then compare error behavior.
-15. Stop the server and verify local offline gameplay still works.
+6. Move with WASD.
+7. Aim with the mouse.
+8. Fire with left mouse button.
+9. Show local projectile and local target damage.
+10. Show local player hazard damage, death, and respawn.
+11. Show server player ghost movement.
+12. Show server projectile ghost movement.
+13. Show server target ghost labels and HP.
+14. Show server score increasing when server targets are destroyed.
+15. Toggle optional server position correction in the PlayerController Blueprint defaults if needed, then compare error behavior.
+16. Stop the server and verify local offline gameplay still works.
 
 ## Victory And Restart
 

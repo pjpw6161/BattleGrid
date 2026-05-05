@@ -64,6 +64,46 @@ Help:
 .\server\build\Debug\battlegrid-server.exe --help
 ```
 
+## Docker Compose
+
+From the repository root, build and run the server container:
+
+```powershell
+docker compose up --build
+```
+
+Run detached:
+
+```powershell
+docker compose up -d --build
+```
+
+View logs:
+
+```powershell
+docker compose logs -f battlegrid-server
+```
+
+Stop:
+
+```powershell
+docker compose down
+```
+
+The container command runs:
+
+```text
+./battlegrid-server --host 0.0.0.0 --port 7777 --tick-rate 30
+```
+
+The host can connect through:
+
+```text
+ws://127.0.0.1:7777
+```
+
+More detail: `docs/deployment-docker.md`.
+
 ## WebSocket Browser Test
 
 1. Start the server.
@@ -116,14 +156,13 @@ Expected:
 - No binary protocol.
 - No server-side player damage.
 - No target respawn.
-- No deployment automation.
+- No cloud deployment automation.
 - No bot benchmark yet.
 - Unreal local targets and server targets are separate layers.
 
 ## Next Planned Work
 
-- Dockerize the server.
-- Deploy to GCP.
+- Deploy the Dockerized server to GCP.
 - Add bot client and benchmark scripts.
 - Add server-side player damage and respawn.
 - Improve reconciliation and eventually replace local-only combat with server-authoritative state.

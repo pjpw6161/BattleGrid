@@ -1,0 +1,21 @@
+services:
+  battlegrid-server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: battlegrid-server
+    ports:
+      - "7777:7777"
+    environment:
+      BATTLEGRID_HOST: "0.0.0.0"
+      BATTLEGRID_PORT: "7777"
+      BATTLEGRID_TICK_RATE: "30"
+    command:
+      - ./battlegrid-server
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "7777"
+      - --tick-rate
+      - "30"
+    restart: unless-stopped

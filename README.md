@@ -103,6 +103,34 @@ Run:
 .\server\build\Debug\battlegrid-server.exe --host 127.0.0.1 --port 7777 --tick-rate 30
 ```
 
+### Docker Server
+
+Build and run the C++ server with Docker Compose:
+
+```powershell
+docker compose up --build
+```
+
+Run in the background:
+
+```powershell
+docker compose up -d --build
+```
+
+View logs:
+
+```powershell
+docker compose logs -f battlegrid-server
+```
+
+Stop:
+
+```powershell
+docker compose down
+```
+
+The container exposes WebSocket port `7777` on the host, so Unreal and `tools/websocket-test.html` can use `ws://127.0.0.1:7777`.
+
 ### Unreal Client
 
 1. Open `client-unreal/BattleGridClient/BattleGridClient.uproject`.
@@ -114,7 +142,7 @@ Unreal Editor assets such as Input Actions, Mapping Contexts, Blueprints, maps, 
 
 ## Current Demo Flow
 
-1. Start the C++ server.
+1. Start the C++ server natively or with Docker Compose.
 2. Open `tools/websocket-test.html` and verify `ping`, `join`, `debug_room`, and snapshots.
 3. Open Unreal Editor.
 4. Press Play.
@@ -142,8 +170,7 @@ Unreal Editor assets such as Input Actions, Mapping Contexts, Blueprints, maps, 
 
 ## Next Steps
 
-- Dockerize the server.
-- Deploy the server to GCP.
+- Deploy the Dockerized server to GCP.
 - Add a bot client.
 - Add benchmark and load-test scripts.
 - Polish a demo video.
@@ -158,6 +185,7 @@ Unreal Editor assets such as Input Actions, Mapping Contexts, Blueprints, maps, 
 - [Unreal client](docs/unreal-client.md)
 - [Server architecture](docs/server-architecture.md)
 - [WebSocket JSON protocol](docs/protocol.md)
+- [Docker deployment](docs/deployment-docker.md)
 - [Development log](docs/development-log.md)
 - [Demo checklist](docs/demo-checklist.md)
 - [Troubleshooting](docs/troubleshooting.md)

@@ -1,0 +1,11 @@
+.git
+.vs
+client-unreal
+**/Binaries
+**/Intermediate
+**/Saved
+**/DerivedDataCache
+server/build
+*.sln
+*.user
+*.log

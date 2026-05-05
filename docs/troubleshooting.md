@@ -35,6 +35,68 @@ An old server process may still be running. Close the terminal running it, stop 
 
 If the port changes, update the Unreal PlayerController `ServerUrl`.
 
+For Docker Compose, stop the container:
+
+```powershell
+docker compose down
+```
+
+Then verify the port:
+
+```powershell
+netstat -ano | findstr :7777
+```
+
+## Docker Desktop Not Running
+
+If `docker compose up --build` fails before building the image, open Docker Desktop and wait until the engine is running.
+
+Verify:
+
+```powershell
+docker version
+docker compose version
+```
+
+## Docker Build Dependency Error
+
+The server Dockerfile installs Ubuntu packages during the build. If dependency installation fails, check:
+
+- Docker Desktop network access.
+- Corporate proxy or firewall settings.
+- Available disk space.
+- Whether the error occurs during `apt-get update` or CMake configure.
+
+Rebuild from a clean Docker cache if needed:
+
+```powershell
+docker compose build --no-cache battlegrid-server
+```
+
+## Container Exits Immediately
+
+Check logs:
+
+```powershell
+docker compose logs battlegrid-server
+```
+
+Common causes:
+
+- Port bind failure.
+- Missing runtime library.
+- Server command-line parse error.
+- Another container or native server already using `7777`.
+
+## Browser Cannot Connect To Docker Server
+
+Check:
+
+- `docker compose ps` shows the service running.
+- Ports show `7777:7777`.
+- Browser test uses `ws://127.0.0.1:7777`.
+- Windows firewall is not blocking Docker networking.
+
 ## Browser WebSocket CSP Error
 
 Do not test WebSockets from `chrome://` pages or other restricted browser pages. Open `tools/websocket-test.html` directly or serve it from a normal local web page.
