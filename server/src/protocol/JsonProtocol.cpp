@@ -76,6 +76,14 @@ std::string JsonProtocol::MatchRestarted(std::uint64_t matchId)
     return response.dump();
 }
 
+std::string JsonProtocol::DebugOk(const std::string& message)
+{
+    nlohmann::ordered_json response;
+    response["type"] = "debug_ok";
+    response["message"] = message;
+    return response.dump();
+}
+
 std::string JsonProtocol::RoomState(const nlohmann::json& roomState)
 {
     nlohmann::ordered_json response;
@@ -85,6 +93,17 @@ std::string JsonProtocol::RoomState(const nlohmann::json& roomState)
     response["projectile_count"] = roomState.value("projectile_count", 0);
     response["target_count"] = roomState.value("target_count", 0);
     response["bot_count"] = roomState.value("bot_count", 0);
+    response["bot_attacks_enabled"] = roomState.value("bot_attacks_enabled", true);
+    response["bot_difficulty"] = roomState.value(
+        "bot_difficulty",
+        std::string("normal")
+    );
+    response["bot_attack_damage"] = roomState.value("bot_attack_damage", 20);
+    response["bot_attack_cooldown"] = roomState.value("bot_attack_cooldown", 1.0);
+    response["bot_detect_range"] = roomState.value("bot_detect_range", 1500.0);
+    response["bot_attack_range"] = roomState.value("bot_attack_range", 900.0);
+    response["bot_move_speed"] = roomState.value("bot_move_speed", 500.0);
+    response["auto_end_match_by_timer"] = roomState.value("auto_end_match_by_timer", true);
     response["health_pack_count"] = roomState.value("health_pack_count", 0);
     response["active_health_pack_count"] = roomState.value("active_health_pack_count", 0);
     response["match"] = roomState.contains("match")

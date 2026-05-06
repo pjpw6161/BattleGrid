@@ -238,6 +238,121 @@ WorldX = ServerY
 WorldY = ServerX
 ```
 
+## SERVER ECHO Does Not Follow The Local Player
+
+If the local Unreal character moves but `SERVER ECHO` stays near spawn, check `debug_room`.
+
+If the server player shows `alive=false`, `hp=0`, and `respawn_timer > 0`, bots are killing the server-side `PlayerState` before movement can be verified. For movement debugging, open `tools/websocket-test.html`, connect to the server, then click `Disable Bot Attacks`.
+
+Expected response:
+
+```json
+{"type":"debug_ok","message":"bot attacks disabled"}
+```
+
+Then click `Send Debug Restart Match` or wait for respawn. With `bot_attacks_enabled=false`, bots still move, chase, and appear in snapshots, but they do not damage players.
+
+## Bots Kill Player Too Quickly
+
+Use the debug/demo controls from `tools/websocket-test.html`:
+
+1. Connect and send `Join`.
+2. Click `Bot Difficulty Easy`.
+3. Click `Disable Bot Attacks` if you only need to verify movement and ghost following.
+4. Click `Send Debug Room` and confirm:
+   - `bot_attacks_enabled=false` if attacks are disabled
+   - `bot_difficulty=easy`
+   - `bot_attack_damage=10`
+   - `bot_attack_cooldown=1.8`
+
+The equivalent JSON commands are:
+
+```json
+{ "type": "debug_set_bot_difficulty", "difficulty": "easy" }
+```
+
+```json
+{ "type": "debug_set_bot_attacks", "enabled": false }
+```
+
+## Game Starts In `game_over`
+
+This usually means the previous server match reached target score or the timer expired. For demo iteration:
+
+1. Click `Apply Safe Demo Mode`.
+2. Click `Send Debug Room`.
+3. Confirm `match.state=in_progress`, `match.game_over=false`, `bot_attacks_enabled=false`, `bot_difficulty=easy`, and `auto_end_match_by_timer=false`.
+
+If you want to preserve existing debug settings instead:
+
+1. Click `Disable Match Timer`.
+2. Click `Send Debug Restart Match`.
+3. Click `Send Debug Room`.
+4. Confirm `auto_end_match_by_timer=false` and `match.state=in_progress`.
+
+The equivalent JSON commands are:
+
+```json
+{ "type": "debug_set_match_timer", "enabled": false }
+```
+
+```json
+{ "type": "debug_restart_match" }
+```
+
+Disabling the match timer only disables timer-based `game_over`. A player can still end the match by reaching the target score.
+
+## Browser Freezes After `Send Join`
+
+The server broadcasts snapshots continuously after join. Keep `Log Raw Snapshots` unchecked in `tools/websocket-test.html`; the page stores the latest snapshot internally and updates compact summary panels instead.
+
+If the log is noisy:
+
+- Click `Pause Snapshot Log`.
+- Keep `Snapshot Summary Interval` at `30` or higher.
+- Click `Clear Log`.
+
+The page limits the visible log to 200 lines. Raw snapshot logging is only for short debugging sessions.
+
+## How To Use Demo/Debug Controls
+
+Open `tools/websocket-test.html`, connect to the same server Unreal uses, then send debug commands before starting the Unreal demo or immediately after joining:
+
+- `Apply Safe Demo Mode`: resets the match, respawns players, resets bots/cores/health packs, sets bot difficulty to easy, disables bot attacks, and disables timer-based game over.
+- `Bot Difficulty Easy`: lowers bot damage, range, speed, and attack cadence.
+- `Disable Bot Attacks`: keeps bot movement/ghosts active but prevents player damage.
+- `Disable Match Timer`: prevents timer-based `game_over` during long recordings.
+- `Send Debug Restart Match`: clears game-over state while preserving the current demo/debug settings.
+
+In Unreal, enable `bApplySafeDemoModeOnJoin` on the active PlayerController Blueprint to apply the full stable demo reset automatically after `join_ok`. Use `bApplyDemoServerSettingsOnJoin` only when you want to apply the older individual demo settings instead.
+
+## Server Bot HP Does Not Decrease
+
+Server bot damage comes from server hitscan, not from local Unreal projectile overlap logs. Local logs that mention `StaticMeshActor` or local targets only prove the offline projectile layer is working.
+
+Use `tools/websocket-test.html`:
+
+1. Connect and send `Join`.
+2. Click `Bot Difficulty Easy`.
+3. Click `Disable Bot Attacks` if you want the player to survive while testing.
+4. Wait for a snapshot with `bots=8/8`.
+5. Click `Send Fire At Nearest Bot`.
+
+Expected server logs:
+
+```text
+[BattleGridServer] Hitscan fire shooter=1 seq=...
+[BattleGridServer] Hitscan bot hit shooter=1 bot=... damage=20 hp=80/100
+```
+
+For prototype aiming, bot hitscan uses 3D head/body spheres and a forgiving 2D body fallback. The fallback is only for bot hit testing; disabling bot attacks does not make bots invulnerable.
+
+## SERVER ECHO Follows But Starts Far Away
+
+Server arena coordinates use fixed spawns such as `P1 = (-1200, 0)`. If Unreal simply adds those coordinates to the local pawn location, the own server ghost appears far in front of the local character.
+
+Keep `bAutoCalibrateServerSnapshotOrigin` enabled on the PlayerController. On the first own-player snapshot, Unreal aligns that server coordinate to the current local pawn XY position, then all player, bot, core, projectile, and health pack ghosts use the same calibrated origin.
+
 If projectile direction is mirrored, check `ServerAimSignX` and `ServerAimSignY` on the PlayerController.
 
 ## Ghost Movement Speed Mismatch

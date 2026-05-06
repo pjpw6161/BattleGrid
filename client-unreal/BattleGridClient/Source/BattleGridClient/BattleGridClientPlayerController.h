@@ -61,6 +61,11 @@ public:
 	bool IsAimingDownSights() const;
 	bool IsSprinting() const;
 	float GetLastShotSpreadDegrees() const;
+	bool IsServerDead() const;
+	bool IsServerInvincible() const;
+	float GetLastServerRespawnTimer() const;
+	float GetLastServerInvincibleTimer() const;
+	FString GetServerLifeStateText() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputMappingContext> BattleGridMappingContext;
@@ -122,6 +127,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Network", meta = (ClampMin = "0.0"))
 	float InputSendIntervalSeconds;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server State")
+	bool bRespectServerDeathState;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server State")
+	bool bServerDeathLocksInput;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server State")
+	bool bSnapLocalPawnOnServerRespawn;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server State")
+	bool bShowServerDeathStatus;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Movement", meta = (ClampMin = "0.0"))
 	float NormalMoveSpeed;
 
@@ -161,6 +178,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo", meta = (ClampMin = "1"))
 	int32 InputAckLogInterval;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
+	bool bApplyDemoServerSettingsOnJoin;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
+	bool bApplySafeDemoModeOnJoin;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
+	bool bDemoBotAttacksEnabled;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
+	FString DemoBotDifficulty;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
+	bool bDemoAutoEndMatchByTimer;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
 	bool bScoreboardToggleMode;
 
@@ -187,6 +219,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
 	float ServerGhostHeight;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	bool bAutoCalibrateServerSnapshotOrigin;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
 	bool bShowServerPositionError;
@@ -274,16 +309,22 @@ private:
 	FVector CalculateShotDirectionWithSpread(float SpreadDegrees) const;
 	void SendInputToServerIfNeeded();
 	void SendInputToServer(bool bForceSend);
+	void ApplyDemoServerSettingsIfNeeded();
+	bool ShouldBlockServerGameplayInput() const;
 	void UpdateServerGhostsFromSnapshot();
+	FVector ConvertServerPositionToWorldNoOrigin(float ServerX, float ServerY, float WorldHeight) const;
 	FVector ConvertServerPositionToWorld(float ServerX, float ServerY) const;
 	FVector ConvertServerPositionToWorld(float ServerX, float ServerY, float WorldHeight) const;
 	FVector2D ConvertUnrealDirectionToServerDirection(const FVector& UnrealForward) const;
 	FVector2D ConvertServerDirectionToUnrealDirection(float ServerDirX, float ServerDirY) const;
+	void CalibrateServerSnapshotOriginIfNeeded();
+	void ResetServerSnapshotOriginCalibration();
 	void UpdateServerProjectileGhostsFromSnapshot();
 	void UpdateServerTargetGhostsFromSnapshot();
 	void UpdateServerBotGhostsFromSnapshot();
 	void UpdateServerHealthPackGhostsFromSnapshot();
 	void UpdateOwnServerPositionErrorAndCorrection(float DeltaTime);
+	void UpdateServerLifeStateFromSnapshot(float DeltaTime);
 
 	float LastFireTime;
 	float MaxPlayerHealth;
@@ -303,6 +344,10 @@ private:
 	bool bPendingReloadInput;
 	bool bScoreboardHeld;
 	bool bScoreboardVisible;
+	bool bDemoServerSettingsAppliedForJoin;
+	bool bSafeDemoModeAppliedForJoin;
+	int32 LastDemoSettingsPlayerId;
+	int32 LastSafeDemoModePlayerId;
 	int32 ShotSequence;
 	FVector2D LastShotDirectionServer;
 	float LastShotDirectionServerZ;
@@ -326,9 +371,18 @@ private:
 	TMap<int32, TObjectPtr<ABattleGridServerHealthPackGhostActor>> ServerHealthPackGhostActors;
 	FVector ServerSnapshotOrigin;
 	bool bServerSnapshotOriginInitialized;
+	bool bServerSnapshotOriginCalibrated;
+	int32 LastCalibratedServerPlayerId;
+	int32 LastCalibrationSnapshotTick;
+	int32 LastCalibrationMatchId;
 	int32 LastProcessedSnapshotTick;
 	float LastServerPositionError;
 	FVector LastOwnServerWorldLocation;
 	bool bHasOwnServerWorldLocation;
 	int32 LastServerPositionErrorLogSnapshotTick;
+	bool bWasServerAlive;
+	bool bIsServerDead;
+	bool bWasServerInvincible;
+	float LastServerRespawnTimer;
+	float LastServerInvincibleTimer;
 };

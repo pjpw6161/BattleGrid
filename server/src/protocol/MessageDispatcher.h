@@ -36,6 +36,10 @@ private:
     std::string HandleInput(const nlohmann::json& message);
     std::string HandleDebugRoom();
     std::string HandleDebugRestartMatch();
+    std::string HandleDebugApplyDemoMode();
+    std::string HandleDebugSetBotAttacks(const nlohmann::json& message);
+    std::string HandleDebugSetBotDifficulty(const nlohmann::json& message);
+    std::string HandleDebugSetMatchTimer(const nlohmann::json& message);
 
     SessionState& sessionState;
     std::shared_ptr<RoomManager> roomManager;

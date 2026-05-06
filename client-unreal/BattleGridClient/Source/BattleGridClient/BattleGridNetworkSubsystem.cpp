@@ -33,6 +33,7 @@ void UBattleGridNetworkSubsystem::Connect(const FString& InServerUrl, const FStr
 	bHasJoined = false;
 	LastServerMessage.Empty();
 	LastError.Empty();
+	LastDebugMessage.Empty();
 	LastSnapshotTick = 0;
 	LastSnapshotRoomId = 0;
 	LatestPlayerSnapshots.Empty();
@@ -118,6 +119,41 @@ void UBattleGridNetworkSubsystem::SendDebugRestartMatch()
 	JsonObject->SetStringField(TEXT("type"), TEXT("debug_restart_match"));
 
 	SendJsonObject(JsonObject, TEXT("Debug restart match sent"));
+}
+
+void UBattleGridNetworkSubsystem::SendDebugApplyDemoMode()
+{
+	TSharedRef<FJsonObject> JsonObject = MakeShared<FJsonObject>();
+	JsonObject->SetStringField(TEXT("type"), TEXT("debug_apply_demo_mode"));
+
+	SendJsonObject(JsonObject, TEXT("Apply safe demo mode sent"));
+}
+
+void UBattleGridNetworkSubsystem::SendDebugSetBotAttacks(bool bEnabled)
+{
+	TSharedRef<FJsonObject> JsonObject = MakeShared<FJsonObject>();
+	JsonObject->SetStringField(TEXT("type"), TEXT("debug_set_bot_attacks"));
+	JsonObject->SetBoolField(TEXT("enabled"), bEnabled);
+
+	SendJsonObject(JsonObject, bEnabled ? TEXT("Enable bot attacks sent") : TEXT("Disable bot attacks sent"));
+}
+
+void UBattleGridNetworkSubsystem::SendDebugSetBotDifficulty(const FString& Difficulty)
+{
+	TSharedRef<FJsonObject> JsonObject = MakeShared<FJsonObject>();
+	JsonObject->SetStringField(TEXT("type"), TEXT("debug_set_bot_difficulty"));
+	JsonObject->SetStringField(TEXT("difficulty"), Difficulty.IsEmpty() ? FString(TEXT("normal")) : Difficulty);
+
+	SendJsonObject(JsonObject, TEXT("Set bot difficulty sent"));
+}
+
+void UBattleGridNetworkSubsystem::SendDebugSetMatchTimer(bool bEnabled)
+{
+	TSharedRef<FJsonObject> JsonObject = MakeShared<FJsonObject>();
+	JsonObject->SetStringField(TEXT("type"), TEXT("debug_set_match_timer"));
+	JsonObject->SetBoolField(TEXT("enabled"), bEnabled);
+
+	SendJsonObject(JsonObject, bEnabled ? TEXT("Enable match timer sent") : TEXT("Disable match timer sent"));
 }
 
 void UBattleGridNetworkSubsystem::SendInput(
@@ -241,6 +277,11 @@ FString UBattleGridNetworkSubsystem::GetLastError() const
 	return LastError;
 }
 
+FString UBattleGridNetworkSubsystem::GetLastDebugMessage() const
+{
+	return LastDebugMessage;
+}
+
 FString UBattleGridNetworkSubsystem::GetConnectionStatusText() const
 {
 	return GetServerSummaryText();
@@ -252,23 +293,32 @@ FString UBattleGridNetworkSubsystem::GetServerSummaryText() const
 	{
 		FBattleGridServerPlayerSnapshot OwnSnapshot;
 		const bool bHasOwnSnapshot = GetOwnPlayerSnapshot(OwnSnapshot);
-		const FString AliveText = !bHasOwnSnapshot
-			? FString(TEXT("-"))
-			: (OwnSnapshot.bAlive ? FString(TEXT("Alive")) : FString(TEXT("Dead")));
-		const FString InvincibleText = bHasOwnSnapshot && OwnSnapshot.bInvincible
-			? FString(TEXT("Invincible"))
-			: FString(TEXT("Vulnerable"));
+		FString LifeText = TEXT("-");
+		if (bHasOwnSnapshot)
+		{
+			if (!OwnSnapshot.bAlive)
+			{
+				LifeText = FString::Printf(TEXT("DEAD %.1fs"), OwnSnapshot.RespawnTimer);
+			}
+			else if (OwnSnapshot.bInvincible)
+			{
+				LifeText = FString::Printf(TEXT("INV %.1fs"), OwnSnapshot.InvincibleTimer);
+			}
+			else
+			{
+				LifeText = TEXT("Alive");
+			}
+		}
 
 		return FString::Printf(
-			TEXT("Server: Connected | Player=%d Room=%d Snapshot=%d | %s | ServerHP=%d/%d %s/%s | ServerScore=%d K/D=%d/%d TargetKills=%d BotKills=%d | Targets=%d/%d | Bots=%d/%d | HealthPacks=%d/%d | Projectiles=%d"),
+			TEXT("Server: Connected | Player=%d Room=%d Snapshot=%d | %s | ServerHP=%d/%d | %s | ServerScore=%d K/D=%d/%d TargetKills=%d BotKills=%d | Targets=%d/%d | Bots=%d/%d | HealthPacks=%d/%d | Projectiles=%d"),
 			PlayerId,
 			RoomId,
 			LastSnapshotTick,
 			*GetServerScoreboardSummaryText(),
 			bHasOwnSnapshot ? OwnSnapshot.HP : 0,
 			bHasOwnSnapshot ? OwnSnapshot.MaxHP : 0,
-			*AliveText,
-			*InvincibleText,
+			*LifeText,
 			GetOwnServerScore(),
 			bHasOwnSnapshot ? OwnSnapshot.Kills : 0,
 			bHasOwnSnapshot ? OwnSnapshot.Deaths : 0,
@@ -673,6 +723,7 @@ void UBattleGridNetworkSubsystem::HandleClosed(
 	LatestMatchSnapshot = FBattleGridServerMatchSnapshot();
 	RecentCombatEvents.Empty();
 	SeenCombatEventIds.Empty();
+	LastDebugMessage.Empty();
 	bHasMatchSnapshot = false;
 	bHasLoggedServerSummary = false;
 	InputAckLogCounter = 0;
@@ -759,6 +810,10 @@ void UBattleGridNetworkSubsystem::HandleMessage(const FString& Message)
 	{
 		double MatchIdValue = 0.0;
 		JsonObject->TryGetNumberField(TEXT("match_id"), MatchIdValue);
+		LastDebugMessage = FString::Printf(
+			TEXT("match restarted id=%d"),
+			static_cast<int32>(MatchIdValue)
+		);
 		LatestMatchSnapshot = FBattleGridServerMatchSnapshot();
 		LatestMatchSnapshot.MatchId = static_cast<int32>(MatchIdValue);
 		LatestScoreboard.Empty();
@@ -772,6 +827,15 @@ void UBattleGridNetworkSubsystem::HandleMessage(const FString& Message)
 			TEXT("[BattleGrid] Match restarted. match_id=%d"),
 			static_cast<int32>(MatchIdValue)
 		);
+		return;
+	}
+
+	if (Type == TEXT("debug_ok"))
+	{
+		FString DebugMessage;
+		JsonObject->TryGetStringField(TEXT("message"), DebugMessage);
+		LastDebugMessage = DebugMessage.IsEmpty() ? FString(TEXT("debug ok")) : DebugMessage;
+		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Server debug response: %s"), *LastDebugMessage);
 		return;
 	}
 
@@ -996,8 +1060,11 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		double PlayerIdValue = 0.0;
 		double XValue = 0.0;
 		double YValue = 0.0;
+		double ZValue = 0.0;
 		double HPValue = 0.0;
 		double MaxHPValue = 0.0;
+		double RespawnTimerValue = 0.0;
+		double InvincibleTimerValue = 0.0;
 		double ScoreValue = 0.0;
 		double KillsValue = 0.0;
 		double DeathsValue = 0.0;
@@ -1012,10 +1079,13 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		PlayerObject->TryGetStringField(TEXT("nickname"), PlayerSnapshot.Nickname);
 		PlayerObject->TryGetNumberField(TEXT("x"), XValue);
 		PlayerObject->TryGetNumberField(TEXT("y"), YValue);
+		PlayerObject->TryGetNumberField(TEXT("z"), ZValue);
 		PlayerObject->TryGetNumberField(TEXT("hp"), HPValue);
 		PlayerObject->TryGetNumberField(TEXT("max_hp"), MaxHPValue);
 		PlayerObject->TryGetBoolField(TEXT("alive"), bAliveValue);
 		PlayerObject->TryGetBoolField(TEXT("invincible"), bInvincibleValue);
+		PlayerObject->TryGetNumberField(TEXT("respawn_timer"), RespawnTimerValue);
+		PlayerObject->TryGetNumberField(TEXT("invincible_timer"), InvincibleTimerValue);
 		PlayerObject->TryGetNumberField(TEXT("score"), ScoreValue);
 		PlayerObject->TryGetNumberField(TEXT("kills"), KillsValue);
 		PlayerObject->TryGetNumberField(TEXT("deaths"), DeathsValue);
@@ -1027,10 +1097,13 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		PlayerSnapshot.PlayerId = static_cast<int32>(PlayerIdValue);
 		PlayerSnapshot.X = static_cast<float>(XValue);
 		PlayerSnapshot.Y = static_cast<float>(YValue);
+		PlayerSnapshot.Z = static_cast<float>(ZValue);
 		PlayerSnapshot.HP = static_cast<int32>(HPValue);
 		PlayerSnapshot.MaxHP = static_cast<int32>(MaxHPValue);
 		PlayerSnapshot.bAlive = bAliveValue;
 		PlayerSnapshot.bInvincible = bInvincibleValue;
+		PlayerSnapshot.RespawnTimer = static_cast<float>(RespawnTimerValue);
+		PlayerSnapshot.InvincibleTimer = static_cast<float>(InvincibleTimerValue);
 		PlayerSnapshot.Score = static_cast<int32>(ScoreValue);
 		PlayerSnapshot.Kills = static_cast<int32>(KillsValue);
 		PlayerSnapshot.Deaths = static_cast<int32>(DeathsValue);

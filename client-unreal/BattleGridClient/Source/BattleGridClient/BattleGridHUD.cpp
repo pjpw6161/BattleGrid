@@ -6,6 +6,18 @@
 #include "BattleGridWeaponComponent.h"
 #include "Blueprint/UserWidget.h"
 
+namespace
+{
+FString ToGamePrototypeHudText(const FString& Text)
+{
+	FString Result = Text.Replace(TEXT("TargetKills"), TEXT("CoreKills"));
+	Result = Result.Replace(TEXT(" | Target"), TEXT(" | Core"));
+	Result = Result.Replace(TEXT("Targets"), TEXT("Cores"));
+	Result = Result.Replace(TEXT("HealthPacks"), TEXT("HPacks"));
+	return Result;
+}
+}
+
 ABattleGridHUD::ABattleGridHUD()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -84,6 +96,8 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		BattleGridController->GetCombatMessage(),
 		BattleGridController->HasActiveCombatMessage(),
 		BattleGridController->HasWon(),
+		BattleGridController->GetServerLifeStateText(),
+		BattleGridController->IsServerDead(),
 		BattleGridController->GetDetailedNetworkStatusText(),
 		BattleGridController->GetLastServerPositionError(),
 		BattleGridController->bShowServerPositionError
@@ -180,7 +194,7 @@ void ABattleGridHUD::DrawHUD()
 	);
 
 	DrawText(
-		BattleGridController->GetDetailedNetworkStatusText(),
+		ToGamePrototypeHudText(BattleGridController->GetDetailedNetworkStatusText()),
 		FLinearColor(0.8f, 0.9f, 1.0f, 1.0f),
 		HudX + 20.0f,
 		HudY + 15.0f + LineHeight * 3.0f,
@@ -202,7 +216,7 @@ void ABattleGridHUD::DrawHUD()
 	if (BattleGridController->ShouldShowScoreboard())
 	{
 		DrawText(
-			BattleGridController->GetServerScoreboardText(),
+			ToGamePrototypeHudText(BattleGridController->GetServerScoreboardText()),
 			FLinearColor(0.9f, 1.0f, 0.75f, 1.0f),
 			HudX + 20.0f,
 			HudY + 15.0f + LineHeight * 6.0f,
@@ -210,11 +224,17 @@ void ABattleGridHUD::DrawHUD()
 			0.85f
 		);
 	}
-	else if (BattleGridController->HasActiveCombatMessage() || BattleGridController->HasWon())
+	else if (
+		BattleGridController->IsServerDead()
+		|| BattleGridController->HasActiveCombatMessage()
+		|| BattleGridController->HasWon()
+	)
 	{
-		const FString CombatDisplayMessage = BattleGridController->HasWon()
+		const FString CombatDisplayMessage = BattleGridController->IsServerDead()
+			? BattleGridController->GetServerLifeStateText()
+			: (BattleGridController->HasWon()
 			? FString(TEXT("Victory! Press F5/Enter to Restart"))
-			: BattleGridController->GetCombatMessage();
+			: BattleGridController->GetCombatMessage());
 
 		DrawText(
 			CombatDisplayMessage,

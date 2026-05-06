@@ -110,6 +110,16 @@ Implemented v1 server bot behavior:
 - Bot kills award +1 server score and increment server `bot_kills`.
 - Dead bots respawn after 8 seconds with 1.5 seconds of invincibility.
 
+Debug/demo bot difficulty values:
+
+| Difficulty | Damage | Cooldown | Detect Range | Attack Range | Speed |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Easy | 10 | 1.8s | 1000 | 650 | 400 |
+| Normal | 20 | 1.0s | 1500 | 900 | 500 |
+| Hard | 25 | 0.7s | 1800 | 1100 | 600 |
+
+For demo iteration, bot attacks can be disabled while keeping bot movement and snapshots active.
+
 This v1 does not use navmesh pathfinding, bot projectile visuals, animations, or tactical decision making.
 
 ## Health Pack Rules
@@ -185,6 +195,7 @@ Implemented v1 server match behavior:
 - Match ends when a player reaches target score or time expires.
 - After game over, snapshots continue but new combat scoring is stopped.
 - A test-only `debug_restart_match` message resets the match for browser and demo iteration.
+- A test-only `debug_set_match_timer` message can disable timer-based `game_over` while leaving target-score wins active.
 
 ## HUD Requirements
 
@@ -205,6 +216,18 @@ The third-person PvPvE HUD should show:
 - Current v1: holding Tab shows a text scoreboard overlay using server snapshot `scoreboard` data and the active match state. It also appears automatically after server game over.
 
 The current debug-style server snapshot summary should move behind a developer/demo toggle once the PvPvE HUD becomes the primary presentation.
+
+## Prototype Visual Language
+
+The current server-authoritative layer uses readable placeholder visuals:
+
+- Server player ghost: `SERVER ECHO P#`.
+- Server target/core ghost: `CORE-#`.
+- Server bot ghost: `BOT-#`.
+- Server health pack ghost: `HPACK-#`.
+- Server projectile ghost: small server bullet placeholder.
+
+These placeholders use Unreal Engine basic shapes and optional locally-created materials. They are intended for demo readability until final models, effects, and animations are added.
 
 ## Kill Feed And Combat Events
 

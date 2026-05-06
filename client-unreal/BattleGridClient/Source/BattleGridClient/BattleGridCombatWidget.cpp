@@ -5,6 +5,18 @@
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 
+namespace
+{
+FString ToGamePrototypeHudText(const FString& Text)
+{
+	FString Result = Text.Replace(TEXT("TargetKills"), TEXT("CoreKills"));
+	Result = Result.Replace(TEXT(" | Target"), TEXT(" | Core"));
+	Result = Result.Replace(TEXT("Targets"), TEXT("Cores"));
+	Result = Result.Replace(TEXT("HealthPacks"), TEXT("HPacks"));
+	return Result;
+}
+}
+
 void UBattleGridCombatWidget::UpdateHud(
 	float CurrentHealth,
 	float MaxHealth,
@@ -18,6 +30,8 @@ void UBattleGridCombatWidget::UpdateHud(
 	const FString& CombatMessage,
 	bool bShowCombatMessage,
 	bool bHasWon,
+	const FString& ServerLifeStateText,
+	bool bServerDead,
 	const FString& NetworkStatusText,
 	float ServerPositionError,
 	bool bHasServerPositionError,
@@ -66,14 +80,16 @@ void UBattleGridCombatWidget::UpdateHud(
 	if (CombatMessageText)
 	{
 		const FString DisplayMessage = bShowScoreboard
-			? ScoreboardText
+			? ToGamePrototypeHudText(ScoreboardText)
+			: (bServerDead
+			? ServerLifeStateText
 			: (bHasWon
 			? FString(TEXT("Victory! Press F5/Enter to Restart"))
-			: CombatMessage);
+			: CombatMessage));
 
 		CombatMessageText->SetText(FText::FromString(DisplayMessage));
 		CombatMessageText->SetVisibility(
-			(bShowScoreboard || bShowCombatMessage || bHasWon)
+			(bShowScoreboard || bServerDead || bShowCombatMessage || bHasWon)
 				? ESlateVisibility::Visible
 				: ESlateVisibility::Collapsed
 		);
@@ -81,12 +97,13 @@ void UBattleGridCombatWidget::UpdateHud(
 
 	if (ControlsText)
 	{
+		const FString PolishedNetworkStatusText = ToGamePrototypeHudText(NetworkStatusText);
 		const FString BaseControlsMessage = bHasWon
 			? FString(TEXT("Victory! Press F5/Enter to Restart"))
 			: FString(TEXT("WASD Move | Mouse Look | LMB Fire | RMB ADS | Shift Sprint | Space Jump | R Reload | F5/Enter Restart | Tab Scoreboard"));
-		const FString FullControlsMessage = NetworkStatusText.IsEmpty()
+		const FString FullControlsMessage = PolishedNetworkStatusText.IsEmpty()
 			? BaseControlsMessage
-			: FString::Printf(TEXT("%s\n%s"), *NetworkStatusText, *BaseControlsMessage);
+			: FString::Printf(TEXT("%s\n%s"), *PolishedNetworkStatusText, *BaseControlsMessage);
 
 		ControlsText->SetText(FText::FromString(FullControlsMessage));
 	}

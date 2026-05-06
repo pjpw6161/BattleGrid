@@ -23,6 +23,7 @@ public:
     );
     static std::string InputAck(std::uint64_t sequence, std::uint64_t playerId);
     static std::string MatchRestarted(std::uint64_t matchId);
+    static std::string DebugOk(const std::string& message);
     static std::string RoomState(const nlohmann::json& roomState);
 };
 }

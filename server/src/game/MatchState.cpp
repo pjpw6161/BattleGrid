@@ -15,7 +15,7 @@ void MatchState::Reset()
     winnerNickname.clear();
 }
 
-void MatchState::Tick(double deltaSeconds)
+void MatchState::Tick(double deltaSeconds, bool bAutoEndByTimer)
 {
     if (gameOver)
     {
@@ -23,7 +23,7 @@ void MatchState::Tick(double deltaSeconds)
     }
 
     timeRemainingSeconds = std::max(0.0, timeRemainingSeconds - std::max(0.0, deltaSeconds));
-    if (timeRemainingSeconds <= 0.0)
+    if (bAutoEndByTimer && timeRemainingSeconds <= 0.0)
     {
         gameOver = true;
         state = "game_over";

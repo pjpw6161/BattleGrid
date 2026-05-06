@@ -80,6 +80,21 @@ bool ReadBool(
     return value->get<bool>();
 }
 
+std::string ReadString(
+    const nlohmann::json& message,
+    const char* fieldName,
+    const std::string& defaultValue
+)
+{
+    const auto value = message.find(fieldName);
+    if (value == message.end() || !value->is_string())
+    {
+        return defaultValue;
+    }
+
+    return value->get<std::string>();
+}
+
 int ReadInt(
     const nlohmann::json& message,
     const char* fieldName,
@@ -151,6 +166,26 @@ std::string MessageDispatcher::DispatchParsedMessage(const nlohmann::json& messa
         return HandleDebugRestartMatch();
     }
 
+    if (*type == "debug_apply_demo_mode")
+    {
+        return HandleDebugApplyDemoMode();
+    }
+
+    if (*type == "debug_set_bot_attacks")
+    {
+        return HandleDebugSetBotAttacks(message);
+    }
+
+    if (*type == "debug_set_bot_difficulty")
+    {
+        return HandleDebugSetBotDifficulty(message);
+    }
+
+    if (*type == "debug_set_match_timer")
+    {
+        return HandleDebugSetMatchTimer(message);
+    }
+
     return JsonProtocol::Error("unknown message type");
 }
 
@@ -216,9 +251,17 @@ std::string MessageDispatcher::HandleInput(const nlohmann::json& message)
     const bool jump = ReadBool(message, "jump", false);
     const int ammo = ReadInt(message, "ammo", 0);
     const double spreadDegrees = ReadDouble(message, "spread_deg", 0.0);
-    const double shotDirX = ReadDouble(message, "shot_dir_x", aimX);
-    const double shotDirY = ReadDouble(message, "shot_dir_y", aimY);
-    const double shotDirZ = ReadDouble(message, "shot_dir_z", 0.0);
+    double shotDirX = ReadDouble(message, "shot_dir_x", aimX);
+    double shotDirY = ReadDouble(message, "shot_dir_y", aimY);
+    double shotDirZ = ReadDouble(message, "shot_dir_z", 0.0);
+    const double shotDirection2dLengthSquared =
+        (shotDirX * shotDirX) + (shotDirY * shotDirY);
+    if (shotDirection2dLengthSquared <= 0.0001)
+    {
+        shotDirX = aimX;
+        shotDirY = aimY;
+        shotDirZ = 0.0;
+    }
 
     if (messagePlayerId != sessionState.playerId)
     {
@@ -309,5 +352,90 @@ std::string MessageDispatcher::HandleDebugRestartMatch()
 
     const std::uint64_t matchId = room->ResetMatch();
     return JsonProtocol::MatchRestarted(matchId);
+}
+
+std::string MessageDispatcher::HandleDebugApplyDemoMode()
+{
+    if (!roomManager)
+    {
+        return JsonProtocol::Error("room unavailable");
+    }
+
+    std::shared_ptr<GameRoom> room = roomManager->GetDefaultRoom();
+    if (!room)
+    {
+        return JsonProtocol::Error("room unavailable");
+    }
+
+    room->ApplySafeDemoMode();
+    return JsonProtocol::DebugOk("safe demo mode applied");
+}
+
+std::string MessageDispatcher::HandleDebugSetBotAttacks(const nlohmann::json& message)
+{
+    if (!roomManager)
+    {
+        return JsonProtocol::Error("room unavailable");
+    }
+
+    std::shared_ptr<GameRoom> room = roomManager->GetDefaultRoom();
+    if (!room)
+    {
+        return JsonProtocol::Error("room unavailable");
+    }
+
+    const bool bEnabled = ReadBool(message, "enabled", true);
+    room->SetBotAttacksEnabled(bEnabled);
+
+    return JsonProtocol::DebugOk(
+        bEnabled ? "bot attacks enabled" : "bot attacks disabled"
+    );
+}
+
+std::string MessageDispatcher::HandleDebugSetBotDifficulty(const nlohmann::json& message)
+{
+    if (!roomManager)
+    {
+        return JsonProtocol::Error("room unavailable");
+    }
+
+    std::shared_ptr<GameRoom> room = roomManager->GetDefaultRoom();
+    if (!room)
+    {
+        return JsonProtocol::Error("room unavailable");
+    }
+
+    const std::string difficulty = ReadString(message, "difficulty", "normal");
+    if (difficulty != "easy" && difficulty != "normal" && difficulty != "hard")
+    {
+        return JsonProtocol::Error("invalid bot difficulty");
+    }
+
+    room->ApplyBotDifficulty(difficulty);
+
+    return JsonProtocol::DebugOk("bot difficulty set to " + difficulty);
+}
+
+std::string MessageDispatcher::HandleDebugSetMatchTimer(const nlohmann::json& message)
+{
+    if (!roomManager)
+    {
+        return JsonProtocol::Error("room unavailable");
+    }
+
+    std::shared_ptr<GameRoom> room = roomManager->GetDefaultRoom();
+    if (!room)
+    {
+        return JsonProtocol::Error("room unavailable");
+    }
+
+    const bool bEnabled = ReadBool(message, "enabled", true);
+    room->SetAutoEndMatchByTimer(bEnabled);
+
+    return JsonProtocol::DebugOk(
+        bEnabled
+            ? "auto end match by timer enabled"
+            : "auto end match by timer disabled"
+    );
 }
 }

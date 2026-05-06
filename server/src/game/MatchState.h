@@ -19,7 +19,7 @@ struct MatchState
     std::uint64_t matchId = 1;
 
     void Reset();
-    void Tick(double deltaSeconds);
+    void Tick(double deltaSeconds, bool bAutoEndByTimer = true);
     bool IsGameOver() const;
     void EndMatch(std::uint64_t inWinnerPlayerId, const std::string& inWinnerNickname);
     nlohmann::json ToJson() const;

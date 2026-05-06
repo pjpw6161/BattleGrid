@@ -2,9 +2,11 @@
 
 #include "BattleGridServerProjectileGhostActor.h"
 
+#include "Components/PointLightComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
 
 ABattleGridServerProjectileGhostActor::ABattleGridServerProjectileGhostActor()
@@ -12,8 +14,13 @@ ABattleGridServerProjectileGhostActor::ABattleGridServerProjectileGhostActor()
 	PrimaryActorTick.bCanEverTick = true;
 
 	InterpSpeed = 20.0f;
+	ProjectileScale = 0.25f;
+	bUsePointLight = true;
+	PointLightIntensity = 350.0f;
+	PointLightRadius = 160.0f;
 	ProjectileId = 0;
 	TargetLocation = FVector::ZeroVector;
+	DefaultMaterial = nullptr;
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
@@ -21,7 +28,7 @@ ABattleGridServerProjectileGhostActor::ABattleGridServerProjectileGhostActor()
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
 	MeshComponent->SetupAttachment(SceneRoot);
 	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	MeshComponent->SetRelativeScale3D(FVector(0.3f));
+	MeshComponent->SetRelativeScale3D(FVector(ProjectileScale));
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(
 		TEXT("/Engine/BasicShapes/Sphere.Sphere")
@@ -29,6 +36,23 @@ ABattleGridServerProjectileGhostActor::ABattleGridServerProjectileGhostActor()
 	if (SphereMesh.Succeeded())
 	{
 		MeshComponent->SetStaticMesh(SphereMesh.Object);
+	}
+
+	PointLightComponent = CreateDefaultSubobject<UPointLightComponent>(TEXT("PointLightComponent"));
+	PointLightComponent->SetupAttachment(SceneRoot);
+	PointLightComponent->SetIntensity(PointLightIntensity);
+	PointLightComponent->SetAttenuationRadius(PointLightRadius);
+	PointLightComponent->SetLightColor(FLinearColor(0.4f, 0.8f, 1.0f));
+	PointLightComponent->SetVisibility(bUsePointLight);
+}
+
+void ABattleGridServerProjectileGhostActor::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (MeshComponent)
+	{
+		DefaultMaterial = MeshComponent->GetMaterial(0);
 	}
 }
 
@@ -53,6 +77,26 @@ void ABattleGridServerProjectileGhostActor::SetSnapshotData(
 {
 	ProjectileId = Snapshot.ProjectileId;
 	TargetLocation = WorldLocation;
+
+	if (MeshComponent)
+	{
+		MeshComponent->SetRelativeScale3D(FVector(ProjectileScale));
+		if (AliveMaterial)
+		{
+			MeshComponent->SetMaterial(0, AliveMaterial.Get());
+		}
+		else if (DefaultMaterial)
+		{
+			MeshComponent->SetMaterial(0, DefaultMaterial.Get());
+		}
+	}
+
+	if (PointLightComponent)
+	{
+		PointLightComponent->SetIntensity(PointLightIntensity);
+		PointLightComponent->SetAttenuationRadius(PointLightRadius);
+		PointLightComponent->SetVisibility(bUsePointLight);
+	}
 
 	FVector FlatDirection(UnrealDirection.X, UnrealDirection.Y, 0.0f);
 	if (FlatDirection.Normalize())

@@ -9,6 +9,8 @@
 
 class USceneComponent;
 class UStaticMeshComponent;
+class UPointLightComponent;
+class UMaterialInterface;
 
 UCLASS(Blueprintable)
 class BATTLEGRIDCLIENT_API ABattleGridServerProjectileGhostActor : public AActor
@@ -18,6 +20,7 @@ class BATTLEGRIDCLIENT_API ABattleGridServerProjectileGhostActor : public AActor
 public:
 	ABattleGridServerProjectileGhostActor();
 
+	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 
 	void SetSnapshotData(
@@ -33,10 +36,31 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	TObjectPtr<UStaticMeshComponent> MeshComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	TObjectPtr<UPointLightComponent> PointLightComponent;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot", meta = (ClampMin = "0.0"))
 	float InterpSpeed;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	TObjectPtr<UMaterialInterface> AliveMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.01"))
+	float ProjectileScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	bool bUsePointLight;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.0"))
+	float PointLightIntensity;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.0"))
+	float PointLightRadius;
 
 private:
 	int32 ProjectileId;
 	FVector TargetLocation;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> DefaultMaterial;
 };

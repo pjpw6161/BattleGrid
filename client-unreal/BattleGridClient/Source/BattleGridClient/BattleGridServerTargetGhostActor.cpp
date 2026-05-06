@@ -6,6 +6,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
 
 ABattleGridServerTargetGhostActor::ABattleGridServerTargetGhostActor()
@@ -13,11 +14,15 @@ ABattleGridServerTargetGhostActor::ABattleGridServerTargetGhostActor()
 	PrimaryActorTick.bCanEverTick = true;
 
 	InterpSpeed = 10.0f;
+	AliveScale = 1.0f;
+	DeadScale = 0.35f;
+	LabelHeight = 140.0f;
 	TargetId = 0;
 	TargetLocation = FVector::ZeroVector;
 	HP = 100;
 	MaxHP = 100;
 	bAlive = true;
+	DefaultMaterial = nullptr;
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
@@ -25,7 +30,7 @@ ABattleGridServerTargetGhostActor::ABattleGridServerTargetGhostActor()
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
 	MeshComponent->SetupAttachment(SceneRoot);
 	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	MeshComponent->SetRelativeScale3D(FVector(0.8f));
+	MeshComponent->SetRelativeScale3D(FVector(AliveScale));
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(
 		TEXT("/Engine/BasicShapes/Cube.Cube")
@@ -40,9 +45,19 @@ ABattleGridServerTargetGhostActor::ABattleGridServerTargetGhostActor()
 	LabelComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	LabelComponent->SetHorizontalAlignment(EHTA_Center);
 	LabelComponent->SetTextRenderColor(FColor(255, 165, 0));
-	LabelComponent->SetText(FText::FromString(TEXT("Server Target")));
-	LabelComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 110.0f));
+	LabelComponent->SetText(FText::FromString(TEXT("CORE")));
+	LabelComponent->SetRelativeLocation(FVector(0.0f, 0.0f, LabelHeight));
 	LabelComponent->SetWorldSize(30.0f);
+}
+
+void ABattleGridServerTargetGhostActor::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (MeshComponent)
+	{
+		DefaultMaterial = MeshComponent->GetMaterial(0);
+	}
 }
 
 void ABattleGridServerTargetGhostActor::Tick(float DeltaSeconds)
@@ -69,17 +84,15 @@ void ABattleGridServerTargetGhostActor::SetSnapshotData(
 	bAlive = Snapshot.bAlive;
 	TargetLocation = WorldLocation;
 
-	if (MeshComponent)
-	{
-		MeshComponent->SetRelativeScale3D(bAlive ? FVector(0.8f) : FVector(0.35f));
-	}
+	ApplyVisualState(bAlive);
 
 	if (LabelComponent)
 	{
 		const FString Label = bAlive
-			? FString::Printf(TEXT("T%d HP %d/%d"), TargetId, HP, MaxHP)
-			: FString::Printf(TEXT("T%d DEAD"), TargetId);
+			? FString::Printf(TEXT("CORE-%d %d/%d"), TargetId, HP, MaxHP)
+			: FString::Printf(TEXT("CORE-%d DESTROYED"), TargetId);
 		LabelComponent->SetText(FText::FromString(Label));
+		LabelComponent->SetRelativeLocation(FVector(0.0f, 0.0f, LabelHeight));
 		LabelComponent->SetTextRenderColor(bAlive ? FColor(255, 165, 0) : FColor::Red);
 	}
 }
@@ -87,4 +100,24 @@ void ABattleGridServerTargetGhostActor::SetSnapshotData(
 int32 ABattleGridServerTargetGhostActor::GetTargetId() const
 {
 	return TargetId;
+}
+
+void ABattleGridServerTargetGhostActor::ApplyVisualState(bool bIsAlive)
+{
+	if (!MeshComponent)
+	{
+		return;
+	}
+
+	UMaterialInterface* DesiredMaterial = bIsAlive ? AliveMaterial.Get() : DeadMaterial.Get();
+	MeshComponent->SetHiddenInGame(false);
+	MeshComponent->SetRelativeScale3D(FVector(bIsAlive ? AliveScale : DeadScale));
+	if (DesiredMaterial)
+	{
+		MeshComponent->SetMaterial(0, DesiredMaterial);
+	}
+	else if (DefaultMaterial)
+	{
+		MeshComponent->SetMaterial(0, DefaultMaterial.Get());
+	}
 }

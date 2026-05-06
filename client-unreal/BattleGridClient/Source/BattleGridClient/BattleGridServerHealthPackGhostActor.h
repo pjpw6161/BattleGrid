@@ -10,6 +10,7 @@
 class USceneComponent;
 class UStaticMeshComponent;
 class UTextRenderComponent;
+class UMaterialInterface;
 
 UCLASS(Blueprintable)
 class BATTLEGRIDCLIENT_API ABattleGridServerHealthPackGhostActor : public AActor
@@ -19,6 +20,7 @@ class BATTLEGRIDCLIENT_API ABattleGridServerHealthPackGhostActor : public AActor
 public:
 	ABattleGridServerHealthPackGhostActor();
 
+	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 
 	void SetSnapshotData(
@@ -39,10 +41,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot", meta = (ClampMin = "0.0"))
 	float InterpSpeed;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	TObjectPtr<UMaterialInterface> ActiveMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	TObjectPtr<UMaterialInterface> InactiveMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.01"))
+	float ActiveScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.01"))
+	float InactiveScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.0"))
+	float LabelHeight;
+
 private:
+	void ApplyVisualState(bool bIsActive);
+
 	int32 HealthPackId;
 	FVector TargetLocation;
 	bool bActive;
 	int32 HealAmount;
 	float RespawnTimer;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> DefaultMaterial;
 };

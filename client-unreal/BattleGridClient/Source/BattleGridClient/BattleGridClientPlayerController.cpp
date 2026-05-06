@@ -48,6 +48,10 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	ServerProfileLabel = TEXT("Local");
 	Nickname = TEXT("player1");
 	InputSendIntervalSeconds = 0.05f;
+	bRespectServerDeathState = true;
+	bServerDeathLocksInput = true;
+	bSnapLocalPawnOnServerRespawn = true;
+	bShowServerDeathStatus = true;
 	NormalMoveSpeed = 600.0f;
 	SprintMoveSpeed = 850.0f;
 	ADSMoveSpeed = 400.0f;
@@ -61,6 +65,11 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bVerboseInputLogs = false;
 	SnapshotLogInterval = 60;
 	InputAckLogInterval = 60;
+	bApplyDemoServerSettingsOnJoin = false;
+	bApplySafeDemoModeOnJoin = false;
+	bDemoBotAttacksEnabled = false;
+	DemoBotDifficulty = TEXT("easy");
+	bDemoAutoEndMatchByTimer = false;
 	bScoreboardToggleMode = false;
 	CombatMessageExpireTime = 0.0f;
 	bPlayerDead = false;
@@ -75,6 +84,10 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bPendingReloadInput = false;
 	bScoreboardHeld = false;
 	bScoreboardVisible = false;
+	bDemoServerSettingsAppliedForJoin = false;
+	bSafeDemoModeAppliedForJoin = false;
+	LastDemoSettingsPlayerId = 0;
+	LastSafeDemoModePlayerId = 0;
 	ShotSequence = 0;
 	LastShotDirectionServer = FVector2D::ZeroVector;
 	LastShotDirectionServerZ = 0.0f;
@@ -90,6 +103,7 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bShowOwnServerGhost = true;
 	ServerToUnrealScale = 1.0f;
 	ServerGhostHeight = 100.0f;
+	bAutoCalibrateServerSnapshotOrigin = true;
 	bShowServerPositionError = true;
 	bUseServerPositionCorrection = false;
 	ServerCorrectionStrength = 8.0f;
@@ -106,11 +120,20 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	ServerHealthPackGhostHeight = 50.0f;
 	ServerSnapshotOrigin = FVector::ZeroVector;
 	bServerSnapshotOriginInitialized = false;
+	bServerSnapshotOriginCalibrated = false;
+	LastCalibratedServerPlayerId = 0;
+	LastCalibrationSnapshotTick = 0;
+	LastCalibrationMatchId = 0;
 	LastProcessedSnapshotTick = 0;
 	LastServerPositionError = 0.0f;
 	LastOwnServerWorldLocation = FVector::ZeroVector;
 	bHasOwnServerWorldLocation = false;
 	LastServerPositionErrorLogSnapshotTick = 0;
+	bWasServerAlive = true;
+	bIsServerDead = false;
+	bWasServerInvincible = false;
+	LastServerRespawnTimer = 0.0f;
+	LastServerInvincibleTimer = 0.0f;
 }
 
 float ABattleGridClientPlayerController::GetMaxPlayerHealth() const
@@ -372,16 +395,16 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 				const FString EventDisplayText = EventFeedText.IsEmpty()
 					? FString(TEXT("Events: -"))
 					: FString::Printf(TEXT("Events:\n%s"), *EventFeedText);
-				const FString ServerAliveText = !bHasOwnSnapshot
-					? FString(TEXT("-"))
-					: (OwnSnapshot.bAlive ? FString(TEXT("Alive")) : FString(TEXT("Dead")));
-				const FString ServerInvincibleText =
-					bHasOwnSnapshot && OwnSnapshot.bInvincible
-						? FString(TEXT("Invincible"))
-						: FString(TEXT("Vulnerable"));
+				const FString DebugDisplayText = NetworkSubsystem->GetLastDebugMessage().IsEmpty()
+					? FString()
+					: FString::Printf(
+						TEXT("\nDebug: %s"),
+						*NetworkSubsystem->GetLastDebugMessage()
+					);
+				const FString ServerLifeText = GetServerLifeStateText();
 
 				return FString::Printf(
-					TEXT("Profile: %s | Server: Connected | Player=%d Room=%d Snapshot=%d\n%s\nServer HP: %d/%d %s/%s | Server Score: %d | K/D: %d/%d | TargetKills: %d | BotKills: %d\nTargets: %d/%d | Bots: %d/%d | HealthPacks: %d/%d | Projectiles: %d | Error: %s | Correction: %s | ADS: %s | Sprint: %s\n%s"),
+					TEXT("Profile: %s | Server: Connected | Player=%d Room=%d Snapshot=%d\n%s\nServer HP: %d/%d | %s | Server Score: %d | K/D: %d/%d | TargetKills: %d | BotKills: %d\nTargets: %d/%d | Bots: %d/%d | HealthPacks: %d/%d | Projectiles: %d | Error: %s | Correction: %s | ADS: %s | Sprint: %s\n%s%s"),
 					*ProfileLabel,
 					NetworkSubsystem->GetPlayerId(),
 					NetworkSubsystem->GetRoomId(),
@@ -389,8 +412,7 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 					*MatchSummaryText,
 					bHasOwnSnapshot ? OwnSnapshot.HP : 0,
 					bHasOwnSnapshot ? OwnSnapshot.MaxHP : 0,
-					*ServerAliveText,
-					*ServerInvincibleText,
+					*ServerLifeText,
 					NetworkSubsystem->GetOwnServerScore(),
 					bHasOwnSnapshot ? OwnSnapshot.Kills : 0,
 					bHasOwnSnapshot ? OwnSnapshot.Deaths : 0,
@@ -407,7 +429,8 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 					*CorrectionText,
 					*ADSStatusText,
 					*SprintStatusText,
-					*EventDisplayText
+					*EventDisplayText,
+					*DebugDisplayText
 				);
 			}
 
@@ -594,6 +617,62 @@ bool ABattleGridClientPlayerController::IsSprinting() const
 float ABattleGridClientPlayerController::GetLastShotSpreadDegrees() const
 {
 	return LastShotSpreadDegrees;
+}
+
+bool ABattleGridClientPlayerController::IsServerDead() const
+{
+	return bRespectServerDeathState && bIsServerDead;
+}
+
+bool ABattleGridClientPlayerController::IsServerInvincible() const
+{
+	return bRespectServerDeathState && !bIsServerDead && bWasServerInvincible;
+}
+
+float ABattleGridClientPlayerController::GetLastServerRespawnTimer() const
+{
+	return LastServerRespawnTimer;
+}
+
+float ABattleGridClientPlayerController::GetLastServerInvincibleTimer() const
+{
+	return LastServerInvincibleTimer;
+}
+
+FString ABattleGridClientPlayerController::GetServerLifeStateText() const
+{
+	if (!bShowServerDeathStatus)
+	{
+		return FString();
+	}
+
+	if (!bRespectServerDeathState)
+	{
+		return TEXT("Server Life: Local Only");
+	}
+
+	if (!IsServerConnected() || !HasJoinedServer())
+	{
+		return TEXT("Server Life: -");
+	}
+
+	if (IsServerDead())
+	{
+		return FString::Printf(
+			TEXT("Server Life: DEAD - Respawn %.1fs"),
+			LastServerRespawnTimer
+		);
+	}
+
+	if (IsServerInvincible())
+	{
+		return FString::Printf(
+			TEXT("Server Life: INVINCIBLE %.1fs"),
+			LastServerInvincibleTimer
+		);
+	}
+
+	return TEXT("Server Life: Alive");
 }
 
 void ABattleGridClientPlayerController::BeginPlay()
@@ -919,6 +998,9 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 	Super::PlayerTick(DeltaTime);
 
 	ApplyMovementAndADSState();
+	CalibrateServerSnapshotOriginIfNeeded();
+	UpdateServerLifeStateFromSnapshot(DeltaTime);
+	ApplyDemoServerSettingsIfNeeded();
 	UpdateAimRotation();
 	if (bFireHeld)
 	{
@@ -935,7 +1017,7 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 
 void ABattleGridClientPlayerController::MoveForward(const FInputActionValue& Value)
 {
-	if (IsPlayerDead() || HasWon())
+	if (ShouldBlockServerGameplayInput())
 	{
 		CurrentMoveForward = 0.0f;
 		return;
@@ -961,7 +1043,7 @@ void ABattleGridClientPlayerController::MoveForward(const FInputActionValue& Val
 
 void ABattleGridClientPlayerController::MoveRight(const FInputActionValue& Value)
 {
-	if (IsPlayerDead() || HasWon())
+	if (ShouldBlockServerGameplayInput())
 	{
 		CurrentMoveRight = 0.0f;
 		return;
@@ -1036,7 +1118,7 @@ void ABattleGridClientPlayerController::AdsStarted(const FInputActionValue& Valu
 {
 	static_cast<void>(Value);
 
-	if (IsPlayerDead() || HasWon())
+	if (ShouldBlockServerGameplayInput())
 	{
 		return;
 	}
@@ -1057,7 +1139,7 @@ void ABattleGridClientPlayerController::SprintStarted(const FInputActionValue& V
 {
 	static_cast<void>(Value);
 
-	if (IsPlayerDead() || HasWon())
+	if (ShouldBlockServerGameplayInput())
 	{
 		return;
 	}
@@ -1079,7 +1161,7 @@ void ABattleGridClientPlayerController::JumpStarted(const FInputActionValue& Val
 {
 	static_cast<void>(Value);
 
-	if (IsPlayerDead() || HasWon())
+	if (ShouldBlockServerGameplayInput())
 	{
 		return;
 	}
@@ -1107,7 +1189,7 @@ void ABattleGridClientPlayerController::ReloadStarted(const FInputActionValue& V
 {
 	static_cast<void>(Value);
 
-	if (IsPlayerDead() || HasWon())
+	if (ShouldBlockServerGameplayInput())
 	{
 		return;
 	}
@@ -1161,6 +1243,12 @@ void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Val
 {
 	static_cast<void>(Value);
 
+	if (ShouldBlockServerGameplayInput())
+	{
+		bFireHeld = false;
+		return;
+	}
+
 	bFireHeld = true;
 	TryFireWeapon();
 }
@@ -1174,7 +1262,7 @@ void ABattleGridClientPlayerController::FireEnded(const FInputActionValue& Value
 
 void ABattleGridClientPlayerController::TryFireWeapon()
 {
-	if (IsPlayerDead() || HasWon())
+	if (ShouldBlockServerGameplayInput())
 	{
 		bFireHeld = false;
 		return;
@@ -1310,12 +1398,18 @@ void ABattleGridClientPlayerController::ApplyMovementAndADSState()
 		bADSInputHeld = false;
 	}
 
+	const bool bBlockGameplayInput = ShouldBlockServerGameplayInput();
+	if (bBlockGameplayInput)
+	{
+		bADSInputHeld = false;
+		bIsSprinting = false;
+	}
+
 	const bool bCanADS =
 		bADSInputHeld
 		&& !bIsSprinting
 		&& !IsControlledPawnFalling()
-		&& !IsPlayerDead()
-		&& !HasWon();
+		&& !bBlockGameplayInput;
 	bIsADSActive = bCanADS;
 
 	if (ABattleGridClientCharacter* BattleGridCharacter =
@@ -1330,7 +1424,7 @@ void ABattleGridClientPlayerController::ApplyMovementAndADSState()
 		if (UCharacterMovementComponent* MovementComponent =
 			ControlledCharacter->GetCharacterMovement())
 		{
-			float DesiredSpeed = NormalMoveSpeed;
+			float DesiredSpeed = bBlockGameplayInput ? 0.0f : NormalMoveSpeed;
 			if (bIsSprinting && !bIsADSActive)
 			{
 				DesiredSpeed = SprintMoveSpeed;
@@ -1416,7 +1510,7 @@ void ABattleGridClientPlayerController::SendInputToServerIfNeeded()
 
 void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 {
-	if (IsPlayerDead() || HasWon())
+	if (ShouldBlockServerGameplayInput())
 	{
 		CurrentMoveForward = 0.0f;
 		CurrentMoveRight = 0.0f;
@@ -1553,6 +1647,21 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 		);
 	}
 
+	if (bFire)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Fire input shot_dir_server=(%.2f,%.2f,%.2f) aim=(%.2f,%.2f) ammo=%d"),
+			ServerShotDirection.X,
+			ServerShotDirection.Y,
+			ServerShotDirectionZ,
+			AimX,
+			AimY,
+			CurrentAmmo
+		);
+	}
+
 	NetworkSubsystem->SendInput(
 		InputSequence,
 		ServerMoveX,
@@ -1585,6 +1694,108 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 	{
 		bPendingReloadInput = false;
 	}
+}
+
+void ABattleGridClientPlayerController::ApplyDemoServerSettingsIfNeeded()
+{
+	if (!bApplyDemoServerSettingsOnJoin && !bApplySafeDemoModeOnJoin)
+	{
+		bDemoServerSettingsAppliedForJoin = false;
+		bSafeDemoModeAppliedForJoin = false;
+		LastDemoSettingsPlayerId = 0;
+		LastSafeDemoModePlayerId = 0;
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		return;
+	}
+
+	UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	if (!NetworkSubsystem || !NetworkSubsystem->IsConnected() || !NetworkSubsystem->HasJoined())
+	{
+		bDemoServerSettingsAppliedForJoin = false;
+		bSafeDemoModeAppliedForJoin = false;
+		LastDemoSettingsPlayerId = 0;
+		LastSafeDemoModePlayerId = 0;
+		return;
+	}
+
+	const int32 CurrentServerPlayerId = NetworkSubsystem->GetPlayerId();
+	if (CurrentServerPlayerId <= 0)
+	{
+		return;
+	}
+
+	if (bApplySafeDemoModeOnJoin)
+	{
+		if (
+			!bSafeDemoModeAppliedForJoin
+			|| LastSafeDemoModePlayerId != CurrentServerPlayerId
+		)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Applying safe demo mode on join."));
+			NetworkSubsystem->SendDebugApplyDemoMode();
+			bSafeDemoModeAppliedForJoin = true;
+			LastSafeDemoModePlayerId = CurrentServerPlayerId;
+		}
+
+		bDemoServerSettingsAppliedForJoin = true;
+		LastDemoSettingsPlayerId = CurrentServerPlayerId;
+		return;
+	}
+
+	bSafeDemoModeAppliedForJoin = false;
+	LastSafeDemoModePlayerId = 0;
+
+	if (!bApplyDemoServerSettingsOnJoin)
+	{
+		bDemoServerSettingsAppliedForJoin = false;
+		LastDemoSettingsPlayerId = 0;
+		return;
+	}
+
+	if (
+		bDemoServerSettingsAppliedForJoin
+		&& LastDemoSettingsPlayerId == CurrentServerPlayerId
+	)
+	{
+		return;
+	}
+
+	const FString DifficultyToSend = DemoBotDifficulty.IsEmpty()
+		? FString(TEXT("easy"))
+		: DemoBotDifficulty.ToLower();
+
+	NetworkSubsystem->SendDebugSetBotDifficulty(DifficultyToSend);
+	NetworkSubsystem->SendDebugSetBotAttacks(bDemoBotAttacksEnabled);
+	NetworkSubsystem->SendDebugSetMatchTimer(bDemoAutoEndMatchByTimer);
+
+	bDemoServerSettingsAppliedForJoin = true;
+	LastDemoSettingsPlayerId = CurrentServerPlayerId;
+
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[BattleGrid] Applied demo server settings. difficulty=%s bot_attacks=%s auto_timer=%s"),
+		*DifficultyToSend,
+		bDemoBotAttacksEnabled ? TEXT("true") : TEXT("false"),
+		bDemoAutoEndMatchByTimer ? TEXT("true") : TEXT("false")
+	);
+}
+
+bool ABattleGridClientPlayerController::ShouldBlockServerGameplayInput() const
+{
+	return IsPlayerDead()
+		|| HasWon()
+		|| (
+			bRespectServerDeathState
+			&& bServerDeathLocksInput
+			&& bIsServerDead
+		);
 }
 
 void ABattleGridClientPlayerController::UpdateServerGhostsFromSnapshot()
@@ -1709,6 +1920,20 @@ void ABattleGridClientPlayerController::UpdateServerGhostsFromSnapshot()
 	LastProcessedSnapshotTick = SnapshotTick;
 }
 
+FVector ABattleGridClientPlayerController::ConvertServerPositionToWorldNoOrigin(
+	float ServerX,
+	float ServerY,
+	float WorldHeight
+) const
+{
+	// The server uses logical 2D arena coordinates. The current Unreal camera
+	// orientation needs X/Y swapped for ghost visualization.
+	const float WorldX = ServerY * ServerToUnrealScale;
+	const float WorldY = ServerX * ServerToUnrealScale;
+
+	return FVector(WorldX, WorldY, WorldHeight);
+}
+
 FVector ABattleGridClientPlayerController::ConvertServerPositionToWorld(
 	float ServerX,
 	float ServerY
@@ -1723,12 +1948,111 @@ FVector ABattleGridClientPlayerController::ConvertServerPositionToWorld(
 	float WorldHeight
 ) const
 {
-	// The server uses logical 2D arena coordinates; this top-down template/camera
-	// orientation needs X/Y swapped for ghost visualization.
-	const float WorldX = ServerY * ServerToUnrealScale;
-	const float WorldY = ServerX * ServerToUnrealScale;
+	return ServerSnapshotOrigin + ConvertServerPositionToWorldNoOrigin(
+		ServerX,
+		ServerY,
+		WorldHeight
+	);
+}
 
-	return ServerSnapshotOrigin + FVector(WorldX, WorldY, WorldHeight);
+void ABattleGridClientPlayerController::CalibrateServerSnapshotOriginIfNeeded()
+{
+	if (!bAutoCalibrateServerSnapshotOrigin)
+	{
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	APawn* ControlledPawn = GetPawn();
+	if (!GameInstance || !ControlledPawn)
+	{
+		ResetServerSnapshotOriginCalibration();
+		return;
+	}
+
+	UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	if (
+		!NetworkSubsystem
+		|| !NetworkSubsystem->IsConnected()
+		|| !NetworkSubsystem->HasJoined()
+		|| !NetworkSubsystem->HasSnapshot()
+	)
+	{
+		ResetServerSnapshotOriginCalibration();
+		return;
+	}
+
+	const int32 LocalServerPlayerId = NetworkSubsystem->GetPlayerId();
+	const int32 SnapshotTick = NetworkSubsystem->GetLastSnapshotTick();
+	const int32 MatchId = NetworkSubsystem->HasMatchSnapshot()
+		? NetworkSubsystem->GetLatestMatchSnapshot().MatchId
+		: 0;
+	const bool bKnownMatchChanged =
+		MatchId > 0 && LastCalibrationMatchId > 0 && MatchId != LastCalibrationMatchId;
+
+	if (
+		LocalServerPlayerId != LastCalibratedServerPlayerId
+		|| SnapshotTick < LastCalibrationSnapshotTick
+		|| bKnownMatchChanged
+	)
+	{
+		ResetServerSnapshotOriginCalibration();
+	}
+
+	LastCalibratedServerPlayerId = LocalServerPlayerId;
+	LastCalibrationSnapshotTick = SnapshotTick;
+	if (MatchId > 0)
+	{
+		LastCalibrationMatchId = MatchId;
+	}
+
+	if (bServerSnapshotOriginCalibrated || LocalServerPlayerId <= 0)
+	{
+		return;
+	}
+
+	FBattleGridServerPlayerSnapshot OwnSnapshot;
+	if (!NetworkSubsystem->GetPlayerSnapshotById(LocalServerPlayerId, OwnSnapshot))
+	{
+		return;
+	}
+
+	const FVector ServerOwnNoOrigin = ConvertServerPositionToWorldNoOrigin(
+		OwnSnapshot.X,
+		OwnSnapshot.Y,
+		0.0f
+	);
+	const FVector PawnLocation = ControlledPawn->GetActorLocation();
+
+	ServerSnapshotOrigin = FVector(
+		PawnLocation.X - ServerOwnNoOrigin.X,
+		PawnLocation.Y - ServerOwnNoOrigin.Y,
+		0.0f
+	);
+	bServerSnapshotOriginInitialized = true;
+	bServerSnapshotOriginCalibrated = true;
+
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[BattleGrid] Calibrated server snapshot origin. player_id=%d server=(%.1f,%.1f) origin=(%.1f,%.1f)"),
+		LocalServerPlayerId,
+		OwnSnapshot.X,
+		OwnSnapshot.Y,
+		ServerSnapshotOrigin.X,
+		ServerSnapshotOrigin.Y
+	);
+}
+
+void ABattleGridClientPlayerController::ResetServerSnapshotOriginCalibration()
+{
+	bServerSnapshotOriginCalibrated = false;
+	LastCalibratedServerPlayerId = 0;
+	LastCalibrationSnapshotTick = 0;
+	LastCalibrationMatchId = 0;
+	LastProcessedSnapshotTick = 0;
+	LastServerPositionErrorLogSnapshotTick = 0;
 }
 
 FVector2D ABattleGridClientPlayerController::ConvertUnrealDirectionToServerDirection(
@@ -2312,6 +2636,7 @@ void ABattleGridClientPlayerController::UpdateOwnServerPositionErrorAndCorrectio
 	if (
 		!bUseServerPositionCorrection
 		|| IsPlayerDead()
+		|| IsServerDead()
 		|| HasWon()
 	)
 	{
@@ -2338,4 +2663,133 @@ void ABattleGridClientPlayerController::UpdateOwnServerPositionErrorAndCorrectio
 	CorrectedLocation.Z = PawnLocation.Z;
 
 	ControlledPawn->SetActorLocation(CorrectedLocation);
+}
+
+void ABattleGridClientPlayerController::UpdateServerLifeStateFromSnapshot(float DeltaTime)
+{
+	static_cast<void>(DeltaTime);
+
+	if (!bRespectServerDeathState)
+	{
+		bIsServerDead = false;
+		bWasServerAlive = true;
+		bWasServerInvincible = false;
+		LastServerRespawnTimer = 0.0f;
+		LastServerInvincibleTimer = 0.0f;
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	APawn* ControlledPawn = GetPawn();
+	if (!GameInstance || !ControlledPawn)
+	{
+		return;
+	}
+
+	UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	if (
+		!NetworkSubsystem
+		|| !NetworkSubsystem->IsConnected()
+		|| !NetworkSubsystem->HasJoined()
+	)
+	{
+		bIsServerDead = false;
+		bWasServerAlive = true;
+		bWasServerInvincible = false;
+		LastServerRespawnTimer = 0.0f;
+		LastServerInvincibleTimer = 0.0f;
+		return;
+	}
+
+	FBattleGridServerPlayerSnapshot OwnSnapshot;
+	if (!NetworkSubsystem->GetOwnPlayerSnapshot(OwnSnapshot))
+	{
+		return;
+	}
+
+	const bool bCurrentServerAlive = OwnSnapshot.bAlive;
+	const bool bCurrentServerDead = !bCurrentServerAlive;
+	const bool bCurrentServerInvincible = OwnSnapshot.bInvincible;
+	const bool bWasDeadBeforeUpdate = bIsServerDead;
+	const bool bWasInvincibleBeforeUpdate = bWasServerInvincible;
+
+	bIsServerDead = bCurrentServerDead;
+	LastServerRespawnTimer = FMath::Max(0.0f, OwnSnapshot.RespawnTimer);
+	LastServerInvincibleTimer = FMath::Max(0.0f, OwnSnapshot.InvincibleTimer);
+
+	if (!bWasDeadBeforeUpdate && bIsServerDead)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Server says player died. RespawnTimer=%.1f"),
+			LastServerRespawnTimer
+		);
+
+		bADSInputHeld = false;
+		bIsADSActive = false;
+		bIsSprinting = false;
+		bFireHeld = false;
+		bPendingFireInput = false;
+		bPendingReloadInput = false;
+		CurrentMoveForward = 0.0f;
+		CurrentMoveRight = 0.0f;
+		ApplyMovementAndADSState();
+
+		if (ACharacter* ControlledCharacter = Cast<ACharacter>(ControlledPawn))
+		{
+			if (UCharacterMovementComponent* MovementComponent =
+				ControlledCharacter->GetCharacterMovement())
+			{
+				MovementComponent->StopMovementImmediately();
+			}
+		}
+	}
+	else if (bWasDeadBeforeUpdate && !bIsServerDead)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Server says player respawned."));
+
+		if (bSnapLocalPawnOnServerRespawn)
+		{
+			const FVector PawnLocation = ControlledPawn->GetActorLocation();
+			FVector RespawnWorldLocation = ConvertServerPositionToWorld(
+				OwnSnapshot.X,
+				OwnSnapshot.Y,
+				0.0f
+			);
+			RespawnWorldLocation.Z = PawnLocation.Z;
+			ControlledPawn->SetActorLocation(RespawnWorldLocation);
+
+			if (ACharacter* ControlledCharacter = Cast<ACharacter>(ControlledPawn))
+			{
+				if (UCharacterMovementComponent* MovementComponent =
+					ControlledCharacter->GetCharacterMovement())
+				{
+					MovementComponent->StopMovementImmediately();
+				}
+			}
+		}
+
+		CurrentMoveForward = 0.0f;
+		CurrentMoveRight = 0.0f;
+		bHasLastSentInput = false;
+	}
+
+	if (!bWasInvincibleBeforeUpdate && bCurrentServerInvincible)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Server invincibility started. Timer=%.1f"),
+			LastServerInvincibleTimer
+		);
+	}
+	else if (bWasInvincibleBeforeUpdate && !bCurrentServerInvincible)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Server invincibility ended."));
+	}
+
+	bWasServerAlive = bCurrentServerAlive;
+	bWasServerInvincible = bCurrentServerInvincible;
 }

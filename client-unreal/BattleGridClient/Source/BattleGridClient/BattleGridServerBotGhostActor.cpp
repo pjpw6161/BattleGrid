@@ -6,6 +6,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
 
 ABattleGridServerBotGhostActor::ABattleGridServerBotGhostActor()
@@ -13,6 +14,10 @@ ABattleGridServerBotGhostActor::ABattleGridServerBotGhostActor()
 	PrimaryActorTick.bCanEverTick = true;
 
 	InterpSpeed = 10.0f;
+	AliveScale = 0.8f;
+	DeadScale = 0.35f;
+	InvincibleScale = 0.9f;
+	LabelHeight = 130.0f;
 	BotId = 0;
 	TargetLocation = FVector::ZeroVector;
 	TargetYaw = 0.0f;
@@ -20,6 +25,7 @@ ABattleGridServerBotGhostActor::ABattleGridServerBotGhostActor()
 	MaxHP = 100;
 	bAlive = true;
 	bInvincible = false;
+	DefaultMaterial = nullptr;
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
@@ -27,7 +33,7 @@ ABattleGridServerBotGhostActor::ABattleGridServerBotGhostActor()
 	MeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComponent"));
 	MeshComponent->SetupAttachment(SceneRoot);
 	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	MeshComponent->SetRelativeScale3D(FVector(0.45f, 0.45f, 0.9f));
+	MeshComponent->SetRelativeScale3D(FVector(AliveScale, AliveScale, AliveScale * 1.5f));
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> BotMesh(
 		TEXT("/Engine/BasicShapes/Sphere.Sphere")
@@ -42,9 +48,19 @@ ABattleGridServerBotGhostActor::ABattleGridServerBotGhostActor()
 	LabelComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	LabelComponent->SetHorizontalAlignment(EHTA_Center);
 	LabelComponent->SetTextRenderColor(FColor::Green);
-	LabelComponent->SetText(FText::FromString(TEXT("Server Bot")));
-	LabelComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 115.0f));
+	LabelComponent->SetText(FText::FromString(TEXT("BOT")));
+	LabelComponent->SetRelativeLocation(FVector(0.0f, 0.0f, LabelHeight));
 	LabelComponent->SetWorldSize(30.0f);
+}
+
+void ABattleGridServerBotGhostActor::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (MeshComponent)
+	{
+		DefaultMaterial = MeshComponent->GetMaterial(0);
+	}
 }
 
 void ABattleGridServerBotGhostActor::Tick(float DeltaSeconds)
@@ -82,15 +98,7 @@ void ABattleGridServerBotGhostActor::SetSnapshotData(
 	bAlive = Snapshot.bAlive;
 	bInvincible = Snapshot.bInvincible;
 
-	if (MeshComponent)
-	{
-		MeshComponent->SetHiddenInGame(!bAlive);
-		MeshComponent->SetRelativeScale3D(
-			bAlive
-				? FVector(0.45f, 0.45f, 0.9f)
-				: FVector(0.25f, 0.25f, 0.25f)
-		);
-	}
+	ApplyVisualState(bAlive, bInvincible);
 
 	if (LabelComponent)
 	{
@@ -98,11 +106,12 @@ void ABattleGridServerBotGhostActor::SetSnapshotData(
 			? FString::Printf(TEXT("BOT-%d"), BotId)
 			: Name;
 		const FString Label = !bAlive
-			? FString::Printf(TEXT("%s DEAD"), *DisplayName)
+			? FString::Printf(TEXT("%s DOWN"), *DisplayName)
 			: bInvincible
-				? FString::Printf(TEXT("%s INV HP %d/%d"), *DisplayName, HP, MaxHP)
-				: FString::Printf(TEXT("%s HP %d/%d"), *DisplayName, HP, MaxHP);
+				? FString::Printf(TEXT("%s INV"), *DisplayName)
+				: FString::Printf(TEXT("%s %d/%d"), *DisplayName, HP, MaxHP);
 		LabelComponent->SetText(FText::FromString(Label));
+		LabelComponent->SetRelativeLocation(FVector(0.0f, 0.0f, LabelHeight));
 		LabelComponent->SetTextRenderColor(
 			!bAlive ? FColor::Red : (bInvincible ? FColor::Yellow : FColor::Green)
 		);
@@ -112,4 +121,37 @@ void ABattleGridServerBotGhostActor::SetSnapshotData(
 int32 ABattleGridServerBotGhostActor::GetBotId() const
 {
 	return BotId;
+}
+
+void ABattleGridServerBotGhostActor::ApplyVisualState(bool bIsAlive, bool bIsInvincible)
+{
+	if (!MeshComponent)
+	{
+		return;
+	}
+
+	UMaterialInterface* DesiredMaterial = AliveMaterial.Get();
+	float DesiredScale = AliveScale;
+
+	if (!bIsAlive)
+	{
+		DesiredMaterial = DeadMaterial.Get();
+		DesiredScale = DeadScale;
+	}
+	else if (bIsInvincible)
+	{
+		DesiredMaterial = InvincibleMaterial.Get();
+		DesiredScale = InvincibleScale;
+	}
+
+	MeshComponent->SetHiddenInGame(false);
+	MeshComponent->SetRelativeScale3D(FVector(DesiredScale, DesiredScale, DesiredScale * 1.5f));
+	if (DesiredMaterial)
+	{
+		MeshComponent->SetMaterial(0, DesiredMaterial);
+	}
+	else if (DefaultMaterial)
+	{
+		MeshComponent->SetMaterial(0, DefaultMaterial.Get());
+	}
 }

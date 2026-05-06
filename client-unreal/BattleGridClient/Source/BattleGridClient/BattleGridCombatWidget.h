@@ -29,6 +29,8 @@ public:
 		const FString& CombatMessage,
 		bool bShowCombatMessage,
 		bool bHasWon,
+		const FString& ServerLifeStateText,
+		bool bServerDead,
 		const FString& NetworkStatusText,
 		float ServerPositionError,
 		bool bHasServerPositionError,

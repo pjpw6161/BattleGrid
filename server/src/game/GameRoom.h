@@ -37,6 +37,11 @@ public:
     nlohmann::json BuildSnapshotJson(std::uint64_t tickNumber) const;
     nlohmann::json ToDebugJson() const;
     std::uint64_t ResetMatch();
+    std::uint64_t ApplySafeDemoMode();
+    void SetBotAttacksEnabled(bool bEnabled);
+    bool AreBotAttacksEnabled() const;
+    void ApplyBotDifficulty(const std::string& difficulty);
+    void SetAutoEndMatchByTimer(bool bEnabled);
 
 private:
     void InitializeDefaultTargets() const;
@@ -58,6 +63,7 @@ private:
     void CheckMatchEndCondition();
     std::uint64_t DetermineWinnerPlayerId() const;
     nlohmann::json BuildScoreboardJson() const;
+    void ApplyBotDifficultyUnlocked(const std::string& difficulty);
     void UpdateProjectiles(double deltaSeconds);
     void UpdateProjectileTargetCollisions();
     void RemoveInactiveProjectiles();
@@ -76,6 +82,14 @@ private:
     std::uint64_t nextEventId;
     std::size_t MaxRecentEvents;
     double serverTimeSeconds;
+    bool bBotAttacksEnabled;
+    std::string botDifficulty;
+    bool bAutoEndMatchByTimer;
+    double botDetectRange;
+    double botAttackRange;
+    int botAttackDamage;
+    double botAttackCooldownSeconds;
+    double botMoveSpeed;
     mutable bool targetsInitialized;
     mutable bool botsInitialized;
     mutable bool healthPacksInitialized;

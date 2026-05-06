@@ -213,6 +213,7 @@ Current support:
 - Server snapshots include recent combat events.
 - Unreal deduplicates event IDs and displays a short text feed in the existing HUD.
 - A full animated kill feed remains future polish.
+- Server debug/demo controls can set bot difficulty, disable bot damage, and disable timer-based match end for cleaner recording and movement tests.
 
 ## Risks And Simplifications
 

@@ -20,8 +20,8 @@ struct BotState
     double respawnTimerSeconds = 0.0;
     double invincibleTimerSeconds = 0.0;
     double speed = 500.0;
-    double bodyRadius = 60.0;
-    double headRadius = 35.0;
+    double bodyRadius = 90.0;
+    double headRadius = 45.0;
     double bodyHeight = 90.0;
     double headHeight = 160.0;
     std::uint64_t targetPlayerId = 0;

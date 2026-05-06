@@ -125,6 +125,14 @@ Expected response:
   "projectile_count": 0,
   "target_count": 5,
   "bot_count": 8,
+  "bot_attacks_enabled": true,
+  "bot_difficulty": "normal",
+  "bot_attack_damage": 20,
+  "bot_attack_cooldown": 1.0,
+  "bot_detect_range": 1500.0,
+  "bot_attack_range": 900.0,
+  "bot_move_speed": 500.0,
+  "auto_end_match_by_timer": true,
   "health_pack_count": 3,
   "active_health_pack_count": 3,
   "match": {},
@@ -160,6 +168,82 @@ Rules:
 - This is a test/debug message, not a production rematch flow.
 - The server resets match timer, winner, scores, player combat counters, projectiles, targets, bots, and health packs.
 - Existing joined players remain joined and are reset to full HP.
+- Current bot difficulty, bot attack enablement, and timer auto-end settings are preserved.
+
+### `debug_apply_demo_mode`
+
+```json
+{ "type": "debug_apply_demo_mode" }
+```
+
+Expected response:
+
+```json
+{ "type": "debug_ok", "message": "safe demo mode applied" }
+```
+
+Rules:
+
+- This is a test/debug message, not a production admin command.
+- The server resets the match, clears projectiles, resets players, bots, cores, and health packs, and clears stale game-over state.
+- Existing joined players remain joined, respawn at server spawn points, and return to full HP.
+- The command applies stable demo settings:
+  - bot difficulty `easy`
+  - bot attacks disabled
+  - timer-based match ending disabled
+- A recent combat event is added with message `Safe demo mode applied`.
+
+### `debug_set_bot_attacks`
+
+```json
+{ "type": "debug_set_bot_attacks", "enabled": false }
+```
+
+Expected response:
+
+```json
+{ "type": "debug_ok", "message": "bot attacks disabled" }
+```
+
+When disabled, bots can still move, wander, chase, respawn, and appear in snapshots, but they do not damage players.
+
+### `debug_set_bot_difficulty`
+
+```json
+{ "type": "debug_set_bot_difficulty", "difficulty": "easy" }
+```
+
+Supported values:
+
+- `easy`
+- `normal`
+- `hard`
+
+Expected response:
+
+```json
+{ "type": "debug_ok", "message": "bot difficulty set to easy" }
+```
+
+Invalid values return:
+
+```json
+{ "type": "error", "message": "invalid bot difficulty" }
+```
+
+### `debug_set_match_timer`
+
+```json
+{ "type": "debug_set_match_timer", "enabled": false }
+```
+
+Expected response:
+
+```json
+{ "type": "debug_ok", "message": "auto end match by timer disabled" }
+```
+
+When disabled, the match timer can reach zero without forcing `game_over`. The target-score win condition still applies.
 
 ## Server To Client Messages
 
@@ -200,6 +284,14 @@ Rules:
   "projectile_count": 1,
   "target_count": 5,
   "bot_count": 8,
+  "bot_attacks_enabled": true,
+  "bot_difficulty": "normal",
+  "bot_attack_damage": 20,
+  "bot_attack_cooldown": 1.0,
+  "bot_detect_range": 1500.0,
+  "bot_attack_range": 900.0,
+  "bot_move_speed": 500.0,
+  "auto_end_match_by_timer": true,
   "health_pack_count": 3,
   "active_health_pack_count": 3,
   "match": {
@@ -330,6 +422,17 @@ Rules:
 
 This is sent in response to `debug_restart_match`.
 
+### `debug_ok`
+
+```json
+{
+  "type": "debug_ok",
+  "message": "bot difficulty set to easy"
+}
+```
+
+This is sent for successful debug/demo control messages such as `debug_apply_demo_mode`, `debug_set_bot_attacks`, `debug_set_bot_difficulty`, and `debug_set_match_timer`.
+
 ### `snapshot`
 
 Snapshots are broadcast to joined sessions at the configured tick rate.
@@ -383,10 +486,13 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
       "nickname": "player1",
       "x": 100.0,
       "y": 0.0,
+      "z": 0.0,
       "hp": 100,
       "max_hp": 100,
       "alive": true,
       "invincible": false,
+      "respawn_timer": 0.0,
+      "invincible_timer": 0.0,
       "score": 0,
       "kills": 0,
       "deaths": 0,
@@ -496,11 +602,13 @@ Player fields:
 
 - `player_id`: server player ID.
 - `nickname`: player nickname from join.
-- `x`, `y`: server logical 2D position.
+- `x`, `y`, `z`: server logical position.
 - `hp`: server player HP placeholder.
 - `max_hp`: server player maximum HP.
 - `alive`: whether the player can move and be damaged.
 - `invincible`: true during the short post-respawn protection window.
+- `respawn_timer`: seconds remaining until respawn when dead.
+- `invincible_timer`: seconds remaining in post-respawn invincibility.
 - `score`: server score from destroyed server targets.
 - `kills`, `deaths`, `player_kills`, `target_kills`, `bot_kills`: server combat counters.
 - `last_seq`: latest input sequence stored for the player.
@@ -581,12 +689,17 @@ Mismatched player ID:
 - Dead bots respawn after 8 seconds and are invincible for 1.5 seconds.
 - Bots use simple server AI: move toward the nearest alive non-invincible player inside detect range, otherwise wander.
 - Bot attack v1 applies direct body damage when in range; bot projectiles are not implemented yet.
+- Debug bot difficulty can tune bot direct-damage AI:
+  - `easy`: damage 10, cooldown 1.8s, detect range 1000, attack range 650, speed 400.
+  - `normal`: damage 20, cooldown 1.0s, detect range 1500, attack range 900, speed 500.
+  - `hard`: damage 25, cooldown 0.7s, detect range 1800, attack range 1100, speed 600.
 - Three server health packs spawn from predefined points.
 - Alive players below max HP pick up active health packs by overlapping their pickup radius.
 - Health packs heal +35 HP, do not overheal above max HP, disappear on pickup, and respawn after 15 seconds.
 - Bots ignore health packs for now.
 - Match duration is 300 seconds and target score is 20.
 - The match ends when any connected player reaches target score or when the timer reaches zero.
+- `debug_set_match_timer` can disable timer-based `game_over` for development while keeping target-score wins.
 - Winner tie breakers are highest score, higher player kills, higher bot kills, fewer deaths, then lower player ID.
 - After game over, snapshots continue, but new combat score changes are stopped.
 

@@ -214,6 +214,8 @@ The match ends when:
 - any connected player reaches `targetScore`
 - or `timeRemainingSeconds` reaches zero
 
+For demo iteration, `GameRoom` owns `bAutoEndMatchByTimer`. When disabled through `debug_set_match_timer`, `timeRemainingSeconds` may reach zero but the timer alone will not set `game_over`. Target-score wins still end the match.
+
 Winner selection:
 
 1. Highest score.
@@ -225,6 +227,8 @@ Winner selection:
 Snapshots include a `match` object and a sorted `scoreboard` array. The scoreboard is sorted by the same tie breaker rules, so clients can show a concise top-player list without recomputing rank order.
 
 `debug_restart_match` is available for browser and demo testing. It resets match state, player scores and combat counters, projectiles, targets, bots, and health packs, then increments `matchId`. It is not a production rematch/lobby system.
+
+Debug restart preserves current demo settings such as bot difficulty, bot attacks enabled, and timer auto-end.
 
 ## Combat Events
 
@@ -264,10 +268,20 @@ Each tick, bot logic is intentionally simple:
 
 1. Dead bots count down an 8 second respawn timer.
 2. Respawned bots return with full HP and 1.5 seconds of invincibility.
-3. Alive bots find the nearest alive non-invincible player within 1500 units.
-4. If a player is found, the bot moves toward that player until it is within 900 units.
-5. In attack range, the bot applies 20 direct body damage once per second.
+3. Alive bots find the nearest alive non-invincible player within the configured detect range.
+4. If a player is found, the bot moves toward that player until it is within the configured attack range.
+5. In attack range, the bot applies configured direct body damage on its attack cooldown when bot attacks are enabled.
 6. If no player is found, the bot wanders toward deterministic arena points.
+
+`GameRoom::ApplyBotDifficulty` supports the current debug/demo profiles:
+
+| Difficulty | Damage | Cooldown | Detect Range | Attack Range | Speed |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Easy | 10 | 1.8s | 1000 | 650 | 400 |
+| Normal | 20 | 1.0s | 1500 | 900 | 500 |
+| Hard | 25 | 0.7s | 1800 | 1100 | 600 |
+
+`debug_set_bot_attacks` can disable bot damage while leaving bot movement, chasing, respawn, snapshots, and ghost visualization active.
 
 There is no navmesh, pathfinding, projectile attack, animation, or bot score yet.
 

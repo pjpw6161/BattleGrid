@@ -17,8 +17,63 @@
       padding: 8px 12px;
     }
 
+    label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin: 0 16px 8px 0;
+    }
+
+    input[type="number"] {
+      width: 72px;
+      padding: 6px;
+    }
+
+    .note {
+      max-width: 980px;
+      padding: 10px 12px;
+      border-left: 4px solid #2563eb;
+      background: #eff6ff;
+    }
+
+    .controls,
+    .log-controls,
+    .summary {
+      max-width: 1180px;
+      margin: 16px 0;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+    }
+
+    .summary-card {
+      min-height: 72px;
+      padding: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+    }
+
+    .summary-card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: #374151;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+    }
+
+    .summary-card span {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
     pre {
       min-height: 280px;
+      max-height: 520px;
       padding: 16px;
       overflow: auto;
       background: #111827;
@@ -30,8 +85,11 @@
 <body>
   <h1>BattleGrid WebSocket Test</h1>
   <p>Target: <code>ws://127.0.0.1:7777</code></p>
+  <p class="note">
+    Snapshots are received continuously after join. Raw snapshot logging is disabled by default to avoid browser slowdown.
+  </p>
 
-  <div>
+  <div class="controls">
     <button id="connect">Connect</button>
     <button id="sendPing">Send Ping</button>
     <button id="sendJoin">Send Join</button>
@@ -48,27 +106,107 @@
     <button id="stopMoving">Stop Moving</button>
     <button id="sendDebugRoom">Send Debug Room</button>
     <button id="sendDebugRestartMatch">Send Debug Restart Match</button>
+    <button id="applySafeDemoMode">Apply Safe Demo Mode</button>
+    <button id="disableBotAttacks">Disable Bot Attacks</button>
+    <button id="enableBotAttacks">Enable Bot Attacks</button>
+    <button id="botDifficultyEasy">Bot Difficulty Easy</button>
+    <button id="botDifficultyNormal">Bot Difficulty Normal</button>
+    <button id="botDifficultyHard">Bot Difficulty Hard</button>
+    <button id="disableMatchTimer">Disable Match Timer</button>
+    <button id="enableMatchTimer">Enable Match Timer</button>
     <button id="sendInvalid">Send Invalid JSON</button>
     <button id="close">Close</button>
   </div>
+
+  <div class="log-controls">
+    <label>
+      <input id="logRawSnapshots" type="checkbox">
+      Log Raw Snapshots
+    </label>
+    <label>
+      <input id="pauseSnapshotLog" type="checkbox">
+      Pause Snapshot Log
+    </label>
+    <label>
+      Snapshot Summary Interval
+      <input id="snapshotSummaryInterval" type="number" min="1" step="1" value="30">
+    </label>
+    <button id="clearLog">Clear Log</button>
+  </div>
+
+  <section class="summary" aria-label="Latest server state summary">
+    <div class="summary-card"><strong>Connection</strong><span id="connectionSummary">Disconnected</span></div>
+    <div class="summary-card"><strong>Match</strong><span id="matchSummary">No snapshot yet</span></div>
+    <div class="summary-card"><strong>Scoreboard</strong><span id="scoreboardSummary">-</span></div>
+    <div class="summary-card"><strong>Players</strong><span id="playersSummary">-</span></div>
+    <div class="summary-card"><strong>Bots</strong><span id="botsSummary">-</span></div>
+    <div class="summary-card"><strong>Cores</strong><span id="targetsSummary">-</span></div>
+    <div class="summary-card"><strong>Health Packs</strong><span id="healthPacksSummary">-</span></div>
+    <div class="summary-card"><strong>Projectiles</strong><span id="projectilesSummary">-</span></div>
+    <div class="summary-card"><strong>Recent Events</strong><span id="eventsSummary">-</span></div>
+  </section>
 
   <pre id="log"></pre>
 
   <script>
     const serverUrl = "ws://127.0.0.1:7777";
+    const MAX_LOG_LINES = 200;
+    const SUMMARY_UPDATE_INTERVAL_MS = 250;
+
     const logElement = document.getElementById("log");
+    const rawSnapshotsInput = document.getElementById("logRawSnapshots");
+    const pauseSnapshotLogInput = document.getElementById("pauseSnapshotLog");
+    const snapshotSummaryIntervalInput = document.getElementById("snapshotSummaryInterval");
+
     let socket = null;
     let joinedPlayerId = 1;
     let inputSeq = 0;
     let moveTimer = null;
     let fireTimer = null;
-    const seenEventIds = new Set();
+    let latestSnapshot = null;
+    let latestPlayers = [];
+    let latestBots = [];
+    let snapshotCount = 0;
+    let lastSummaryUpdateMs = 0;
+    let pendingSummaryUpdateTimer = null;
     let arenaLogged = false;
+    const seenEventIds = new Set();
+    const recentEventMessages = [];
+    const logLines = [];
+
+    function setText(id, text) {
+      const element = document.getElementById(id);
+      if (element) {
+        element.textContent = text;
+      }
+    }
 
     function log(message) {
       const timestamp = new Date().toLocaleTimeString();
-      logElement.textContent += `[${timestamp}] ${message}\n`;
+      logLines.push(`[${timestamp}] ${message}`);
+      if (logLines.length > MAX_LOG_LINES) {
+        logLines.splice(0, logLines.length - MAX_LOG_LINES);
+      }
+
+      logElement.textContent = `${logLines.join("\n")}\n`;
       logElement.scrollTop = logElement.scrollHeight;
+    }
+
+    function clearLog() {
+      logLines.length = 0;
+      logElement.textContent = "";
+    }
+
+    function getSnapshotSummaryInterval() {
+      const interval = Number.parseInt(snapshotSummaryIntervalInput.value, 10);
+      return Number.isFinite(interval) && interval > 0 ? interval : 30;
+    }
+
+    function formatTime(secondsValue) {
+      const safeSeconds = Math.max(0, Number(secondsValue ?? 0));
+      const minutes = Math.floor(safeSeconds / 60);
+      const seconds = Math.floor(safeSeconds % 60).toString().padStart(2, "0");
+      return `${minutes}:${seconds}`;
     }
 
     function send(message) {
@@ -107,29 +245,216 @@
       }));
     }
 
-    function logMatchAndScoreboard(message) {
-      const match = message.match;
-      const scoreboard = Array.isArray(message.scoreboard) ? message.scoreboard : [];
-      if (match) {
-        const timeLeft = Number(match.time_left ?? 0);
-        const minutes = Math.floor(Math.max(0, timeLeft) / 60);
-        const seconds = Math.floor(Math.max(0, timeLeft) % 60).toString().padStart(2, "0");
-        const winner = match.winner_nickname || (match.winner_player_id ? `P${match.winner_player_id}` : "-");
-        log(
-          `match state=${match.state} time=${minutes}:${seconds} ` +
-          `goal=${match.target_score} game_over=${match.game_over} winner=${winner} match_id=${match.match_id}`
-        );
+    function updateLatestRoomEntities(message) {
+      if (Array.isArray(message.players)) {
+        latestPlayers = message.players;
+      }
+      if (Array.isArray(message.bots)) {
+        latestBots = message.bots;
+      }
+    }
+
+    function getSnapshotPlayers() {
+      return latestSnapshot && Array.isArray(latestSnapshot.players)
+        ? latestSnapshot.players
+        : latestPlayers;
+    }
+
+    function getSnapshotBots() {
+      return latestSnapshot && Array.isArray(latestSnapshot.bots)
+        ? latestSnapshot.bots
+        : latestBots;
+    }
+
+    function sendFireAtNearestBot() {
+      if (!latestSnapshot) {
+        log("Cannot fire at nearest bot: no snapshot has been received yet.");
+        return;
       }
 
-      if (scoreboard.length > 0) {
-        const summary = scoreboard
-          .slice(0, 4)
-          .map((entry) =>
-            `${entry.nickname || "P" + entry.player_id}: score=${entry.score} ` +
-            `K/D=${entry.kills}/${entry.deaths} bots=${entry.bot_kills} players=${entry.player_kills}`
-          )
-          .join(" | ");
-        log(`scoreboard ${summary}`);
+      const players = getSnapshotPlayers();
+      const bots = getSnapshotBots();
+      const player = players.find((entry) => entry.player_id === joinedPlayerId);
+      const aliveBots = bots.filter((bot) => bot.alive);
+      if (!player) {
+        log("Cannot fire at nearest bot: no current joined player snapshot. Wait for a snapshot first.");
+        return;
+      }
+      if (aliveBots.length === 0) {
+        log("Cannot fire at nearest bot: no alive bots in latest snapshot.");
+        return;
+      }
+
+      let nearestBot = null;
+      let nearestDistanceSquared = Number.POSITIVE_INFINITY;
+      for (const bot of aliveBots) {
+        const dx = Number(bot.x ?? 0) - Number(player.x ?? 0);
+        const dy = Number(bot.y ?? 0) - Number(player.y ?? 0);
+        const distanceSquared = dx * dx + dy * dy;
+        if (distanceSquared < nearestDistanceSquared) {
+          nearestDistanceSquared = distanceSquared;
+          nearestBot = bot;
+        }
+      }
+
+      if (!nearestBot || nearestDistanceSquared <= 0.0001) {
+        log("Cannot fire at nearest bot: bot is too close to compute a stable direction.");
+        return;
+      }
+
+      const distance = Math.sqrt(nearestDistanceSquared);
+      const dirX = (Number(nearestBot.x ?? 0) - Number(player.x ?? 0)) / distance;
+      const dirY = (Number(nearestBot.y ?? 0) - Number(player.y ?? 0)) / distance;
+      log(
+        `fire nearest bot B${nearestBot.bot_id} ` +
+        `from=(${Number(player.x ?? 0).toFixed(1)},${Number(player.y ?? 0).toFixed(1)}) ` +
+        `to=(${Number(nearestBot.x ?? 0).toFixed(1)},${Number(nearestBot.y ?? 0).toFixed(1)}) ` +
+        `dir=(${dirX.toFixed(3)},${dirY.toFixed(3)},0.000)`
+      );
+
+      sendInput(0, 0, true, {
+        aimX: dirX,
+        aimY: dirY,
+        shotDirX: dirX,
+        shotDirY: dirY,
+        shotDirZ: 0,
+        ammo: 29,
+        spreadDeg: 0,
+        ads: true
+      });
+    }
+
+    function summarizeScoreboard(scoreboard) {
+      if (!Array.isArray(scoreboard) || scoreboard.length === 0) {
+        return "-";
+      }
+
+      return scoreboard
+        .slice(0, 4)
+        .map((entry, index) =>
+          `${index + 1}. ${entry.nickname || "P" + entry.player_id} ` +
+          `S=${entry.score ?? 0} K/D=${entry.kills ?? 0}/${entry.deaths ?? 0} ` +
+          `Bot=${entry.bot_kills ?? 0} PvP=${entry.player_kills ?? 0}`
+        )
+        .join("\n");
+    }
+
+    function buildSnapshotSummary(snapshot) {
+      const match = snapshot.match || {};
+      const players = Array.isArray(snapshot.players) ? snapshot.players : [];
+      const bots = Array.isArray(snapshot.bots) ? snapshot.bots : [];
+      const targets = Array.isArray(snapshot.targets) ? snapshot.targets : [];
+      const healthPacks = Array.isArray(snapshot.health_packs) ? snapshot.health_packs : [];
+      const projectiles = Array.isArray(snapshot.projectiles) ? snapshot.projectiles : [];
+      const aliveBots = bots.filter((bot) => bot.alive).length;
+      const activeHealthPacks = healthPacks.filter((pack) => pack.active).length;
+
+      return (
+        `snapshot tick=${snapshot.tick ?? "-"} ` +
+        `match=${match.state ?? "-"} time=${formatTime(match.time_left)} ` +
+        `players=${players.length} bots=${aliveBots}/${bots.length} ` +
+        `targets=${targets.length} hpacks=${activeHealthPacks}/${healthPacks.length} ` +
+        `projectiles=${projectiles.length}`
+      );
+    }
+
+    function updateSummaryUI() {
+      const readyState = socket ? socket.readyState : WebSocket.CLOSED;
+      const connectionStatus =
+        readyState === WebSocket.OPEN ? "Connected" :
+        readyState === WebSocket.CONNECTING ? "Connecting" :
+        readyState === WebSocket.CLOSING ? "Closing" :
+        "Disconnected";
+      setText("connectionSummary", `${connectionStatus}\nPlayer=${joinedPlayerId || "-"} Snapshots=${snapshotCount}`);
+
+      if (!latestSnapshot) {
+        setText("matchSummary", "No snapshot yet");
+        setText("scoreboardSummary", "-");
+        setText("playersSummary", "-");
+        setText("botsSummary", "-");
+        setText("targetsSummary", "-");
+        setText("healthPacksSummary", "-");
+        setText("projectilesSummary", "-");
+        setText("eventsSummary", recentEventMessages.slice(-5).join("\n") || "-");
+        return;
+      }
+
+      const match = latestSnapshot.match || {};
+      const scoreboard = Array.isArray(latestSnapshot.scoreboard) ? latestSnapshot.scoreboard : [];
+      const players = Array.isArray(latestSnapshot.players) ? latestSnapshot.players : [];
+      const bots = Array.isArray(latestSnapshot.bots) ? latestSnapshot.bots : [];
+      const targets = Array.isArray(latestSnapshot.targets) ? latestSnapshot.targets : [];
+      const healthPacks = Array.isArray(latestSnapshot.health_packs) ? latestSnapshot.health_packs : [];
+      const projectiles = Array.isArray(latestSnapshot.projectiles) ? latestSnapshot.projectiles : [];
+
+      const winner = match.winner_nickname || (match.winner_player_id ? `P${match.winner_player_id}` : "-");
+      setText(
+        "matchSummary",
+        `${match.state ?? "-"} | ${formatTime(match.time_left)} | goal=${match.target_score ?? "-"}\n` +
+        `game_over=${match.game_over ?? false} winner=${winner} match=${match.match_id ?? "-"}`
+      );
+      setText("scoreboardSummary", summarizeScoreboard(scoreboard));
+
+      const ownPlayer = players.find((player) => player.player_id === joinedPlayerId);
+      const playerSummary = ownPlayer
+        ? `P${ownPlayer.player_id} ${ownPlayer.nickname || ""} HP=${ownPlayer.hp}/${ownPlayer.max_hp}\n` +
+          `alive=${ownPlayer.alive} inv=${ownPlayer.invincible} score=${ownPlayer.score} deaths=${ownPlayer.deaths}`
+        : players.map((player) => `P${player.player_id}:${player.hp}/${player.max_hp}`).join(" ");
+      setText("playersSummary", playerSummary || "-");
+
+      const aliveBots = bots.filter((bot) => bot.alive).length;
+      const botSummary = bots
+        .slice(0, 8)
+        .map((bot) => `B${bot.bot_id}:${bot.alive ? bot.hp + "/" + bot.max_hp : "DEAD"}`)
+        .join(" ");
+      setText("botsSummary", `${aliveBots}/${bots.length}\n${botSummary || "-"}`);
+
+      const aliveTargets = targets.filter((target) => target.alive).length;
+      const targetSummary = targets
+        .map((target) => `C${target.target_id}:${target.alive ? target.hp + "/" + target.max_hp : "DEAD"}`)
+        .join(" ");
+      setText("targetsSummary", `${aliveTargets}/${targets.length}\n${targetSummary || "-"}`);
+
+      const activeHealthPacks = healthPacks.filter((pack) => pack.active).length;
+      const healthPackSummary = healthPacks
+        .map((pack) =>
+          `H${pack.health_pack_id}:${pack.active ? "+" + pack.heal_amount : "respawn " + Number(pack.respawn_timer ?? 0).toFixed(1)}`
+        )
+        .join(" ");
+      setText("healthPacksSummary", `${activeHealthPacks}/${healthPacks.length}\n${healthPackSummary || "-"}`);
+
+      if (projectiles.length > 0) {
+        const latestProjectile = projectiles[projectiles.length - 1];
+        setText(
+          "projectilesSummary",
+          `${projectiles.length}\nlatest=(${Number(latestProjectile.x ?? 0).toFixed(1)}, ${Number(latestProjectile.y ?? 0).toFixed(1)})`
+        );
+      } else {
+        setText("projectilesSummary", "0");
+      }
+
+      setText("eventsSummary", recentEventMessages.slice(-5).join("\n") || "-");
+    }
+
+    function scheduleSummaryUpdate(force = false) {
+      const now = performance.now();
+      const elapsed = now - lastSummaryUpdateMs;
+      if (force || elapsed >= SUMMARY_UPDATE_INTERVAL_MS) {
+        if (pendingSummaryUpdateTimer) {
+          clearTimeout(pendingSummaryUpdateTimer);
+          pendingSummaryUpdateTimer = null;
+        }
+        lastSummaryUpdateMs = now;
+        updateSummaryUI();
+        return;
+      }
+
+      if (!pendingSummaryUpdateTimer) {
+        pendingSummaryUpdateTimer = setTimeout(() => {
+          pendingSummaryUpdateTimer = null;
+          lastSummaryUpdateMs = performance.now();
+          updateSummaryUI();
+        }, SUMMARY_UPDATE_INTERVAL_MS - elapsed);
       }
     }
 
@@ -141,7 +466,12 @@
         }
 
         seenEventIds.add(event.event_id);
-        log(`event #${event.event_id} ${event.type}: ${event.message}`);
+        const eventMessage = `event #${event.event_id} ${event.type}: ${event.message}`;
+        recentEventMessages.push(event.message || eventMessage);
+        if (recentEventMessages.length > 5) {
+          recentEventMessages.splice(0, recentEventMessages.length - 5);
+        }
+        log(eventMessage);
       }
     }
 
@@ -163,6 +493,105 @@
       );
     }
 
+    function handleSnapshot(message, rawData) {
+      latestSnapshot = message;
+      snapshotCount += 1;
+      updateLatestRoomEntities(message);
+      logArenaLayout(message);
+      logEvents(message);
+      scheduleSummaryUpdate();
+
+      if (pauseSnapshotLogInput.checked) {
+        return;
+      }
+
+      if (rawSnapshotsInput.checked) {
+        log(`received snapshot raw: ${rawData}`);
+        return;
+      }
+
+      const interval = getSnapshotSummaryInterval();
+      if (snapshotCount === 1 || snapshotCount % interval === 0) {
+        log(buildSnapshotSummary(message));
+      }
+    }
+
+    function handleNonSnapshotMessage(message, rawData) {
+      switch (message.type) {
+        case "pong":
+          log("received pong");
+          break;
+        case "join_ok":
+          joinedPlayerId = message.player_id;
+          log(`joined player_id=${joinedPlayerId} room_id=${message.room_id} nickname=${message.nickname}`);
+          break;
+        case "input_ack":
+          log(`input_ack seq=${message.seq} player_id=${message.player_id ?? joinedPlayerId}`);
+          break;
+        case "match_restarted":
+          seenEventIds.clear();
+          recentEventMessages.length = 0;
+          log(`match_restarted match_id=${message.match_id}`);
+          break;
+        case "debug_ok":
+          if (message.message === "safe demo mode applied") {
+            seenEventIds.clear();
+            recentEventMessages.length = 0;
+            latestSnapshot = null;
+            latestPlayers = [];
+            latestBots = [];
+            snapshotCount = 0;
+            log("safe demo mode applied");
+          } else {
+            log(`debug_ok ${message.message}`);
+          }
+          break;
+        case "room_state":
+          updateLatestRoomEntities(message);
+          log(
+            `room_state players=${message.player_count ?? 0} ` +
+            `targets=${message.target_count ?? 0} bots=${message.bot_count ?? 0} ` +
+            `bot_attacks=${message.bot_attacks_enabled ?? true} ` +
+            `difficulty=${message.bot_difficulty ?? "normal"} ` +
+            `auto_timer=${message.auto_end_match_by_timer ?? true} ` +
+            `health_packs=${message.active_health_pack_count ?? 0}/${message.health_pack_count ?? 0} ` +
+            `projectiles=${message.projectile_count ?? 0}`
+          );
+          log(
+            `bot_config damage=${message.bot_attack_damage ?? 20} ` +
+            `cooldown=${message.bot_attack_cooldown ?? 1} ` +
+            `detect=${message.bot_detect_range ?? 1500} ` +
+            `attack_range=${message.bot_attack_range ?? 900} ` +
+            `speed=${message.bot_move_speed ?? 500}`
+          );
+          logArenaLayout(message);
+          logEvents(message);
+          break;
+        case "error":
+          log(`server error: ${message.message ?? rawData}`);
+          break;
+        default:
+          log(`received: ${rawData}`);
+          break;
+      }
+
+      scheduleSummaryUpdate(true);
+    }
+
+    function handleSocketMessage(event) {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === "snapshot") {
+          handleSnapshot(message, event.data);
+          return;
+        }
+
+        handleNonSnapshotMessage(message, event.data);
+      } catch {
+        log(`received non-json message: ${event.data}`);
+      }
+    }
+
     document.getElementById("connect").addEventListener("click", () => {
       if (socket && socket.readyState === WebSocket.OPEN) {
         log("Already connected.");
@@ -170,83 +599,19 @@
       }
 
       seenEventIds.clear();
+      recentEventMessages.length = 0;
+      latestSnapshot = null;
+      latestPlayers = [];
+      latestBots = [];
+      snapshotCount = 0;
       arenaLogged = false;
       socket = new WebSocket(serverUrl);
-      socket.addEventListener("open", () => log("connected"));
-      socket.addEventListener("message", (event) => {
-        log(`received: ${event.data}`);
-
-        try {
-          const message = JSON.parse(event.data);
-          if (message.type === "join_ok") {
-            joinedPlayerId = message.player_id;
-            log(`joined player_id=${joinedPlayerId}`);
-          } else if (message.type === "match_restarted") {
-            seenEventIds.clear();
-            log(`match_restarted match_id=${message.match_id}`);
-          } else if (message.type === "room_state") {
-            log(
-              `room_state players=${message.player_count ?? 0} ` +
-              `targets=${message.target_count ?? 0} bots=${message.bot_count ?? 0} ` +
-              `health_packs=${message.active_health_pack_count ?? 0}/${message.health_pack_count ?? 0} ` +
-              `projectiles=${message.projectile_count ?? 0}`
-            );
-            logArenaLayout(message);
-            logMatchAndScoreboard(message);
-            logEvents(message);
-          } else if (message.type === "snapshot") {
-            const projectiles = Array.isArray(message.projectiles) ? message.projectiles : [];
-            const targets = Array.isArray(message.targets) ? message.targets : [];
-            const bots = Array.isArray(message.bots) ? message.bots : [];
-            const healthPacks = Array.isArray(message.health_packs) ? message.health_packs : [];
-            const players = Array.isArray(message.players) ? message.players : [];
-            logArenaLayout(message);
-            logMatchAndScoreboard(message);
-            logEvents(message);
-            const ownPlayer = players.find((player) => player.player_id === joinedPlayerId);
-            if (ownPlayer) {
-              log(
-                `snapshot tick=${message.tick} player_hp=${ownPlayer.hp}/${ownPlayer.max_hp} ` +
-                `alive=${ownPlayer.alive} invincible=${ownPlayer.invincible} ` +
-                `score=${ownPlayer.score} kills=${ownPlayer.kills} deaths=${ownPlayer.deaths} ` +
-                `target_kills=${ownPlayer.target_kills} bot_kills=${ownPlayer.bot_kills}`
-              );
-            }
-            if (projectiles.length > 0) {
-              const latest = projectiles[projectiles.length - 1];
-              log(
-                `snapshot tick=${message.tick} projectiles=${projectiles.length} ` +
-                `latest=(${latest.x.toFixed(1)}, ${latest.y.toFixed(1)})`
-              );
-            }
-            if (targets.length > 0) {
-              const targetSummary = targets
-                .map((target) => `T${target.target_id}:${target.alive ? target.hp + "/" + target.max_hp : "DEAD"}`)
-                .join(" ");
-              log(`snapshot tick=${message.tick} targets=${targets.length} ${targetSummary}`);
-            }
-            if (bots.length > 0) {
-              const aliveBots = bots.filter((bot) => bot.alive).length;
-              const botSummary = bots
-                .slice(0, 4)
-                .map((bot) => `B${bot.bot_id}:${bot.alive ? bot.hp + "/" + bot.max_hp : "DEAD"}`)
-                .join(" ");
-              log(`snapshot tick=${message.tick} bots=${aliveBots}/${bots.length} ${botSummary}`);
-            }
-            if (healthPacks.length > 0) {
-              const activeHealthPacks = healthPacks.filter((pack) => pack.active).length;
-              const healthPackSummary = healthPacks
-                .map((pack) =>
-                  `H${pack.health_pack_id}:${pack.active ? "+" + pack.heal_amount : "respawn " + pack.respawn_timer.toFixed(1)}`
-                )
-                .join(" ");
-              log(`snapshot tick=${message.tick} health_packs=${activeHealthPacks}/${healthPacks.length} ${healthPackSummary}`);
-            }
-          }
-        } catch {
-          log("received non-json message");
-        }
+      scheduleSummaryUpdate(true);
+      socket.addEventListener("open", () => {
+        log("connected");
+        scheduleSummaryUpdate(true);
       });
+      socket.addEventListener("message", handleSocketMessage);
       socket.addEventListener("close", () => {
         if (moveTimer) {
           clearInterval(moveTimer);
@@ -257,8 +622,12 @@
           fireTimer = null;
         }
         log("closed");
+        scheduleSummaryUpdate(true);
       });
-      socket.addEventListener("error", () => log("socket error"));
+      socket.addEventListener("error", () => {
+        log("socket error");
+        scheduleSummaryUpdate(true);
+      });
     });
 
     document.getElementById("sendPing").addEventListener("click", () => {
@@ -297,7 +666,6 @@
     });
 
     document.getElementById("sendFireAtBot1").addEventListener("click", () => {
-      // Player 1 starts at (-1200, 0). Bot 1 starts at (-300, 300).
       sendInput(0, 0, true, {
         shotDirX: 0.95,
         shotDirY: 0.32,
@@ -308,14 +676,7 @@
     });
 
     document.getElementById("sendFireAtNearestBot").addEventListener("click", () => {
-      // Useful after joining: this aims from P1 toward the central bot cluster.
-      sendInput(0, 0, true, {
-        shotDirX: 0.95,
-        shotDirY: 0.32,
-        shotDirZ: 0,
-        spreadDeg: 0,
-        ads: true
-      });
+      sendFireAtNearestBot();
     });
 
     document.getElementById("startFiring").addEventListener("click", () => {
@@ -375,6 +736,38 @@
       send(JSON.stringify({ type: "debug_restart_match" }));
     });
 
+    document.getElementById("applySafeDemoMode").addEventListener("click", () => {
+      send(JSON.stringify({ type: "debug_apply_demo_mode" }));
+    });
+
+    document.getElementById("disableBotAttacks").addEventListener("click", () => {
+      send(JSON.stringify({ type: "debug_set_bot_attacks", enabled: false }));
+    });
+
+    document.getElementById("enableBotAttacks").addEventListener("click", () => {
+      send(JSON.stringify({ type: "debug_set_bot_attacks", enabled: true }));
+    });
+
+    document.getElementById("botDifficultyEasy").addEventListener("click", () => {
+      send(JSON.stringify({ type: "debug_set_bot_difficulty", difficulty: "easy" }));
+    });
+
+    document.getElementById("botDifficultyNormal").addEventListener("click", () => {
+      send(JSON.stringify({ type: "debug_set_bot_difficulty", difficulty: "normal" }));
+    });
+
+    document.getElementById("botDifficultyHard").addEventListener("click", () => {
+      send(JSON.stringify({ type: "debug_set_bot_difficulty", difficulty: "hard" }));
+    });
+
+    document.getElementById("disableMatchTimer").addEventListener("click", () => {
+      send(JSON.stringify({ type: "debug_set_match_timer", enabled: false }));
+    });
+
+    document.getElementById("enableMatchTimer").addEventListener("click", () => {
+      send(JSON.stringify({ type: "debug_set_match_timer", enabled: true }));
+    });
+
     document.getElementById("sendInvalid").addEventListener("click", () => {
       send("{ invalid json");
     });
@@ -384,6 +777,13 @@
         socket.close();
       }
     });
+
+    document.getElementById("clearLog").addEventListener("click", clearLog);
+    snapshotSummaryIntervalInput.addEventListener("change", () => {
+      log(`snapshot summary interval=${getSnapshotSummaryInterval()}`);
+    });
+
+    scheduleSummaryUpdate(true);
   </script>
 </body>
 </html>

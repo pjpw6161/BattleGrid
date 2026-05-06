@@ -27,6 +27,9 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerPlayerSnapshot
 	float Y = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float Z = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	int32 HP = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
@@ -37,6 +40,12 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerPlayerSnapshot
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	bool bInvincible = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float RespawnTimer = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float InvincibleTimer = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	int32 Score = 0;
@@ -289,6 +298,10 @@ public:
 	void SendPing();
 	void SendJoin();
 	void SendDebugRestartMatch();
+	void SendDebugApplyDemoMode();
+	void SendDebugSetBotAttacks(bool bEnabled);
+	void SendDebugSetBotDifficulty(const FString& Difficulty);
+	void SendDebugSetMatchTimer(bool bEnabled);
 	void SendInput(
 		int32 Seq,
 		float MoveX,
@@ -322,6 +335,7 @@ public:
 	FString GetNickname() const;
 	FString GetLastServerMessage() const;
 	FString GetLastError() const;
+	FString GetLastDebugMessage() const;
 	FString GetConnectionStatusText() const;
 	bool HasSnapshot() const;
 	int32 GetLastSnapshotTick() const;
@@ -371,6 +385,7 @@ private:
 	int32 RoomId = 0;
 	FString LastServerMessage;
 	FString LastError;
+	FString LastDebugMessage;
 	int32 LastSnapshotTick = 0;
 	int32 LastSnapshotRoomId = 0;
 	TMap<int32, FBattleGridServerPlayerSnapshot> LatestPlayerSnapshots;
