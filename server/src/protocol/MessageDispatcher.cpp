@@ -146,6 +146,11 @@ std::string MessageDispatcher::DispatchParsedMessage(const nlohmann::json& messa
         return HandleDebugRoom();
     }
 
+    if (*type == "debug_restart_match")
+    {
+        return HandleDebugRestartMatch();
+    }
+
     return JsonProtocol::Error("unknown message type");
 }
 
@@ -287,5 +292,22 @@ std::string MessageDispatcher::HandleDebugRoom()
     }
 
     return JsonProtocol::RoomState(room->ToDebugJson());
+}
+
+std::string MessageDispatcher::HandleDebugRestartMatch()
+{
+    if (!roomManager)
+    {
+        return JsonProtocol::Error("room unavailable");
+    }
+
+    std::shared_ptr<GameRoom> room = roomManager->GetDefaultRoom();
+    if (!room)
+    {
+        return JsonProtocol::Error("room unavailable");
+    }
+
+    const std::uint64_t matchId = room->ResetMatch();
+    return JsonProtocol::MatchRestarted(matchId);
 }
 }

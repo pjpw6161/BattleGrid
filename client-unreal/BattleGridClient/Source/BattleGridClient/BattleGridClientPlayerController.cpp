@@ -9,6 +9,7 @@
 #include "BattleGridServerProjectileGhostActor.h"
 #include "BattleGridServerTargetGhostActor.h"
 #include "BattleGridServerBotGhostActor.h"
+#include "BattleGridServerHealthPackGhostActor.h"
 #include "BattleGridWeaponComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -98,6 +99,8 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	ServerTargetGhostHeight = 60.0f;
 	bShowServerBotGhosts = true;
 	ServerBotGhostHeight = 70.0f;
+	bShowServerHealthPackGhosts = true;
+	ServerHealthPackGhostHeight = 50.0f;
 	ServerSnapshotOrigin = FVector::ZeroVector;
 	bServerSnapshotOriginInitialized = false;
 	LastProcessedSnapshotTick = 0;
@@ -234,6 +237,25 @@ void ABattleGridClientPlayerController::RestartStarted(const FInputActionValue& 
 {
 	static_cast<void>(Value);
 
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			if (
+				NetworkSubsystem->IsConnected()
+				&& NetworkSubsystem->HasJoined()
+				&& NetworkSubsystem->HasMatchSnapshot()
+				&& NetworkSubsystem->GetLatestMatchSnapshot().bGameOver
+			)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Sending server match restart request."));
+				NetworkSubsystem->SendDebugRestartMatch();
+				return;
+			}
+		}
+	}
+
 	RestartGame();
 }
 
@@ -293,6 +315,8 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 				FBattleGridServerPlayerSnapshot OwnSnapshot;
 				const bool bHasOwnSnapshot =
 					NetworkSubsystem->GetOwnPlayerSnapshot(OwnSnapshot);
+				const FString MatchSummaryText =
+					NetworkSubsystem->GetServerScoreboardSummaryText();
 				const FString ServerAliveText = !bHasOwnSnapshot
 					? FString(TEXT("-"))
 					: (OwnSnapshot.bAlive ? FString(TEXT("Alive")) : FString(TEXT("Dead")));
@@ -302,11 +326,12 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 						: FString(TEXT("Vulnerable"));
 
 				return FString::Printf(
-					TEXT("Profile: %s | Server: Connected | Player=%d Room=%d Snapshot=%d\nServer HP: %d/%d %s/%s | Server Score: %d | K/D: %d/%d | TargetKills: %d | BotKills: %d\nTargets: %d/%d | Bots: %d/%d | Projectiles: %d | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
+					TEXT("Profile: %s | Server: Connected | Player=%d Room=%d Snapshot=%d\n%s\nServer HP: %d/%d %s/%s | Server Score: %d | K/D: %d/%d | TargetKills: %d | BotKills: %d\nTargets: %d/%d | Bots: %d/%d | HealthPacks: %d/%d | Projectiles: %d | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
 					*ProfileLabel,
 					NetworkSubsystem->GetPlayerId(),
 					NetworkSubsystem->GetRoomId(),
 					NetworkSubsystem->GetLastSnapshotTick(),
+					*MatchSummaryText,
 					bHasOwnSnapshot ? OwnSnapshot.HP : 0,
 					bHasOwnSnapshot ? OwnSnapshot.MaxHP : 0,
 					*ServerAliveText,
@@ -320,6 +345,8 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 					NetworkSubsystem->GetServerTargetCount(),
 					NetworkSubsystem->GetServerAliveBotCount(),
 					NetworkSubsystem->GetServerBotCount(),
+					NetworkSubsystem->GetServerActiveHealthPackCount(),
+					NetworkSubsystem->GetServerHealthPackCount(),
 					NetworkSubsystem->GetServerProjectileCount(),
 					*ErrorText,
 					*CorrectionText,
@@ -331,7 +358,7 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 			if (NetworkSubsystem->IsConnected())
 			{
 				return FString::Printf(
-					TEXT("Profile: %s | Server: Connected | Joining...\nTargets: - | Projectiles: - | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
+					TEXT("Profile: %s | Server: Connected | Joining...\nTargets: - | Bots: - | HealthPacks: - | Projectiles: - | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
 					*ProfileLabel,
 					*ErrorText,
 					*CorrectionText,
@@ -344,7 +371,7 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 			if (!LastNetworkError.IsEmpty())
 			{
 				return FString::Printf(
-					TEXT("Profile: %s | Server: Error | %s\nTargets: - | Projectiles: - | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
+					TEXT("Profile: %s | Server: Error | %s\nTargets: - | Bots: - | HealthPacks: - | Projectiles: - | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
 					*ProfileLabel,
 					*LastNetworkError,
 					*ErrorText,
@@ -357,7 +384,7 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 	}
 
 	return FString::Printf(
-		TEXT("Profile: %s | Server: Disconnected\nTargets: - | Projectiles: - | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
+		TEXT("Profile: %s | Server: Disconnected\nTargets: - | Bots: - | HealthPacks: - | Projectiles: - | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
 		*ProfileLabel,
 		*ErrorText,
 		*CorrectionText,
@@ -820,6 +847,7 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 	UpdateServerProjectileGhostsFromSnapshot();
 	UpdateServerTargetGhostsFromSnapshot();
 	UpdateServerBotGhostsFromSnapshot();
+	UpdateServerHealthPackGhostsFromSnapshot();
 	UpdateOwnServerPositionErrorAndCorrection(DeltaTime);
 }
 
@@ -1977,6 +2005,120 @@ void ABattleGridClientPlayerController::UpdateServerBotGhostsFromSnapshot()
 	for (auto Iterator = ServerBotGhostActors.CreateIterator(); Iterator; ++Iterator)
 	{
 		if (!Iterator.Value() || !ActiveBotIds.Contains(Iterator.Key()))
+		{
+			if (Iterator.Value())
+			{
+				Iterator.Value()->Destroy();
+			}
+			Iterator.RemoveCurrent();
+		}
+	}
+}
+
+void ABattleGridClientPlayerController::UpdateServerHealthPackGhostsFromSnapshot()
+{
+	if (!bShowServerHealthPackGhosts)
+	{
+		for (auto Iterator = ServerHealthPackGhostActors.CreateIterator(); Iterator; ++Iterator)
+		{
+			if (Iterator.Value())
+			{
+				Iterator.Value()->Destroy();
+			}
+		}
+		ServerHealthPackGhostActors.Empty();
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!World || !GameInstance)
+	{
+		return;
+	}
+
+	UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	if (!NetworkSubsystem || !NetworkSubsystem->HasSnapshot())
+	{
+		return;
+	}
+
+	if (!bServerSnapshotOriginInitialized)
+	{
+		if (const APawn* ControlledPawn = GetPawn())
+		{
+			ServerSnapshotOrigin = ControlledPawn->GetActorLocation();
+		}
+		else
+		{
+			ServerSnapshotOrigin = FVector::ZeroVector;
+		}
+		bServerSnapshotOriginInitialized = true;
+	}
+
+	TArray<FBattleGridServerHealthPackSnapshot> HealthPackSnapshots;
+	NetworkSubsystem->GetLatestHealthPackSnapshots(HealthPackSnapshots);
+
+	TSet<int32> ActiveHealthPackIds;
+	for (const FBattleGridServerHealthPackSnapshot& HealthPackSnapshot : HealthPackSnapshots)
+	{
+		if (HealthPackSnapshot.HealthPackId <= 0)
+		{
+			continue;
+		}
+
+		ActiveHealthPackIds.Add(HealthPackSnapshot.HealthPackId);
+
+		const FVector WorldLocation = ConvertServerPositionToWorld(
+			HealthPackSnapshot.X,
+			HealthPackSnapshot.Y,
+			ServerHealthPackGhostHeight + HealthPackSnapshot.Z
+		);
+
+		TObjectPtr<ABattleGridServerHealthPackGhostActor>& GhostActor =
+			ServerHealthPackGhostActors.FindOrAdd(HealthPackSnapshot.HealthPackId);
+		if (!GhostActor)
+		{
+			TSubclassOf<ABattleGridServerHealthPackGhostActor> GhostClass =
+				ServerHealthPackGhostActorClass;
+			if (!GhostClass)
+			{
+				GhostClass = ABattleGridServerHealthPackGhostActor::StaticClass();
+			}
+
+			FActorSpawnParameters SpawnParameters;
+			SpawnParameters.Owner = this;
+			SpawnParameters.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			GhostActor = World->SpawnActor<ABattleGridServerHealthPackGhostActor>(
+				GhostClass,
+				WorldLocation,
+				FRotator::ZeroRotator,
+				SpawnParameters
+			);
+
+			if (GhostActor)
+			{
+				UE_LOG(
+					LogTemp,
+					Log,
+					TEXT("[BattleGrid] Spawned server health pack ghost id=%d"),
+					HealthPackSnapshot.HealthPackId
+				);
+			}
+		}
+
+		if (GhostActor)
+		{
+			GhostActor->SetSnapshotData(HealthPackSnapshot, WorldLocation);
+		}
+	}
+
+	for (auto Iterator = ServerHealthPackGhostActors.CreateIterator(); Iterator; ++Iterator)
+	{
+		if (!Iterator.Value() || !ActiveHealthPackIds.Contains(Iterator.Key()))
 		{
 			if (Iterator.Value())
 			{

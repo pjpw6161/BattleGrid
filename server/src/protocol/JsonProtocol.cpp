@@ -68,6 +68,14 @@ std::string JsonProtocol::InputAck(std::uint64_t sequence, std::uint64_t playerI
     return response.dump();
 }
 
+std::string JsonProtocol::MatchRestarted(std::uint64_t matchId)
+{
+    nlohmann::ordered_json response;
+    response["type"] = "match_restarted";
+    response["match_id"] = matchId;
+    return response.dump();
+}
+
 std::string JsonProtocol::RoomState(const nlohmann::json& roomState)
 {
     nlohmann::ordered_json response;
@@ -77,11 +85,22 @@ std::string JsonProtocol::RoomState(const nlohmann::json& roomState)
     response["projectile_count"] = roomState.value("projectile_count", 0);
     response["target_count"] = roomState.value("target_count", 0);
     response["bot_count"] = roomState.value("bot_count", 0);
+    response["health_pack_count"] = roomState.value("health_pack_count", 0);
+    response["active_health_pack_count"] = roomState.value("active_health_pack_count", 0);
+    response["match"] = roomState.contains("match")
+        ? roomState.at("match")
+        : nlohmann::json::object();
+    response["scoreboard"] = roomState.contains("scoreboard")
+        ? roomState.at("scoreboard")
+        : nlohmann::json::array();
     response["players"] = roomState.contains("players")
         ? roomState.at("players")
         : nlohmann::json::array();
     response["bots"] = roomState.contains("bots")
         ? roomState.at("bots")
+        : nlohmann::json::array();
+    response["health_packs"] = roomState.contains("health_packs")
+        ? roomState.at("health_packs")
         : nlohmann::json::array();
     response["projectiles"] = roomState.contains("projectiles")
         ? roomState.at("projectiles")

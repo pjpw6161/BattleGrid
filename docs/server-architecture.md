@@ -14,9 +14,11 @@ The BattleGrid server is a C++20 CMake application that accepts WebSocket JSON c
 - `MessageDispatcher`: handles parsed JSON messages and mutates session/room state.
 - `RoomManager`: owns the fixed default Room 1.
 - `GameRoom`: thread-safe state container and simulation for Room 1.
+- `MatchState`: current match timer, target score, game-over flag, winner, and match ID.
 - `PlayerState`: player identity, nickname, connected flag, latest input, position, speed, HP, score, and processed fire sequence.
 - `PlayerInput`: latest input packet fields.
 - `BotState`: server-controlled PvE combatant state, movement target, HP, respawn, invincibility, and simple attack timers.
+- `HealthPackState`: server pickup state, position, active flag, heal amount, pickup radius, and respawn timer.
 - `ProjectileState`: projectile ID, owner, position, direction, speed, age, lifetime, damage, radius, and active flag.
 - `TargetState`: fixed server target ID, position, HP, max HP, collision radius, and alive flag.
 
@@ -26,7 +28,7 @@ The BattleGrid server is a C++20 CMake application that accepts WebSocket JSON c
 2. `GameServer::Run` logs startup settings.
 3. `WebSocketServer` binds and listens on the configured host/port.
 4. `RoomManager` creates fixed Room 1.
-5. `GameRoom` initializes fixed server targets and fixed server bots.
+5. `GameRoom` initializes fixed server targets, fixed server bots, and server health packs.
 6. The accept loop and tick timer start.
 7. `io_context.run()` keeps the process alive.
 
@@ -83,6 +85,26 @@ Each bot starts with:
 - `alive = true`
 - `invincible = false`
 
+Health pack spawn points:
+
+1. `(-600, 0)`
+2. `(-300, 500)`
+3. `(-300, -500)`
+4. `(300, 700)`
+5. `(300, -700)`
+6. `(800, 700)`
+7. `(800, -700)`
+8. `(1300, 0)`
+
+The room starts with three active health packs at spawn points 1, 3, and 5.
+
+Each health pack starts with:
+
+- `healAmount = 35`
+- `pickupRadius = 90`
+- `respawnDelaySeconds = 15`
+- `active = true`
+
 ## Join And Input
 
 On `join`:
@@ -118,8 +140,12 @@ Each tick:
 6. Projectile-target collision is checked only when hitscan damage is disabled.
 7. Inactive projectiles are removed.
 8. Bot respawns and simple bot AI are updated.
-9. The default room snapshot is built.
-10. Snapshot JSON is broadcast to joined active sessions.
+9. Health pack respawns and player pickups are processed.
+10. Match time is decremented and the win condition is checked.
+11. The default room snapshot is built.
+12. Snapshot JSON is broadcast to joined active sessions.
+
+If the match is already over, `GameRoom::Tick` stops new combat and score changes. Snapshots continue so clients can display the final scoreboard.
 
 Movement is intentionally simple:
 
@@ -153,6 +179,35 @@ Scoring:
 - Server bot killed: shooter gains +1 score, +1 kill, and +1 bot kill.
 - Server player killed: shooter gains +2 score, +1 kill, and +1 player kill.
 
+## Match State And Scoreboard
+
+`GameRoom` owns one `MatchState` for Room 1.
+
+Defaults:
+
+- `matchDurationSeconds = 300`
+- `timeRemainingSeconds = 300`
+- `targetScore = 20`
+- `state = in_progress`
+- `matchId = 1`
+
+The match ends when:
+
+- any connected player reaches `targetScore`
+- or `timeRemainingSeconds` reaches zero
+
+Winner selection:
+
+1. Highest score.
+2. Higher player kills.
+3. Higher bot kills.
+4. Fewer deaths.
+5. Lower player ID.
+
+Snapshots include a `match` object and a sorted `scoreboard` array. The scoreboard is sorted by the same tie breaker rules, so clients can show a concise top-player list without recomputing rank order.
+
+`debug_restart_match` is available for browser and demo testing. It resets match state, player scores and combat counters, projectiles, targets, bots, and health packs, then increments `matchId`. It is not a production rematch/lobby system.
+
 ## Bot AI
 
 `GameRoom::InitializeDefaultBots` creates eight fixed bots in Room 1.
@@ -170,12 +225,30 @@ There is no navmesh, pathfinding, projectile attack, animation, or bot score yet
 
 Bot attacks can kill players. Player death starts the same 8 second server respawn timer used by player-vs-player hitscan kills.
 
+## Health Packs
+
+`GameRoom::InitializeDefaultHealthPacks` creates three server-owned health packs from predefined spawn points.
+
+Each tick:
+
+1. Inactive health packs count down their respawn timer.
+2. When the timer reaches zero, the health pack respawns at a deterministic spawn point.
+3. Active health packs check alive players only.
+4. Full-health players do not consume health packs.
+5. Damaged players within pickup radius heal by 35 HP, clamped to max HP.
+6. Picked health packs deactivate and start a 15 second respawn timer.
+
+Bots ignore health packs in this step.
+
 ## Snapshot Broadcast
 
 Snapshots include:
 
+- match
+- scoreboard
 - players
 - bots
+- health_packs
 - projectiles
 - targets
 
@@ -191,12 +264,17 @@ This avoids overlapping writes when protocol responses and server snapshot broad
 
 `debug_room` returns Room 1 state:
 
+- match state
+- scoreboard
 - player count
 - projectile count
 - target count
 - bot count
+- health pack count
+- active health pack count
 - players and latest input
 - bots and HP/alive state
+- health packs and active/respawn state
 - active projectiles
 - targets and HP
 
@@ -211,5 +289,6 @@ This is for browser testing.
 - No real matchmaking.
 - No binary protocol.
 - Bot AI is direct and deterministic for debugging, with no pathfinding or projectile attacks.
+- Health packs are server snapshot entities only; no pickup effects, sounds, or production meshes yet.
 - No target respawn.
 - No deployment automation yet.

@@ -35,6 +35,7 @@ private:
     std::string HandleJoin(const nlohmann::json& message);
     std::string HandleInput(const nlohmann::json& message);
     std::string HandleDebugRoom();
+    std::string HandleDebugRestartMatch();
 
     SessionState& sessionState;
     std::shared_ptr<RoomManager> roomManager;

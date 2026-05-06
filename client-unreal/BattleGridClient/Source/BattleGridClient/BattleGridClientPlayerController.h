@@ -14,6 +14,7 @@ class ABattleGridServerGhostActor;
 class ABattleGridServerProjectileGhostActor;
 class ABattleGridServerTargetGhostActor;
 class ABattleGridServerBotGhostActor;
+class ABattleGridServerHealthPackGhostActor;
 struct FInputActionValue;
 
 UCLASS(Blueprintable, BlueprintType)
@@ -223,6 +224,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
 	float ServerBotGhostHeight;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	bool bShowServerHealthPackGhosts;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	TSubclassOf<ABattleGridServerHealthPackGhostActor> ServerHealthPackGhostActorClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	float ServerHealthPackGhostHeight;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -261,6 +271,7 @@ private:
 	void UpdateServerProjectileGhostsFromSnapshot();
 	void UpdateServerTargetGhostsFromSnapshot();
 	void UpdateServerBotGhostsFromSnapshot();
+	void UpdateServerHealthPackGhostsFromSnapshot();
 	void UpdateOwnServerPositionErrorAndCorrection(float DeltaTime);
 
 	float LastFireTime;
@@ -298,6 +309,8 @@ private:
 	TMap<int32, TObjectPtr<ABattleGridServerTargetGhostActor>> ServerTargetGhostActors;
 	UPROPERTY(Transient)
 	TMap<int32, TObjectPtr<ABattleGridServerBotGhostActor>> ServerBotGhostActors;
+	UPROPERTY(Transient)
+	TMap<int32, TObjectPtr<ABattleGridServerHealthPackGhostActor>> ServerHealthPackGhostActors;
 	FVector ServerSnapshotOrigin;
 	bool bServerSnapshotOriginInitialized;
 	int32 LastProcessedSnapshotTick;

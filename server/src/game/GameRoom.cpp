@@ -7,6 +7,7 @@
 #include <limits>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 namespace battlegrid
 {
@@ -205,21 +206,40 @@ nlohmann::json BuildTargetSnapshotJson(const TargetState& target)
     targetJson["alive"] = target.alive;
     return targetJson;
 }
+
+nlohmann::json BuildHealthPackSnapshotJson(const HealthPackState& healthPack)
+{
+    nlohmann::json healthPackJson;
+    healthPackJson["health_pack_id"] = healthPack.healthPackId;
+    healthPackJson["x"] = healthPack.x;
+    healthPackJson["y"] = healthPack.y;
+    healthPackJson["z"] = healthPack.z;
+    healthPackJson["active"] = healthPack.active;
+    healthPackJson["heal_amount"] = healthPack.healAmount;
+    healthPackJson["respawn_timer"] = healthPack.respawnTimerSeconds;
+    return healthPackJson;
+}
 }
 
 GameRoom::GameRoom(std::uint64_t inRoomId)
     : roomId(inRoomId),
       players(),
+      matchState(),
       bots(),
+      healthPacks(),
       projectiles(),
       targets(),
+      healthPackSpawnPoints(),
       nextProjectileId(1),
+      healthPackRespawnCounter(0),
       targetsInitialized(false),
       botsInitialized(false),
+      healthPacksInitialized(false),
       mutex()
 {
     InitializeDefaultTargets();
     InitializeDefaultBots();
+    InitializeDefaultHealthPacks();
 }
 
 std::uint64_t GameRoom::GetRoomId() const
@@ -280,6 +300,13 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
     std::lock_guard lock(mutex);
     InitializeDefaultTargets();
     InitializeDefaultBots();
+    InitializeDefaultHealthPacks();
+
+    if (matchState.IsGameOver())
+    {
+        return;
+    }
+
     ProcessPlayerRespawns(deltaSeconds);
     UpdateBotRespawns(deltaSeconds);
 
@@ -353,6 +380,9 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
     }
     RemoveInactiveProjectiles();
     UpdateBots(deltaSeconds);
+    UpdateHealthPacks(deltaSeconds);
+    matchState.Tick(deltaSeconds);
+    CheckMatchEndCondition();
 }
 
 nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
@@ -360,13 +390,17 @@ nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
     std::lock_guard lock(mutex);
     InitializeDefaultTargets();
     InitializeDefaultBots();
+    InitializeDefaultHealthPacks();
 
     nlohmann::json json;
     json["type"] = "snapshot";
     json["tick"] = tickNumber;
     json["room_id"] = roomId;
+    json["match"] = matchState.ToJson();
+    json["scoreboard"] = BuildScoreboardJson();
     json["players"] = nlohmann::json::array();
     json["bots"] = nlohmann::json::array();
+    json["health_packs"] = nlohmann::json::array();
     json["projectiles"] = nlohmann::json::array();
     json["targets"] = nlohmann::json::array();
 
@@ -400,6 +434,12 @@ nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
         json["bots"].push_back(BuildBotSnapshotJson(bot));
     }
 
+    for (const auto& [healthPackId, healthPack] : healthPacks)
+    {
+        static_cast<void>(healthPackId);
+        json["health_packs"].push_back(BuildHealthPackSnapshotJson(healthPack));
+    }
+
     for (const auto& [targetId, target] : targets)
     {
         static_cast<void>(targetId);
@@ -414,15 +454,20 @@ nlohmann::json GameRoom::ToDebugJson() const
     std::lock_guard lock(mutex);
     InitializeDefaultTargets();
     InitializeDefaultBots();
+    InitializeDefaultHealthPacks();
 
     nlohmann::json json;
     json["room_id"] = roomId;
+    json["match"] = matchState.ToJson();
+    json["scoreboard"] = BuildScoreboardJson();
     json["player_count"] = players.size();
     json["projectile_count"] = projectiles.size();
     json["target_count"] = targets.size();
     json["bot_count"] = bots.size();
+    json["health_pack_count"] = healthPacks.size();
     json["players"] = nlohmann::json::array();
     json["bots"] = nlohmann::json::array();
+    json["health_packs"] = nlohmann::json::array();
     json["projectiles"] = nlohmann::json::array();
     json["targets"] = nlohmann::json::array();
 
@@ -479,6 +524,18 @@ nlohmann::json GameRoom::ToDebugJson() const
         json["bots"].push_back(BuildBotSnapshotJson(bot));
     }
 
+    std::size_t activeHealthPackCount = 0;
+    for (const auto& [healthPackId, healthPack] : healthPacks)
+    {
+        static_cast<void>(healthPackId);
+        if (healthPack.IsActive())
+        {
+            ++activeHealthPackCount;
+        }
+        json["health_packs"].push_back(BuildHealthPackSnapshotJson(healthPack));
+    }
+    json["active_health_pack_count"] = activeHealthPackCount;
+
     for (const auto& [projectileId, projectile] : projectiles)
     {
         static_cast<void>(projectileId);
@@ -498,6 +555,53 @@ nlohmann::json GameRoom::ToDebugJson() const
     }
 
     return json;
+}
+
+std::uint64_t GameRoom::ResetMatch()
+{
+    std::lock_guard lock(mutex);
+
+    const std::uint64_t nextMatchId = matchState.matchId + 1;
+    matchState.Reset();
+    matchState.matchId = nextMatchId;
+
+    projectiles.clear();
+    nextProjectileId = 1;
+    healthPackRespawnCounter = 0;
+
+    targets.clear();
+    bots.clear();
+    healthPacks.clear();
+    targetsInitialized = false;
+    botsInitialized = false;
+    healthPacksInitialized = false;
+
+    InitializeDefaultTargets();
+    InitializeDefaultBots();
+    InitializeDefaultHealthPacks();
+
+    for (auto& [playerId, player] : players)
+    {
+        static_cast<void>(playerId);
+
+        player.latestInput = PlayerInput();
+        player.alive = true;
+        player.invincible = false;
+        player.hp = player.maxHp;
+        player.score = 0;
+        player.deaths = 0;
+        player.kills = 0;
+        player.playerKills = 0;
+        player.targetKills = 0;
+        player.botKills = 0;
+        player.respawnTimerSeconds = 0.0;
+        player.invincibleTimerSeconds = 0.0;
+        player.lastProcessedFireSeq = 0;
+        AssignRespawnPosition(player);
+    }
+
+    Logger::Info("Match restarted match_id=" + std::to_string(matchState.matchId));
+    return matchState.matchId;
 }
 
 void GameRoom::InitializeDefaultTargets() const
@@ -592,6 +696,74 @@ void GameRoom::InitializeDefaultBots() const
 
     botsInitialized = true;
     Logger::Info("Initialized default bots count=" + std::to_string(bots.size()));
+}
+
+void GameRoom::InitializeHealthPackSpawnPoints() const
+{
+    if (!healthPackSpawnPoints.empty())
+    {
+        return;
+    }
+
+    healthPackSpawnPoints = {
+        {-600.0, 0.0},
+        {-300.0, 500.0},
+        {-300.0, -500.0},
+        {300.0, 700.0},
+        {300.0, -700.0},
+        {800.0, 700.0},
+        {800.0, -700.0},
+        {1300.0, 0.0},
+    };
+}
+
+void GameRoom::InitializeDefaultHealthPacks() const
+{
+    if (healthPacksInitialized && !healthPacks.empty())
+    {
+        return;
+    }
+
+    InitializeHealthPackSpawnPoints();
+    healthPacks.clear();
+
+    struct HealthPackSpawn
+    {
+        std::uint64_t id;
+        std::size_t spawnIndex;
+    };
+
+    const HealthPackSpawn healthPackSpawns[] = {
+        {1, 0},
+        {2, 2},
+        {3, 4},
+    };
+
+    for (const HealthPackSpawn& spawn : healthPackSpawns)
+    {
+        if (healthPackSpawnPoints.empty())
+        {
+            break;
+        }
+
+        const std::pair<double, double>& spawnPoint =
+            healthPackSpawnPoints[spawn.spawnIndex % healthPackSpawnPoints.size()];
+
+        HealthPackState healthPack;
+        healthPack.healthPackId = spawn.id;
+        healthPack.x = spawnPoint.first;
+        healthPack.y = spawnPoint.second;
+        healthPack.z = 0.0;
+        healthPack.active = true;
+        healthPack.healAmount = 35;
+        healthPack.pickupRadius = 90.0;
+        healthPack.respawnTimerSeconds = 0.0;
+        healthPack.respawnDelaySeconds = 15.0;
+        healthPacks.emplace(healthPack.healthPackId, healthPack);
+    }
+
+    healthPacksInitialized = true;
+    Logger::Info("Initialized health packs count=" + std::to_string(healthPacks.size()));
 }
 
 void GameRoom::SpawnProjectile(
@@ -856,6 +1028,255 @@ void GameRoom::UpdateBotAI(double deltaSeconds)
         bot.x = std::clamp(bot.x + (moveX * bot.speed * deltaSeconds), ArenaMin, ArenaMax);
         bot.y = std::clamp(bot.y + (moveY * bot.speed * deltaSeconds), ArenaMin, ArenaMax);
     }
+}
+
+void GameRoom::UpdateHealthPacks(double deltaSeconds)
+{
+    for (auto& [healthPackId, healthPack] : healthPacks)
+    {
+        if (healthPack.IsActive())
+        {
+            continue;
+        }
+
+        healthPack.respawnTimerSeconds -= deltaSeconds;
+        if (healthPack.respawnTimerSeconds > 0.0)
+        {
+            continue;
+        }
+
+        ++healthPackRespawnCounter;
+        const std::pair<double, double> spawnPoint =
+            ChooseHealthPackSpawnPoint(healthPackId);
+        healthPack.Respawn(spawnPoint.first, spawnPoint.second);
+
+        std::ostringstream logMessage;
+        logMessage
+            << "Health pack respawned health_pack_id=" << healthPack.healthPackId
+            << " x=" << healthPack.x
+            << " y=" << healthPack.y;
+        Logger::Info(logMessage.str());
+    }
+
+    CheckHealthPackPickups();
+}
+
+void GameRoom::CheckHealthPackPickups()
+{
+    for (auto& [healthPackId, healthPack] : healthPacks)
+    {
+        static_cast<void>(healthPackId);
+
+        if (!healthPack.IsActive())
+        {
+            continue;
+        }
+
+        for (auto& [playerId, player] : players)
+        {
+            static_cast<void>(playerId);
+
+            if (!player.connected || !player.alive || player.hp >= player.maxHp)
+            {
+                continue;
+            }
+
+            const double deltaX = player.x - healthPack.x;
+            const double deltaY = player.y - healthPack.y;
+            const double pickupRadiusSquared =
+                healthPack.pickupRadius * healthPack.pickupRadius;
+            const double distanceSquared = (deltaX * deltaX) + (deltaY * deltaY);
+            if (distanceSquared > pickupRadiusSquared)
+            {
+                continue;
+            }
+
+            player.hp = std::min(player.maxHp, player.hp + healthPack.healAmount);
+            healthPack.Deactivate();
+
+            std::ostringstream logMessage;
+            logMessage
+                << "Player picked health pack player_id=" << player.playerId
+                << " health_pack_id=" << healthPack.healthPackId
+                << " hp=" << player.hp
+                << "/" << player.maxHp;
+            Logger::Info(logMessage.str());
+            break;
+        }
+    }
+}
+
+std::pair<double, double> GameRoom::ChooseHealthPackSpawnPoint(
+    std::uint64_t healthPackId
+) const
+{
+    InitializeHealthPackSpawnPoints();
+    if (healthPackSpawnPoints.empty())
+    {
+        return {0.0, 0.0};
+    }
+
+    const std::size_t spawnIndex = static_cast<std::size_t>(
+        (healthPackId + healthPackRespawnCounter) % healthPackSpawnPoints.size()
+    );
+    return healthPackSpawnPoints[spawnIndex];
+}
+
+void GameRoom::CheckMatchEndCondition()
+{
+    if (matchState.IsGameOver() && matchState.winnerPlayerId != 0)
+    {
+        return;
+    }
+
+    bool bShouldEndMatch = matchState.IsGameOver();
+    if (!bShouldEndMatch)
+    {
+        for (const auto& [playerId, player] : players)
+        {
+            static_cast<void>(playerId);
+
+            if (player.connected && player.score >= matchState.targetScore)
+            {
+                bShouldEndMatch = true;
+                break;
+            }
+        }
+    }
+
+    if (!bShouldEndMatch)
+    {
+        return;
+    }
+
+    const std::uint64_t winnerPlayerId = DetermineWinnerPlayerId();
+    const auto winner = players.find(winnerPlayerId);
+    const std::string winnerNickname = winner != players.end()
+        ? winner->second.nickname
+        : std::string();
+    const int winnerScore = winner != players.end() ? winner->second.score : 0;
+
+    matchState.EndMatch(winnerPlayerId, winnerNickname);
+
+    std::ostringstream logMessage;
+    logMessage
+        << "Match ended winner=" << winnerPlayerId
+        << " nickname=" << winnerNickname
+        << " score=" << winnerScore;
+    Logger::Info(logMessage.str());
+}
+
+std::uint64_t GameRoom::DetermineWinnerPlayerId() const
+{
+    std::uint64_t bestPlayerId = 0;
+    const PlayerState* bestPlayer = nullptr;
+
+    for (const auto& [playerId, player] : players)
+    {
+        if (!player.connected)
+        {
+            continue;
+        }
+
+        if (!bestPlayer)
+        {
+            bestPlayer = &player;
+            bestPlayerId = playerId;
+            continue;
+        }
+
+        const bool bIsBetter =
+            player.score > bestPlayer->score
+            || (
+                player.score == bestPlayer->score
+                && player.playerKills > bestPlayer->playerKills
+            )
+            || (
+                player.score == bestPlayer->score
+                && player.playerKills == bestPlayer->playerKills
+                && player.botKills > bestPlayer->botKills
+            )
+            || (
+                player.score == bestPlayer->score
+                && player.playerKills == bestPlayer->playerKills
+                && player.botKills == bestPlayer->botKills
+                && player.deaths < bestPlayer->deaths
+            )
+            || (
+                player.score == bestPlayer->score
+                && player.playerKills == bestPlayer->playerKills
+                && player.botKills == bestPlayer->botKills
+                && player.deaths == bestPlayer->deaths
+                && player.playerId < bestPlayer->playerId
+            );
+
+        if (bIsBetter)
+        {
+            bestPlayer = &player;
+            bestPlayerId = playerId;
+        }
+    }
+
+    return bestPlayerId;
+}
+
+nlohmann::json GameRoom::BuildScoreboardJson() const
+{
+    std::vector<const PlayerState*> sortedPlayers;
+    sortedPlayers.reserve(players.size());
+
+    for (const auto& [playerId, player] : players)
+    {
+        static_cast<void>(playerId);
+        if (player.connected)
+        {
+            sortedPlayers.push_back(&player);
+        }
+    }
+
+    std::sort(
+        sortedPlayers.begin(),
+        sortedPlayers.end(),
+        [](const PlayerState* lhs, const PlayerState* rhs)
+        {
+            if (lhs->score != rhs->score)
+            {
+                return lhs->score > rhs->score;
+            }
+            if (lhs->playerKills != rhs->playerKills)
+            {
+                return lhs->playerKills > rhs->playerKills;
+            }
+            if (lhs->botKills != rhs->botKills)
+            {
+                return lhs->botKills > rhs->botKills;
+            }
+            if (lhs->deaths != rhs->deaths)
+            {
+                return lhs->deaths < rhs->deaths;
+            }
+            return lhs->playerId < rhs->playerId;
+        }
+    );
+
+    nlohmann::json scoreboard = nlohmann::json::array();
+    for (const PlayerState* player : sortedPlayers)
+    {
+        nlohmann::json entry;
+        entry["player_id"] = player->playerId;
+        entry["nickname"] = player->nickname;
+        entry["score"] = player->score;
+        entry["kills"] = player->kills;
+        entry["deaths"] = player->deaths;
+        entry["bot_kills"] = player->botKills;
+        entry["player_kills"] = player->playerKills;
+        entry["target_kills"] = player->targetKills;
+        entry["hp"] = player->hp;
+        entry["alive"] = player->alive;
+        scoreboard.push_back(std::move(entry));
+    }
+
+    return scoreboard;
 }
 
 void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input)
@@ -1204,6 +1625,7 @@ void GameRoom::UpdateProjectileTargetCollisions()
                 if (owner != players.end())
                 {
                     owner->second.score += 1;
+                    owner->second.targetKills += 1;
                     score = owner->second.score;
                 }
 

@@ -112,6 +112,18 @@ Recommended defaults:
 
 Health packs create rotation decisions and reduce the chance that the best strategy is camping bot spawn points.
 
+Implemented v1 server health pack behavior:
+
+- Room 1 has eight predefined health pack spawn points.
+- Three health packs are active at a time by default.
+- Only alive players can pick up health packs.
+- Full-health players do not consume health packs.
+- Each pickup heals +35 HP, clamped to player max HP.
+- Picked health packs disappear and respawn after 15 seconds.
+- Bots ignore health packs for now.
+
+This v1 exposes health packs in snapshots and Unreal ghost visualization, but does not include imported pickup models, effects, or sounds.
+
 ## Scoring
 
 Recommended defaults:
@@ -144,10 +156,23 @@ A match can end in either condition:
 Winner selection:
 
 - Highest score wins.
-- If scores are tied, use player kills as the first tiebreaker if tracked.
-- If still tied, allow a draw for the first implementation.
+- Tie breaker 1: higher player kills.
+- Tie breaker 2: higher bot kills.
+- Tie breaker 3: fewer deaths.
+- Tie breaker 4: lower server player ID.
 
 At match end, movement and combat can be disabled while the scoreboard is shown.
+
+Implemented v1 server match behavior:
+
+- Room 1 owns `MatchState` with a 300 second timer and target score 20.
+- Server snapshots include match state and a sorted scoreboard.
+- Bot kills award +1 score and +1 `bot_kills`.
+- Player kills award +2 score and +1 `player_kills`.
+- Server target kills award +1 score and +1 `target_kills`.
+- Match ends when a player reaches target score or time expires.
+- After game over, snapshots continue but new combat scoring is stopped.
+- A test-only `debug_restart_match` message resets the match for browser and demo iteration.
 
 ## HUD Requirements
 
@@ -224,11 +249,12 @@ Clients should handle:
 ## Current Limitations
 
 - The current Unreal client is still based on the earlier arena prototype and server ghost visualization.
-- The current server has player, projectile, target, bot, hitscan, damage, respawn, and score state, but does not yet implement full match flow.
+- The current server has player, projectile, target, bot, health pack, hitscan, damage, respawn, score, match timer, win condition, and scoreboard state.
 - Player-vs-player hit validation is implemented as simple server hitscan spheres, not lag-compensated production combat.
 - Bots are implemented as simple server-side direct-damage AI, not full shooter AI.
-- Health packs are not implemented.
+- Health packs are implemented as server-authoritative snapshot pickups, but not as polished local art/effects.
 - Magazine ammo, reload, ADS spread, jump spread, and shot direction are implemented locally and sent to the server; server ammo validation is not authoritative yet.
 - Full client prediction and reconciliation are not implemented.
 - Existing local targets and server targets are still separate layers.
 - The current HUD is still partly a debug/demo HUD for server snapshot visibility.
+- The server match restart flow is a debug protocol message, not a production lobby/rematch flow.

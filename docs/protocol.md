@@ -125,14 +125,40 @@ Expected response:
   "projectile_count": 0,
   "target_count": 5,
   "bot_count": 8,
+  "health_pack_count": 3,
+  "active_health_pack_count": 3,
+  "match": {},
+  "scoreboard": [],
   "players": [],
   "bots": [],
+  "health_packs": [],
   "projectiles": [],
   "targets": []
 }
 ```
 
 `debug_room` is intended for browser testing and inspection.
+
+### `debug_restart_match`
+
+```json
+{ "type": "debug_restart_match" }
+```
+
+Expected response:
+
+```json
+{
+  "type": "match_restarted",
+  "match_id": 2
+}
+```
+
+Rules:
+
+- This is a test/debug message, not a production rematch flow.
+- The server resets match timer, winner, scores, player combat counters, projectiles, targets, bots, and health packs.
+- Existing joined players remain joined and are reset to full HP.
 
 ## Server To Client Messages
 
@@ -173,6 +199,32 @@ Expected response:
   "projectile_count": 1,
   "target_count": 5,
   "bot_count": 8,
+  "health_pack_count": 3,
+  "active_health_pack_count": 3,
+  "match": {
+    "state": "in_progress",
+    "time_left": 287.5,
+    "duration": 300.0,
+    "target_score": 20,
+    "game_over": false,
+    "winner_player_id": 0,
+    "winner_nickname": "",
+    "match_id": 1
+  },
+  "scoreboard": [
+    {
+      "player_id": 1,
+      "nickname": "player1",
+      "score": 4,
+      "kills": 3,
+      "deaths": 1,
+      "bot_kills": 2,
+      "player_kills": 1,
+      "target_kills": 0,
+      "hp": 80,
+      "alive": true
+    }
+  ],
   "players": [
     {
       "player_id": 1,
@@ -218,6 +270,17 @@ Expected response:
       "target_player_id": 1
     }
   ],
+  "health_packs": [
+    {
+      "health_pack_id": 1,
+      "x": -600.0,
+      "y": 0.0,
+      "z": 0.0,
+      "active": true,
+      "heal_amount": 35,
+      "respawn_timer": 0.0
+    }
+  ],
   "projectiles": [
     {
       "projectile_id": 1,
@@ -241,6 +304,17 @@ Expected response:
 }
 ```
 
+### `match_restarted`
+
+```json
+{
+  "type": "match_restarted",
+  "match_id": 2
+}
+```
+
+This is sent in response to `debug_restart_match`.
+
 ### `snapshot`
 
 Snapshots are broadcast to joined sessions at the configured tick rate.
@@ -250,6 +324,30 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
   "type": "snapshot",
   "tick": 30,
   "room_id": 1,
+  "match": {
+    "state": "in_progress",
+    "time_left": 287.5,
+    "duration": 300.0,
+    "target_score": 20,
+    "game_over": false,
+    "winner_player_id": 0,
+    "winner_nickname": "",
+    "match_id": 1
+  },
+  "scoreboard": [
+    {
+      "player_id": 1,
+      "nickname": "player1",
+      "score": 4,
+      "kills": 3,
+      "deaths": 1,
+      "bot_kills": 2,
+      "player_kills": 1,
+      "target_kills": 0,
+      "hp": 80,
+      "alive": true
+    }
+  ],
   "players": [
     {
       "player_id": 1,
@@ -284,6 +382,17 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
       "target_player_id": 1
     }
   ],
+  "health_packs": [
+    {
+      "health_pack_id": 1,
+      "x": -600.0,
+      "y": 0.0,
+      "z": 0.0,
+      "active": true,
+      "heal_amount": 35,
+      "respawn_timer": 0.0
+    }
+  ],
   "projectiles": [
     {
       "projectile_id": 1,
@@ -306,6 +415,29 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
   ]
 }
 ```
+
+Match fields:
+
+- `state`: current match state, currently `in_progress` or `game_over`.
+- `time_left`: seconds remaining in the match.
+- `duration`: configured match duration in seconds.
+- `target_score`: score needed for immediate win.
+- `game_over`: true after score or timer win condition is reached.
+- `winner_player_id`: server player ID of the winner, or `0` while in progress.
+- `winner_nickname`: winner display name, or empty while in progress.
+- `match_id`: process-local match counter.
+
+Scoreboard fields:
+
+- `player_id`, `nickname`: player identity.
+- `score`: authoritative server match score.
+- `kills`: player plus bot kills.
+- `deaths`: player deaths.
+- `bot_kills`: bot kills worth +1 score.
+- `player_kills`: player kills worth +2 score.
+- `target_kills`: destroyed server targets worth +1 score.
+- `hp`: current server player HP.
+- `alive`: whether the player is alive.
 
 Player fields:
 
@@ -330,6 +462,14 @@ Bot fields:
 - `alive`: whether the bot can move, attack, and be damaged.
 - `invincible`: true during the short post-respawn protection window.
 - `target_player_id`: current player target, or `0`.
+
+Health pack fields:
+
+- `health_pack_id`: fixed server health pack entity ID.
+- `x`, `y`, `z`: server health pack position.
+- `active`: whether the pack can currently be picked up.
+- `heal_amount`: amount of HP restored on pickup.
+- `respawn_timer`: seconds remaining until it respawns when inactive.
 
 Projectile fields:
 
@@ -388,6 +528,14 @@ Mismatched player ID:
 - Dead bots respawn after 8 seconds and are invincible for 1.5 seconds.
 - Bots use simple server AI: move toward the nearest alive non-invincible player inside detect range, otherwise wander.
 - Bot attack v1 applies direct body damage when in range; bot projectiles are not implemented yet.
+- Three server health packs spawn from predefined points.
+- Alive players below max HP pick up active health packs by overlapping their pickup radius.
+- Health packs heal +35 HP, do not overheal above max HP, disappear on pickup, and respawn after 15 seconds.
+- Bots ignore health packs for now.
+- Match duration is 300 seconds and target score is 20.
+- The match ends when any connected player reaches target score or when the timer reaches zero.
+- Winner tie breakers are highest score, higher player kills, higher bot kills, fewer deaths, then lower player ID.
+- After game over, snapshots continue, but new combat score changes are stopped.
 
 ## Current Limitations
 
@@ -395,7 +543,9 @@ Mismatched player ID:
 - No authentication.
 - No real multiple-room support.
 - Bot behavior is simple direct-damage AI with no pathfinding, animations, or projectile visualization.
-- No health packs, lag compensation, or advanced hit validation yet.
+- Health packs are server-side snapshot entities only; there are no local pickup effects, sounds, or imported models yet.
+- No lag compensation or advanced hit validation yet.
 - No target respawn.
 - No authoritative synchronization with Unreal-placed local targets.
+- `debug_restart_match` is a browser/testing utility, not a production match flow.
 - No persistence or database.

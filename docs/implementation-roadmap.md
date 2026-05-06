@@ -124,6 +124,8 @@ Validation:
 
 Goal: add map pickups that create rotation decisions and survival options.
 
+Current status: v1 implemented as server-authoritative snapshot pickups. Three health packs spawn from predefined positions, players below max HP can pick them up, and packs respawn after 15 seconds. Unreal displays them as health pack ghost actors.
+
 Work:
 
 - Add server-side health pack state:
@@ -138,6 +140,12 @@ Work:
 - Include health packs in snapshots.
 - Add Unreal health pack visuals and pickup feedback.
 
+Remaining polish:
+
+- Replace ghost visualization with production pickup art.
+- Add pickup effects, sound, and combat messages.
+- Consider bot health pack behavior later if it improves PvE pressure.
+
 Validation:
 
 - Health packs appear in the arena.
@@ -148,6 +156,8 @@ Validation:
 ## Phase 6: Match And Scoreboard
 
 Goal: turn the PvPvE loop into a complete match.
+
+Current status: v1 implemented on the custom server. Room 1 tracks match timer, target score, game-over state, winner, and sorted scoreboard. Snapshots include `match` and `scoreboard`, and Unreal displays a concise server scoreboard summary in the existing HUD.
 
 Work:
 
@@ -164,6 +174,13 @@ Work:
 - Add match start, match active, match ended states.
 - Disable combat after match end.
 - Add restart/rematch flow for local demo.
+
+Remaining polish:
+
+- Replace the test-only `debug_restart_match` with a real rematch/lobby flow.
+- Build a dedicated UMG scoreboard table.
+- Add kill feed and match-end presentation.
+- Add server-authoritative ammo/reload validation before using match results for real PvP.
 
 Validation:
 

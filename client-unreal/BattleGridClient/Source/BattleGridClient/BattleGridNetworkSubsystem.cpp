@@ -39,6 +39,10 @@ void UBattleGridNetworkSubsystem::Connect(const FString& InServerUrl, const FStr
 	LatestProjectileSnapshots.Empty();
 	LatestTargetSnapshots.Empty();
 	LatestBotSnapshots.Empty();
+	LatestHealthPackSnapshots.Empty();
+	LatestScoreboard.Empty();
+	LatestMatchSnapshot = FBattleGridServerMatchSnapshot();
+	bHasMatchSnapshot = false;
 	bHasLoggedServerSummary = false;
 	InputAckLogCounter = 0;
 	InputSendLogCounter = 0;
@@ -77,6 +81,10 @@ void UBattleGridNetworkSubsystem::Disconnect()
 	LatestProjectileSnapshots.Empty();
 	LatestTargetSnapshots.Empty();
 	LatestBotSnapshots.Empty();
+	LatestHealthPackSnapshots.Empty();
+	LatestScoreboard.Empty();
+	LatestMatchSnapshot = FBattleGridServerMatchSnapshot();
+	bHasMatchSnapshot = false;
 	bHasLoggedServerSummary = false;
 	InputAckLogCounter = 0;
 	InputSendLogCounter = 0;
@@ -98,6 +106,14 @@ void UBattleGridNetworkSubsystem::SendJoin()
 	JsonObject->SetStringField(TEXT("nickname"), Nickname);
 
 	SendJsonObject(JsonObject, TEXT("Join sent"));
+}
+
+void UBattleGridNetworkSubsystem::SendDebugRestartMatch()
+{
+	TSharedRef<FJsonObject> JsonObject = MakeShared<FJsonObject>();
+	JsonObject->SetStringField(TEXT("type"), TEXT("debug_restart_match"));
+
+	SendJsonObject(JsonObject, TEXT("Debug restart match sent"));
 }
 
 void UBattleGridNetworkSubsystem::SendInput(
@@ -240,10 +256,11 @@ FString UBattleGridNetworkSubsystem::GetServerSummaryText() const
 			: FString(TEXT("Vulnerable"));
 
 		return FString::Printf(
-			TEXT("Server: Connected | Player=%d Room=%d Snapshot=%d | ServerHP=%d/%d %s/%s | ServerScore=%d K/D=%d/%d TargetKills=%d BotKills=%d | Targets=%d/%d | Bots=%d/%d | Projectiles=%d"),
+			TEXT("Server: Connected | Player=%d Room=%d Snapshot=%d | %s | ServerHP=%d/%d %s/%s | ServerScore=%d K/D=%d/%d TargetKills=%d BotKills=%d | Targets=%d/%d | Bots=%d/%d | HealthPacks=%d/%d | Projectiles=%d"),
 			PlayerId,
 			RoomId,
 			LastSnapshotTick,
+			*GetServerScoreboardSummaryText(),
 			bHasOwnSnapshot ? OwnSnapshot.HP : 0,
 			bHasOwnSnapshot ? OwnSnapshot.MaxHP : 0,
 			*AliveText,
@@ -257,6 +274,8 @@ FString UBattleGridNetworkSubsystem::GetServerSummaryText() const
 			GetServerTargetCount(),
 			GetServerAliveBotCount(),
 			GetServerBotCount(),
+			GetServerActiveHealthPackCount(),
+			GetServerHealthPackCount(),
 			GetServerProjectileCount()
 		);
 	}
@@ -336,6 +355,14 @@ void UBattleGridNetworkSubsystem::GetLatestBotSnapshots(
 	LatestBotSnapshots.GenerateValueArray(OutBots);
 }
 
+void UBattleGridNetworkSubsystem::GetLatestHealthPackSnapshots(
+	TArray<FBattleGridServerHealthPackSnapshot>& OutHealthPacks
+) const
+{
+	OutHealthPacks.Reset();
+	LatestHealthPackSnapshots.GenerateValueArray(OutHealthPacks);
+}
+
 int32 UBattleGridNetworkSubsystem::GetServerProjectileCount() const
 {
 	return LatestProjectileSnapshots.Num();
@@ -377,6 +404,92 @@ int32 UBattleGridNetworkSubsystem::GetServerAliveBotCount() const
 	}
 
 	return AliveBotCount;
+}
+
+int32 UBattleGridNetworkSubsystem::GetServerHealthPackCount() const
+{
+	return LatestHealthPackSnapshots.Num();
+}
+
+int32 UBattleGridNetworkSubsystem::GetServerActiveHealthPackCount() const
+{
+	int32 ActiveHealthPackCount = 0;
+	for (const auto& HealthPackEntry : LatestHealthPackSnapshots)
+	{
+		if (HealthPackEntry.Value.bActive)
+		{
+			++ActiveHealthPackCount;
+		}
+	}
+
+	return ActiveHealthPackCount;
+}
+
+bool UBattleGridNetworkSubsystem::HasMatchSnapshot() const
+{
+	return bHasMatchSnapshot;
+}
+
+FBattleGridServerMatchSnapshot UBattleGridNetworkSubsystem::GetLatestMatchSnapshot() const
+{
+	return LatestMatchSnapshot;
+}
+
+void UBattleGridNetworkSubsystem::GetLatestScoreboard(
+	TArray<FBattleGridServerScoreboardEntry>& OutScoreboard
+) const
+{
+	OutScoreboard = LatestScoreboard;
+}
+
+FString UBattleGridNetworkSubsystem::GetServerScoreboardSummaryText() const
+{
+	if (!bHasMatchSnapshot)
+	{
+		return TEXT("Match: -");
+	}
+
+	if (LatestMatchSnapshot.bGameOver)
+	{
+		const FString WinnerText = LatestMatchSnapshot.WinnerNickname.IsEmpty()
+			? FString::Printf(TEXT("P%d"), LatestMatchSnapshot.WinnerPlayerId)
+			: LatestMatchSnapshot.WinnerNickname;
+		return FString::Printf(TEXT("GAME OVER | Winner: %s | Press Restart"), *WinnerText);
+	}
+
+	const int32 TotalSeconds = FMath::Max(0, FMath::RoundToInt(LatestMatchSnapshot.TimeLeft));
+	const int32 Minutes = TotalSeconds / 60;
+	const int32 Seconds = TotalSeconds % 60;
+
+	TArray<FString> TopEntries;
+	const int32 TopCount = FMath::Min(3, LatestScoreboard.Num());
+	for (int32 Index = 0; Index < TopCount; ++Index)
+	{
+		const FBattleGridServerScoreboardEntry& Entry = LatestScoreboard[Index];
+		const FString Name = Entry.Nickname.IsEmpty()
+			? FString::Printf(TEXT("P%d"), Entry.PlayerId)
+			: Entry.Nickname;
+		TopEntries.Add(FString::Printf(TEXT("%s %d"), *Name, Entry.Score));
+	}
+
+	int32 OwnScore = 0;
+	for (const FBattleGridServerScoreboardEntry& Entry : LatestScoreboard)
+	{
+		if (Entry.PlayerId == PlayerId)
+		{
+			OwnScore = Entry.Score;
+			break;
+		}
+	}
+
+	return FString::Printf(
+		TEXT("Match: %02d:%02d | Goal: %d | Top: %s | You: %d"),
+		Minutes,
+		Seconds,
+		LatestMatchSnapshot.TargetScore,
+		TopEntries.Num() > 0 ? *FString::Join(TopEntries, TEXT(", ")) : TEXT("-"),
+		OwnScore
+	);
 }
 
 bool UBattleGridNetworkSubsystem::GetOwnPlayerSnapshot(
@@ -433,6 +546,10 @@ void UBattleGridNetworkSubsystem::HandleClosed(
 	LatestProjectileSnapshots.Empty();
 	LatestTargetSnapshots.Empty();
 	LatestBotSnapshots.Empty();
+	LatestHealthPackSnapshots.Empty();
+	LatestScoreboard.Empty();
+	LatestMatchSnapshot = FBattleGridServerMatchSnapshot();
+	bHasMatchSnapshot = false;
 	bHasLoggedServerSummary = false;
 	InputAckLogCounter = 0;
 	InputSendLogCounter = 0;
@@ -514,6 +631,24 @@ void UBattleGridNetworkSubsystem::HandleMessage(const FString& Message)
 		return;
 	}
 
+	if (Type == TEXT("match_restarted"))
+	{
+		double MatchIdValue = 0.0;
+		JsonObject->TryGetNumberField(TEXT("match_id"), MatchIdValue);
+		LatestMatchSnapshot = FBattleGridServerMatchSnapshot();
+		LatestMatchSnapshot.MatchId = static_cast<int32>(MatchIdValue);
+		LatestScoreboard.Empty();
+		bHasMatchSnapshot = false;
+
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Match restarted. match_id=%d"),
+			static_cast<int32>(MatchIdValue)
+		);
+		return;
+	}
+
 	if (Type == TEXT("error"))
 	{
 		FString ErrorMessage;
@@ -568,6 +703,93 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 
 	const int32 SnapshotTick = static_cast<int32>(SnapshotTickValue);
 	const int32 SnapshotRoomId = static_cast<int32>(SnapshotRoomIdValue);
+
+	LatestMatchSnapshot = FBattleGridServerMatchSnapshot();
+	bHasMatchSnapshot = false;
+	const TSharedPtr<FJsonObject>* MatchObjectPtr = nullptr;
+	if (
+		JsonObject->TryGetObjectField(TEXT("match"), MatchObjectPtr)
+		&& MatchObjectPtr
+		&& MatchObjectPtr->IsValid()
+	)
+	{
+		const TSharedPtr<FJsonObject>& MatchObject = *MatchObjectPtr;
+		double TimeLeftValue = 0.0;
+		double DurationValue = 0.0;
+		double TargetScoreValue = 0.0;
+		double WinnerPlayerIdValue = 0.0;
+		double MatchIdValue = 0.0;
+		bool bGameOverValue = false;
+
+		MatchObject->TryGetStringField(TEXT("state"), LatestMatchSnapshot.State);
+		MatchObject->TryGetNumberField(TEXT("time_left"), TimeLeftValue);
+		MatchObject->TryGetNumberField(TEXT("duration"), DurationValue);
+		MatchObject->TryGetNumberField(TEXT("target_score"), TargetScoreValue);
+		MatchObject->TryGetBoolField(TEXT("game_over"), bGameOverValue);
+		MatchObject->TryGetNumberField(TEXT("winner_player_id"), WinnerPlayerIdValue);
+		MatchObject->TryGetStringField(TEXT("winner_nickname"), LatestMatchSnapshot.WinnerNickname);
+		MatchObject->TryGetNumberField(TEXT("match_id"), MatchIdValue);
+
+		LatestMatchSnapshot.TimeLeft = static_cast<float>(TimeLeftValue);
+		LatestMatchSnapshot.Duration = static_cast<float>(DurationValue);
+		LatestMatchSnapshot.TargetScore = static_cast<int32>(TargetScoreValue);
+		LatestMatchSnapshot.bGameOver = bGameOverValue;
+		LatestMatchSnapshot.WinnerPlayerId = static_cast<int32>(WinnerPlayerIdValue);
+		LatestMatchSnapshot.MatchId = static_cast<int32>(MatchIdValue);
+		bHasMatchSnapshot = true;
+	}
+
+	LatestScoreboard.Empty();
+	const TArray<TSharedPtr<FJsonValue>>* ScoreboardArray = nullptr;
+	if (JsonObject->TryGetArrayField(TEXT("scoreboard"), ScoreboardArray))
+	{
+		for (const TSharedPtr<FJsonValue>& ScoreboardValue : *ScoreboardArray)
+		{
+			const TSharedPtr<FJsonObject> ScoreboardObject =
+				ScoreboardValue.IsValid() ? ScoreboardValue->AsObject() : nullptr;
+			if (!ScoreboardObject.IsValid())
+			{
+				continue;
+			}
+
+			FBattleGridServerScoreboardEntry Entry;
+			double PlayerIdValue = 0.0;
+			double ScoreValue = 0.0;
+			double KillsValue = 0.0;
+			double DeathsValue = 0.0;
+			double BotKillsValue = 0.0;
+			double PlayerKillsValue = 0.0;
+			double TargetKillsValue = 0.0;
+			double HPValue = 0.0;
+			bool bAliveValue = false;
+
+			ScoreboardObject->TryGetNumberField(TEXT("player_id"), PlayerIdValue);
+			ScoreboardObject->TryGetStringField(TEXT("nickname"), Entry.Nickname);
+			ScoreboardObject->TryGetNumberField(TEXT("score"), ScoreValue);
+			ScoreboardObject->TryGetNumberField(TEXT("kills"), KillsValue);
+			ScoreboardObject->TryGetNumberField(TEXT("deaths"), DeathsValue);
+			ScoreboardObject->TryGetNumberField(TEXT("bot_kills"), BotKillsValue);
+			ScoreboardObject->TryGetNumberField(TEXT("player_kills"), PlayerKillsValue);
+			ScoreboardObject->TryGetNumberField(TEXT("target_kills"), TargetKillsValue);
+			ScoreboardObject->TryGetNumberField(TEXT("hp"), HPValue);
+			ScoreboardObject->TryGetBoolField(TEXT("alive"), bAliveValue);
+
+			Entry.PlayerId = static_cast<int32>(PlayerIdValue);
+			Entry.Score = static_cast<int32>(ScoreValue);
+			Entry.Kills = static_cast<int32>(KillsValue);
+			Entry.Deaths = static_cast<int32>(DeathsValue);
+			Entry.BotKills = static_cast<int32>(BotKillsValue);
+			Entry.PlayerKills = static_cast<int32>(PlayerKillsValue);
+			Entry.TargetKills = static_cast<int32>(TargetKillsValue);
+			Entry.HP = static_cast<int32>(HPValue);
+			Entry.bAlive = bAliveValue;
+
+			if (Entry.PlayerId > 0)
+			{
+				LatestScoreboard.Add(Entry);
+			}
+		}
+	}
 
 	const TArray<TSharedPtr<FJsonValue>>* PlayersArray = nullptr;
 	if (!JsonObject->TryGetArrayField(TEXT("players"), PlayersArray))
@@ -781,6 +1003,54 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		}
 	}
 
+	LatestHealthPackSnapshots.Empty();
+	const TArray<TSharedPtr<FJsonValue>>* HealthPacksArray = nullptr;
+	if (JsonObject->TryGetArrayField(TEXT("health_packs"), HealthPacksArray))
+	{
+		for (const TSharedPtr<FJsonValue>& HealthPackValue : *HealthPacksArray)
+		{
+			const TSharedPtr<FJsonObject> HealthPackObject =
+				HealthPackValue.IsValid() ? HealthPackValue->AsObject() : nullptr;
+			if (!HealthPackObject.IsValid())
+			{
+				continue;
+			}
+
+			FBattleGridServerHealthPackSnapshot HealthPackSnapshot;
+			double HealthPackIdValue = 0.0;
+			double XValue = 0.0;
+			double YValue = 0.0;
+			double ZValue = 0.0;
+			double HealAmountValue = 0.0;
+			double RespawnTimerValue = 0.0;
+			bool bActiveValue = false;
+
+			HealthPackObject->TryGetNumberField(TEXT("health_pack_id"), HealthPackIdValue);
+			HealthPackObject->TryGetNumberField(TEXT("x"), XValue);
+			HealthPackObject->TryGetNumberField(TEXT("y"), YValue);
+			HealthPackObject->TryGetNumberField(TEXT("z"), ZValue);
+			HealthPackObject->TryGetBoolField(TEXT("active"), bActiveValue);
+			HealthPackObject->TryGetNumberField(TEXT("heal_amount"), HealAmountValue);
+			HealthPackObject->TryGetNumberField(TEXT("respawn_timer"), RespawnTimerValue);
+
+			HealthPackSnapshot.HealthPackId = static_cast<int32>(HealthPackIdValue);
+			HealthPackSnapshot.X = static_cast<float>(XValue);
+			HealthPackSnapshot.Y = static_cast<float>(YValue);
+			HealthPackSnapshot.Z = static_cast<float>(ZValue);
+			HealthPackSnapshot.bActive = bActiveValue;
+			HealthPackSnapshot.HealAmount = static_cast<int32>(HealAmountValue);
+			HealthPackSnapshot.RespawnTimer = static_cast<float>(RespawnTimerValue);
+
+			if (HealthPackSnapshot.HealthPackId > 0)
+			{
+				LatestHealthPackSnapshots.Add(
+					HealthPackSnapshot.HealthPackId,
+					HealthPackSnapshot
+				);
+			}
+		}
+	}
+
 	const bool bFirstSnapshot = LastSnapshotTick <= 0;
 	LastSnapshotTick = SnapshotTick;
 	LastSnapshotRoomId = SnapshotRoomId;
@@ -797,12 +1067,16 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		UE_LOG(
 			LogTemp,
 			Log,
-			TEXT("[BattleGrid] Snapshot received. tick=%d players=%d projectiles=%d targets=%d bots=%d"),
+			TEXT("[BattleGrid] Snapshot received. tick=%d players=%d projectiles=%d targets=%d bots=%d health_packs=%d match=%s time_left=%.1f scoreboard=%d"),
 			LastSnapshotTick,
 			LatestPlayerSnapshots.Num(),
 			LatestProjectileSnapshots.Num(),
 			LatestTargetSnapshots.Num(),
-			LatestBotSnapshots.Num()
+			LatestBotSnapshots.Num(),
+			LatestHealthPackSnapshots.Num(),
+			*LatestMatchSnapshot.State,
+			LatestMatchSnapshot.TimeLeft,
+			LatestScoreboard.Num()
 		);
 	}
 

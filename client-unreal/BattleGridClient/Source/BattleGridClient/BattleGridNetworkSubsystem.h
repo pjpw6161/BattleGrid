@@ -147,6 +147,99 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerBotSnapshot
 	int32 TargetPlayerId = 0;
 };
 
+USTRUCT(BlueprintType)
+struct BATTLEGRIDCLIENT_API FBattleGridServerHealthPackSnapshot
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 HealthPackId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float X = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float Y = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float Z = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	bool bActive = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 HealAmount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float RespawnTimer = 0.0f;
+};
+
+USTRUCT(BlueprintType)
+struct BATTLEGRIDCLIENT_API FBattleGridServerMatchSnapshot
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	FString State = TEXT("in_progress");
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	float TimeLeft = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	float Duration = 300.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	int32 TargetScore = 20;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	bool bGameOver = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	int32 WinnerPlayerId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	FString WinnerNickname;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	int32 MatchId = 1;
+};
+
+USTRUCT(BlueprintType)
+struct BATTLEGRIDCLIENT_API FBattleGridServerScoreboardEntry
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	int32 PlayerId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	FString Nickname;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	int32 Score = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	int32 Kills = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	int32 Deaths = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	int32 BotKills = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	int32 PlayerKills = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	int32 TargetKills = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	int32 HP = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	bool bAlive = false;
+};
+
 UCLASS()
 class BATTLEGRIDCLIENT_API UBattleGridNetworkSubsystem : public UGameInstanceSubsystem
 {
@@ -159,6 +252,7 @@ public:
 	void Disconnect();
 	void SendPing();
 	void SendJoin();
+	void SendDebugRestartMatch();
 	void SendInput(
 		int32 Seq,
 		float MoveX,
@@ -201,11 +295,18 @@ public:
 	void GetLatestProjectileSnapshots(TArray<FBattleGridServerProjectileSnapshot>& OutProjectiles) const;
 	void GetLatestTargetSnapshots(TArray<FBattleGridServerTargetSnapshot>& OutTargets) const;
 	void GetLatestBotSnapshots(TArray<FBattleGridServerBotSnapshot>& OutBots) const;
+	void GetLatestHealthPackSnapshots(TArray<FBattleGridServerHealthPackSnapshot>& OutHealthPacks) const;
 	int32 GetServerProjectileCount() const;
 	int32 GetServerTargetCount() const;
 	int32 GetServerAliveTargetCount() const;
 	int32 GetServerBotCount() const;
 	int32 GetServerAliveBotCount() const;
+	int32 GetServerHealthPackCount() const;
+	int32 GetServerActiveHealthPackCount() const;
+	bool HasMatchSnapshot() const;
+	FBattleGridServerMatchSnapshot GetLatestMatchSnapshot() const;
+	void GetLatestScoreboard(TArray<FBattleGridServerScoreboardEntry>& OutScoreboard) const;
+	FString GetServerScoreboardSummaryText() const;
 	bool GetOwnPlayerSnapshot(FBattleGridServerPlayerSnapshot& OutSnapshot) const;
 	int32 GetOwnServerScore() const;
 	int32 GetOwnServerHP() const;
@@ -235,6 +336,10 @@ private:
 	TMap<int32, FBattleGridServerProjectileSnapshot> LatestProjectileSnapshots;
 	TMap<int32, FBattleGridServerTargetSnapshot> LatestTargetSnapshots;
 	TMap<int32, FBattleGridServerBotSnapshot> LatestBotSnapshots;
+	TMap<int32, FBattleGridServerHealthPackSnapshot> LatestHealthPackSnapshots;
+	FBattleGridServerMatchSnapshot LatestMatchSnapshot;
+	TArray<FBattleGridServerScoreboardEntry> LatestScoreboard;
+	bool bHasMatchSnapshot = false;
 	bool bHasLoggedServerSummary = false;
 	bool bVerboseNetworkLogs = false;
 	bool bVerboseSnapshotLogs = false;

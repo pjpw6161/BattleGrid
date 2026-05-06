@@ -44,8 +44,10 @@
     <button id="startFiring">Start Firing</button>
     <button id="stopFiring">Stop Firing</button>
     <button id="startMovingRight">Start Moving Right</button>
+    <button id="startMovingToHealthPack1">Start Moving To HPack 1</button>
     <button id="stopMoving">Stop Moving</button>
     <button id="sendDebugRoom">Send Debug Room</button>
+    <button id="sendDebugRestartMatch">Send Debug Restart Match</button>
     <button id="sendInvalid">Send Invalid JSON</button>
     <button id="close">Close</button>
   </div>
@@ -103,6 +105,32 @@
       }));
     }
 
+    function logMatchAndScoreboard(message) {
+      const match = message.match;
+      const scoreboard = Array.isArray(message.scoreboard) ? message.scoreboard : [];
+      if (match) {
+        const timeLeft = Number(match.time_left ?? 0);
+        const minutes = Math.floor(Math.max(0, timeLeft) / 60);
+        const seconds = Math.floor(Math.max(0, timeLeft) % 60).toString().padStart(2, "0");
+        const winner = match.winner_nickname || (match.winner_player_id ? `P${match.winner_player_id}` : "-");
+        log(
+          `match state=${match.state} time=${minutes}:${seconds} ` +
+          `goal=${match.target_score} game_over=${match.game_over} winner=${winner} match_id=${match.match_id}`
+        );
+      }
+
+      if (scoreboard.length > 0) {
+        const summary = scoreboard
+          .slice(0, 4)
+          .map((entry) =>
+            `${entry.nickname || "P" + entry.player_id}: score=${entry.score} ` +
+            `K/D=${entry.kills}/${entry.deaths} bots=${entry.bot_kills} players=${entry.player_kills}`
+          )
+          .join(" | ");
+        log(`scoreboard ${summary}`);
+      }
+    }
+
     document.getElementById("connect").addEventListener("click", () => {
       if (socket && socket.readyState === WebSocket.OPEN) {
         log("Already connected.");
@@ -119,17 +147,23 @@
           if (message.type === "join_ok") {
             joinedPlayerId = message.player_id;
             log(`joined player_id=${joinedPlayerId}`);
+          } else if (message.type === "match_restarted") {
+            log(`match_restarted match_id=${message.match_id}`);
           } else if (message.type === "room_state") {
             log(
               `room_state players=${message.player_count ?? 0} ` +
               `targets=${message.target_count ?? 0} bots=${message.bot_count ?? 0} ` +
+              `health_packs=${message.active_health_pack_count ?? 0}/${message.health_pack_count ?? 0} ` +
               `projectiles=${message.projectile_count ?? 0}`
             );
+            logMatchAndScoreboard(message);
           } else if (message.type === "snapshot") {
             const projectiles = Array.isArray(message.projectiles) ? message.projectiles : [];
             const targets = Array.isArray(message.targets) ? message.targets : [];
             const bots = Array.isArray(message.bots) ? message.bots : [];
+            const healthPacks = Array.isArray(message.health_packs) ? message.health_packs : [];
             const players = Array.isArray(message.players) ? message.players : [];
+            logMatchAndScoreboard(message);
             const ownPlayer = players.find((player) => player.player_id === joinedPlayerId);
             if (ownPlayer) {
               log(
@@ -159,6 +193,15 @@
                 .map((bot) => `B${bot.bot_id}:${bot.alive ? bot.hp + "/" + bot.max_hp : "DEAD"}`)
                 .join(" ");
               log(`snapshot tick=${message.tick} bots=${aliveBots}/${bots.length} ${botSummary}`);
+            }
+            if (healthPacks.length > 0) {
+              const activeHealthPacks = healthPacks.filter((pack) => pack.active).length;
+              const healthPackSummary = healthPacks
+                .map((pack) =>
+                  `H${pack.health_pack_id}:${pack.active ? "+" + pack.heal_amount : "respawn " + pack.respawn_timer.toFixed(1)}`
+                )
+                .join(" ");
+              log(`snapshot tick=${message.tick} health_packs=${activeHealthPacks}/${healthPacks.length} ${healthPackSummary}`);
             }
           }
         } catch {
@@ -265,6 +308,17 @@
       moveTimer = setInterval(() => sendInput(1, 0, false), 100);
     });
 
+    document.getElementById("startMovingToHealthPack1").addEventListener("click", () => {
+      if (moveTimer) {
+        log("Already sending movement input.");
+        return;
+      }
+
+      log("Moving toward HPack 1 at approximately (-600, 0). Pickup only consumes it if player HP is below max.");
+      sendInput(-1, 0, false);
+      moveTimer = setInterval(() => sendInput(-1, 0, false), 100);
+    });
+
     document.getElementById("stopMoving").addEventListener("click", () => {
       if (moveTimer) {
         clearInterval(moveTimer);
@@ -276,6 +330,10 @@
 
     document.getElementById("sendDebugRoom").addEventListener("click", () => {
       send(JSON.stringify({ type: "debug_room" }));
+    });
+
+    document.getElementById("sendDebugRestartMatch").addEventListener("click", () => {
+      send(JSON.stringify({ type: "debug_restart_match" }));
     });
 
     document.getElementById("sendInvalid").addEventListener("click", () => {

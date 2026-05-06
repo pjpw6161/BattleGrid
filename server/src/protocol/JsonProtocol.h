@@ -22,6 +22,7 @@ public:
         const std::string& nickname
     );
     static std::string InputAck(std::uint64_t sequence, std::uint64_t playerId);
+    static std::string MatchRestarted(std::uint64_t matchId);
     static std::string RoomState(const nlohmann::json& roomState);
 };
 }
