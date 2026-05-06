@@ -27,6 +27,7 @@ PlayerState::PlayerState(
       kills(0),
       playerKills(0),
       targetKills(0),
+      botKills(0),
       respawnTimerSeconds(0.0),
       invincibleTimerSeconds(0.0),
       bodyRadius(60.0),

@@ -26,6 +26,9 @@ constexpr double FireOriginHeight = 100.0;
 constexpr double TargetCenterZ = 80.0;
 constexpr double RespawnDelaySeconds = 8.0;
 constexpr double RespawnInvincibilitySeconds = 1.5;
+constexpr double BotDetectRange = 1500.0;
+constexpr double BotAttackRange = 900.0;
+constexpr double BotAttackDamage = 20.0;
 
 struct Vec3
 {
@@ -41,12 +44,14 @@ struct HitscanHit
         None,
         Target,
         Player,
+        Bot,
     };
 
     Type type = Type::None;
     double distance = std::numeric_limits<double>::max();
     std::uint64_t targetId = 0;
     std::uint64_t victimPlayerId = 0;
+    std::uint64_t botId = 0;
     bool headshot = false;
     int damage = 0;
 };
@@ -155,8 +160,26 @@ nlohmann::json BuildPlayerSnapshotJson(const PlayerState& player)
     playerJson["deaths"] = player.deaths;
     playerJson["player_kills"] = player.playerKills;
     playerJson["target_kills"] = player.targetKills;
+    playerJson["bot_kills"] = player.botKills;
     playerJson["last_seq"] = player.latestInput.seq;
     return playerJson;
+}
+
+nlohmann::json BuildBotSnapshotJson(const BotState& bot)
+{
+    nlohmann::json botJson;
+    botJson["bot_id"] = bot.botId;
+    botJson["name"] = bot.name;
+    botJson["x"] = bot.x;
+    botJson["y"] = bot.y;
+    botJson["z"] = bot.z;
+    botJson["yaw"] = bot.yaw;
+    botJson["hp"] = bot.hp;
+    botJson["max_hp"] = bot.maxHp;
+    botJson["alive"] = bot.alive;
+    botJson["invincible"] = bot.invincible;
+    botJson["target_player_id"] = bot.targetPlayerId;
+    return botJson;
 }
 
 nlohmann::json BuildProjectileSnapshotJson(const ProjectileState& projectile)
@@ -187,13 +210,16 @@ nlohmann::json BuildTargetSnapshotJson(const TargetState& target)
 GameRoom::GameRoom(std::uint64_t inRoomId)
     : roomId(inRoomId),
       players(),
+      bots(),
       projectiles(),
       targets(),
       nextProjectileId(1),
       targetsInitialized(false),
+      botsInitialized(false),
       mutex()
 {
     InitializeDefaultTargets();
+    InitializeDefaultBots();
 }
 
 std::uint64_t GameRoom::GetRoomId() const
@@ -253,7 +279,9 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
 {
     std::lock_guard lock(mutex);
     InitializeDefaultTargets();
+    InitializeDefaultBots();
     ProcessPlayerRespawns(deltaSeconds);
+    UpdateBotRespawns(deltaSeconds);
 
     for (auto& [playerId, player] : players)
     {
@@ -324,18 +352,21 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
         UpdateProjectileTargetCollisions();
     }
     RemoveInactiveProjectiles();
+    UpdateBots(deltaSeconds);
 }
 
 nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
 {
     std::lock_guard lock(mutex);
     InitializeDefaultTargets();
+    InitializeDefaultBots();
 
     nlohmann::json json;
     json["type"] = "snapshot";
     json["tick"] = tickNumber;
     json["room_id"] = roomId;
     json["players"] = nlohmann::json::array();
+    json["bots"] = nlohmann::json::array();
     json["projectiles"] = nlohmann::json::array();
     json["targets"] = nlohmann::json::array();
 
@@ -363,6 +394,12 @@ nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
         json["projectiles"].push_back(BuildProjectileSnapshotJson(projectile));
     }
 
+    for (const auto& [botId, bot] : bots)
+    {
+        static_cast<void>(botId);
+        json["bots"].push_back(BuildBotSnapshotJson(bot));
+    }
+
     for (const auto& [targetId, target] : targets)
     {
         static_cast<void>(targetId);
@@ -376,13 +413,16 @@ nlohmann::json GameRoom::ToDebugJson() const
 {
     std::lock_guard lock(mutex);
     InitializeDefaultTargets();
+    InitializeDefaultBots();
 
     nlohmann::json json;
     json["room_id"] = roomId;
     json["player_count"] = players.size();
     json["projectile_count"] = projectiles.size();
     json["target_count"] = targets.size();
+    json["bot_count"] = bots.size();
     json["players"] = nlohmann::json::array();
+    json["bots"] = nlohmann::json::array();
     json["projectiles"] = nlohmann::json::array();
     json["targets"] = nlohmann::json::array();
 
@@ -425,11 +465,18 @@ nlohmann::json GameRoom::ToDebugJson() const
         playerJson["deaths"] = player.deaths;
         playerJson["player_kills"] = player.playerKills;
         playerJson["target_kills"] = player.targetKills;
+        playerJson["bot_kills"] = player.botKills;
         playerJson["respawn_timer"] = player.respawnTimerSeconds;
         playerJson["invincible_timer"] = player.invincibleTimerSeconds;
         playerJson["latest_input"] = std::move(inputJson);
 
         json["players"].push_back(std::move(playerJson));
+    }
+
+    for (const auto& [botId, bot] : bots)
+    {
+        static_cast<void>(botId);
+        json["bots"].push_back(BuildBotSnapshotJson(bot));
     }
 
     for (const auto& [projectileId, projectile] : projectiles)
@@ -492,6 +539,59 @@ void GameRoom::InitializeDefaultTargets() const
 
     targetsInitialized = true;
     Logger::Info("Initialized default server targets count=" + std::to_string(targets.size()));
+}
+
+void GameRoom::InitializeDefaultBots() const
+{
+    if (botsInitialized && !bots.empty())
+    {
+        return;
+    }
+
+    bots.clear();
+
+    struct BotSpawn
+    {
+        std::uint64_t id;
+        double x;
+        double y;
+    };
+
+    const BotSpawn botSpawns[] = {
+        {1, 300.0, 300.0},
+        {2, 300.0, -300.0},
+        {3, 700.0, 500.0},
+        {4, 700.0, -500.0},
+        {5, 1100.0, 500.0},
+        {6, 1100.0, -500.0},
+        {7, 1500.0, 200.0},
+        {8, 1500.0, -200.0},
+    };
+
+    for (const BotSpawn& spawn : botSpawns)
+    {
+        BotState bot;
+        bot.botId = spawn.id;
+        bot.name = "BOT-" + std::to_string(spawn.id);
+        bot.x = spawn.x;
+        bot.y = spawn.y;
+        bot.z = 0.0;
+        bot.yaw = 0.0;
+        bot.hp = 100;
+        bot.maxHp = 100;
+        bot.alive = true;
+        bot.invincible = false;
+        bot.speed = 500.0;
+        bot.wanderTargetX = spawn.x;
+        bot.wanderTargetY = spawn.y;
+        bot.decisionTimerSeconds = 0.0;
+        bot.attackCooldownSeconds = 1.0;
+        bot.attackTimerSeconds = 0.0;
+        bots.emplace(bot.botId, std::move(bot));
+    }
+
+    botsInitialized = true;
+    Logger::Info("Initialized default bots count=" + std::to_string(bots.size()));
 }
 
 void GameRoom::SpawnProjectile(
@@ -573,6 +673,191 @@ void GameRoom::ProcessPlayerRespawns(double deltaSeconds)
     }
 }
 
+void GameRoom::UpdateBotRespawns(double deltaSeconds)
+{
+    for (auto& [botId, bot] : bots)
+    {
+        static_cast<void>(botId);
+
+        if (!bot.connected)
+        {
+            continue;
+        }
+
+        if (!bot.alive)
+        {
+            bot.respawnTimerSeconds -= deltaSeconds;
+            if (bot.respawnTimerSeconds > 0.0)
+            {
+                continue;
+            }
+
+            const double respawnX = std::clamp(
+                300.0 + (static_cast<double>((bot.botId - 1) % 4) * 400.0),
+                ArenaMin,
+                ArenaMax
+            );
+            const double respawnY = ((bot.botId % 2) == 0) ? -300.0 : 300.0;
+            bot.Respawn(respawnX, respawnY);
+
+            Logger::Info("Bot respawned bot_id=" + std::to_string(bot.botId));
+            continue;
+        }
+
+        if (bot.invincible)
+        {
+            bot.invincibleTimerSeconds -= deltaSeconds;
+            if (bot.invincibleTimerSeconds <= 0.0)
+            {
+                bot.invincible = false;
+                bot.invincibleTimerSeconds = 0.0;
+            }
+        }
+    }
+}
+
+void GameRoom::UpdateBots(double deltaSeconds)
+{
+    UpdateBotAI(deltaSeconds);
+}
+
+void GameRoom::UpdateBotAI(double deltaSeconds)
+{
+    for (auto& [botId, bot] : bots)
+    {
+        static_cast<void>(botId);
+
+        if (!bot.IsAlive())
+        {
+            continue;
+        }
+
+        bot.attackTimerSeconds = std::max(0.0, bot.attackTimerSeconds - deltaSeconds);
+        bot.decisionTimerSeconds -= deltaSeconds;
+
+        PlayerState* targetPlayer = nullptr;
+        double bestDistanceSquared = BotDetectRange * BotDetectRange;
+
+        for (auto& [playerId, player] : players)
+        {
+            static_cast<void>(playerId);
+
+            if (!player.connected || !player.alive || player.invincible)
+            {
+                continue;
+            }
+
+            const double deltaX = player.x - bot.x;
+            const double deltaY = player.y - bot.y;
+            const double distanceSquared = (deltaX * deltaX) + (deltaY * deltaY);
+            if (distanceSquared <= bestDistanceSquared)
+            {
+                bestDistanceSquared = distanceSquared;
+                targetPlayer = &player;
+            }
+        }
+
+        double moveX = 0.0;
+        double moveY = 0.0;
+
+        if (targetPlayer)
+        {
+            bot.targetPlayerId = targetPlayer->playerId;
+            moveX = targetPlayer->x - bot.x;
+            moveY = targetPlayer->y - bot.y;
+            const double distance = std::sqrt((moveX * moveX) + (moveY * moveY));
+
+            if (distance > 0.0001)
+            {
+                bot.yaw = std::atan2(moveY, moveX) * 180.0 / 3.14159265358979323846;
+            }
+
+            if (distance <= BotAttackRange)
+            {
+                if (bot.attackTimerSeconds <= 0.0)
+                {
+                    targetPlayer->hp = std::max(
+                        0,
+                        targetPlayer->hp - static_cast<int>(BotAttackDamage)
+                    );
+                    bot.attackTimerSeconds = bot.attackCooldownSeconds;
+
+                    std::ostringstream attackLogMessage;
+                    attackLogMessage
+                        << "Bot attacked player bot_id=" << bot.botId
+                        << " player_id=" << targetPlayer->playerId
+                        << " damage=" << static_cast<int>(BotAttackDamage)
+                        << " hp=" << targetPlayer->hp
+                        << "/" << targetPlayer->maxHp;
+                    Logger::Info(attackLogMessage.str());
+
+                    if (targetPlayer->hp <= 0 && targetPlayer->alive)
+                    {
+                        targetPlayer->alive = false;
+                        targetPlayer->invincible = false;
+                        targetPlayer->deaths += 1;
+                        targetPlayer->respawnTimerSeconds = RespawnDelaySeconds;
+                        targetPlayer->invincibleTimerSeconds = 0.0;
+                        targetPlayer->latestInput.fire = false;
+                        targetPlayer->latestInput.moveX = 0.0;
+                        targetPlayer->latestInput.moveY = 0.0;
+
+                        std::ostringstream killLogMessage;
+                        killLogMessage
+                            << "Bot killed player bot_id=" << bot.botId
+                            << " player_id=" << targetPlayer->playerId;
+                        Logger::Info(killLogMessage.str());
+                    }
+                }
+
+                continue;
+            }
+
+            if (distance > 0.0001)
+            {
+                moveX /= distance;
+                moveY /= distance;
+            }
+        }
+        else
+        {
+            bot.targetPlayerId = 0;
+            const double deltaX = bot.wanderTargetX - bot.x;
+            const double deltaY = bot.wanderTargetY - bot.y;
+            const double distance = std::sqrt((deltaX * deltaX) + (deltaY * deltaY));
+
+            if (distance < 80.0 || bot.decisionTimerSeconds <= 0.0)
+            {
+                const double botFactor = static_cast<double>(bot.botId);
+                bot.wanderTargetX = std::clamp(
+                    std::fmod((botFactor * 733.0) + (bot.x * 0.37) + 2000.0, 4000.0) - 2000.0,
+                    ArenaMin,
+                    ArenaMax
+                );
+                bot.wanderTargetY = std::clamp(
+                    std::fmod((botFactor * 419.0) + (bot.y * 0.53) + 2000.0, 4000.0) - 2000.0,
+                    ArenaMin,
+                    ArenaMax
+                );
+                bot.decisionTimerSeconds = 2.0 + static_cast<double>(bot.botId % 3);
+            }
+
+            moveX = bot.wanderTargetX - bot.x;
+            moveY = bot.wanderTargetY - bot.y;
+            const double moveLength = std::sqrt((moveX * moveX) + (moveY * moveY));
+            if (moveLength > 0.0001)
+            {
+                moveX /= moveLength;
+                moveY /= moveLength;
+                bot.yaw = std::atan2(moveY, moveX) * 180.0 / 3.14159265358979323846;
+            }
+        }
+
+        bot.x = std::clamp(bot.x + (moveX * bot.speed * deltaSeconds), ArenaMin, ArenaMax);
+        bot.y = std::clamp(bot.y + (moveY * bot.speed * deltaSeconds), ArenaMin, ArenaMax);
+    }
+}
+
 void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input)
 {
     if (!shooter.alive)
@@ -610,6 +895,60 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
             bestHit.distance = hitDistance;
             bestHit.targetId = targetId;
             bestHit.victimPlayerId = 0;
+            bestHit.headshot = false;
+            bestHit.damage = BodyDamage;
+        }
+    }
+
+    for (const auto& [botId, bot] : bots)
+    {
+        if (!bot.CanBeDamaged())
+        {
+            continue;
+        }
+
+        double hitDistance = 0.0;
+        const Vec3 headCenter{bot.x, bot.y, bot.z + bot.headHeight};
+        if (
+            RaySphereIntersection(
+                origin,
+                direction,
+                headCenter,
+                bot.headRadius,
+                HitscanRange,
+                hitDistance
+            )
+            && hitDistance < bestHit.distance
+        )
+        {
+            bestHit.type = HitscanHit::Type::Bot;
+            bestHit.distance = hitDistance;
+            bestHit.targetId = 0;
+            bestHit.victimPlayerId = 0;
+            bestHit.botId = botId;
+            bestHit.headshot = true;
+            bestHit.damage = HeadshotDamage;
+            continue;
+        }
+
+        const Vec3 bodyCenter{bot.x, bot.y, bot.z + bot.bodyHeight};
+        if (
+            RaySphereIntersection(
+                origin,
+                direction,
+                bodyCenter,
+                bot.bodyRadius,
+                HitscanRange,
+                hitDistance
+            )
+            && hitDistance < bestHit.distance
+        )
+        {
+            bestHit.type = HitscanHit::Type::Bot;
+            bestHit.distance = hitDistance;
+            bestHit.targetId = 0;
+            bestHit.victimPlayerId = 0;
+            bestHit.botId = botId;
             bestHit.headshot = false;
             bestHit.damage = BodyDamage;
         }
@@ -702,6 +1041,45 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
                 << " shooter=" << shooter.playerId
                 << " score=" << shooter.score;
             Logger::Info(destroyLogMessage.str());
+        }
+
+        return;
+    }
+
+    if (bestHit.type == HitscanHit::Type::Bot)
+    {
+        const auto bot = bots.find(bestHit.botId);
+        if (bot == bots.end())
+        {
+            return;
+        }
+
+        BotState& hitBot = bot->second;
+        hitBot.ApplyDamage(bestHit.damage);
+
+        std::ostringstream hitLogMessage;
+        hitLogMessage
+            << "Hitscan bot hit shooter=" << shooter.playerId
+            << " bot=" << hitBot.botId
+            << " headshot=" << (bestHit.headshot ? "true" : "false")
+            << " damage=" << bestHit.damage
+            << " hp=" << hitBot.hp
+            << "/" << hitBot.maxHp;
+        Logger::Info(hitLogMessage.str());
+
+        if (!hitBot.IsAlive())
+        {
+            hitBot.respawnTimerSeconds = RespawnDelaySeconds;
+            shooter.score += 1;
+            shooter.kills += 1;
+            shooter.botKills += 1;
+
+            std::ostringstream killLogMessage;
+            killLogMessage
+                << "Bot killed bot_id=" << hitBot.botId
+                << " shooter=" << shooter.playerId
+                << " score=" << shooter.score;
+            Logger::Info(killLogMessage.str());
         }
 
         return;

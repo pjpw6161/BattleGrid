@@ -39,6 +39,8 @@
     <button id="sendFireInput">Send Fire Input</button>
     <button id="sendBodyShot">Send Body Shot</button>
     <button id="sendHeadshot">Send Headshot-like Shot</button>
+    <button id="sendFireAtBot1">Send Fire At Bot 1</button>
+    <button id="sendFireAtNearestBot">Send Fire At Nearest Bot</button>
     <button id="startFiring">Start Firing</button>
     <button id="stopFiring">Stop Firing</button>
     <button id="startMovingRight">Start Moving Right</button>
@@ -117,9 +119,16 @@
           if (message.type === "join_ok") {
             joinedPlayerId = message.player_id;
             log(`joined player_id=${joinedPlayerId}`);
+          } else if (message.type === "room_state") {
+            log(
+              `room_state players=${message.player_count ?? 0} ` +
+              `targets=${message.target_count ?? 0} bots=${message.bot_count ?? 0} ` +
+              `projectiles=${message.projectile_count ?? 0}`
+            );
           } else if (message.type === "snapshot") {
             const projectiles = Array.isArray(message.projectiles) ? message.projectiles : [];
             const targets = Array.isArray(message.targets) ? message.targets : [];
+            const bots = Array.isArray(message.bots) ? message.bots : [];
             const players = Array.isArray(message.players) ? message.players : [];
             const ownPlayer = players.find((player) => player.player_id === joinedPlayerId);
             if (ownPlayer) {
@@ -127,7 +136,7 @@
                 `snapshot tick=${message.tick} player_hp=${ownPlayer.hp}/${ownPlayer.max_hp} ` +
                 `alive=${ownPlayer.alive} invincible=${ownPlayer.invincible} ` +
                 `score=${ownPlayer.score} kills=${ownPlayer.kills} deaths=${ownPlayer.deaths} ` +
-                `target_kills=${ownPlayer.target_kills}`
+                `target_kills=${ownPlayer.target_kills} bot_kills=${ownPlayer.bot_kills}`
               );
             }
             if (projectiles.length > 0) {
@@ -142,6 +151,14 @@
                 .map((target) => `T${target.target_id}:${target.alive ? target.hp + "/" + target.max_hp : "DEAD"}`)
                 .join(" ");
               log(`snapshot tick=${message.tick} targets=${targets.length} ${targetSummary}`);
+            }
+            if (bots.length > 0) {
+              const aliveBots = bots.filter((bot) => bot.alive).length;
+              const botSummary = bots
+                .slice(0, 4)
+                .map((bot) => `B${bot.bot_id}:${bot.alive ? bot.hp + "/" + bot.max_hp : "DEAD"}`)
+                .join(" ");
+              log(`snapshot tick=${message.tick} bots=${aliveBots}/${bots.length} ${botSummary}`);
             }
           }
         } catch {
@@ -192,6 +209,28 @@
         shotDirX: 1,
         shotDirY: 0,
         shotDirZ: 0.6,
+        spreadDeg: 0,
+        ads: true
+      });
+    });
+
+    document.getElementById("sendFireAtBot1").addEventListener("click", () => {
+      // Player 1 starts near (100, 0). Bot 1 starts near (300, 300).
+      sendInput(0, 0, true, {
+        shotDirX: 0.55,
+        shotDirY: 0.83,
+        shotDirZ: 0,
+        spreadDeg: 0,
+        ads: true
+      });
+    });
+
+    document.getElementById("sendFireAtNearestBot").addEventListener("click", () => {
+      // Useful after joining: this aims toward the common early bot cluster.
+      sendInput(0, 0, true, {
+        shotDirX: 0.7,
+        shotDirY: 0.7,
+        shotDirZ: 0,
         spreadDeg: 0,
         ads: true
       });

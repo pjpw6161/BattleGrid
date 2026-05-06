@@ -27,6 +27,7 @@ add_executable(battlegrid-server
     src/game/GameLoop.cpp
     src/game/PlayerInput.cpp
     src/game/PlayerState.cpp
+    src/game/BotState.cpp
     src/game/ProjectileState.cpp
     src/game/TargetState.cpp
     src/game/GameRoom.cpp

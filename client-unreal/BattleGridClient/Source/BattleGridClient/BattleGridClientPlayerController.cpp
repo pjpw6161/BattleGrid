@@ -8,6 +8,7 @@
 #include "BattleGridServerGhostActor.h"
 #include "BattleGridServerProjectileGhostActor.h"
 #include "BattleGridServerTargetGhostActor.h"
+#include "BattleGridServerBotGhostActor.h"
 #include "BattleGridWeaponComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -95,6 +96,8 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	ServerAimSignY = 1.0f;
 	bShowServerTargetGhosts = true;
 	ServerTargetGhostHeight = 60.0f;
+	bShowServerBotGhosts = true;
+	ServerBotGhostHeight = 70.0f;
 	ServerSnapshotOrigin = FVector::ZeroVector;
 	bServerSnapshotOriginInitialized = false;
 	LastProcessedSnapshotTick = 0;
@@ -299,7 +302,7 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 						: FString(TEXT("Vulnerable"));
 
 				return FString::Printf(
-					TEXT("Profile: %s | Server: Connected | Player=%d Room=%d Snapshot=%d\nServer HP: %d/%d %s/%s | Server Score: %d | K/D: %d/%d | TargetKills: %d\nTargets: %d/%d | Projectiles: %d | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
+					TEXT("Profile: %s | Server: Connected | Player=%d Room=%d Snapshot=%d\nServer HP: %d/%d %s/%s | Server Score: %d | K/D: %d/%d | TargetKills: %d | BotKills: %d\nTargets: %d/%d | Bots: %d/%d | Projectiles: %d | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
 					*ProfileLabel,
 					NetworkSubsystem->GetPlayerId(),
 					NetworkSubsystem->GetRoomId(),
@@ -312,8 +315,11 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 					bHasOwnSnapshot ? OwnSnapshot.Kills : 0,
 					bHasOwnSnapshot ? OwnSnapshot.Deaths : 0,
 					bHasOwnSnapshot ? OwnSnapshot.TargetKills : 0,
+					bHasOwnSnapshot ? OwnSnapshot.BotKills : 0,
 					NetworkSubsystem->GetServerAliveTargetCount(),
 					NetworkSubsystem->GetServerTargetCount(),
+					NetworkSubsystem->GetServerAliveBotCount(),
+					NetworkSubsystem->GetServerBotCount(),
 					NetworkSubsystem->GetServerProjectileCount(),
 					*ErrorText,
 					*CorrectionText,
@@ -813,6 +819,7 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 	UpdateServerGhostsFromSnapshot();
 	UpdateServerProjectileGhostsFromSnapshot();
 	UpdateServerTargetGhostsFromSnapshot();
+	UpdateServerBotGhostsFromSnapshot();
 	UpdateOwnServerPositionErrorAndCorrection(DeltaTime);
 }
 
@@ -1856,6 +1863,120 @@ void ABattleGridClientPlayerController::UpdateServerTargetGhostsFromSnapshot()
 	for (auto Iterator = ServerTargetGhostActors.CreateIterator(); Iterator; ++Iterator)
 	{
 		if (!Iterator.Value() || !ActiveTargetIds.Contains(Iterator.Key()))
+		{
+			if (Iterator.Value())
+			{
+				Iterator.Value()->Destroy();
+			}
+			Iterator.RemoveCurrent();
+		}
+	}
+}
+
+void ABattleGridClientPlayerController::UpdateServerBotGhostsFromSnapshot()
+{
+	if (!bShowServerBotGhosts)
+	{
+		for (auto Iterator = ServerBotGhostActors.CreateIterator(); Iterator; ++Iterator)
+		{
+			if (Iterator.Value())
+			{
+				Iterator.Value()->Destroy();
+			}
+		}
+		ServerBotGhostActors.Empty();
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	UGameInstance* GameInstance = GetGameInstance();
+	if (!World || !GameInstance)
+	{
+		return;
+	}
+
+	UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	if (!NetworkSubsystem || !NetworkSubsystem->HasSnapshot())
+	{
+		return;
+	}
+
+	if (!bServerSnapshotOriginInitialized)
+	{
+		if (const APawn* ControlledPawn = GetPawn())
+		{
+			ServerSnapshotOrigin = ControlledPawn->GetActorLocation();
+		}
+		else
+		{
+			ServerSnapshotOrigin = FVector::ZeroVector;
+		}
+		bServerSnapshotOriginInitialized = true;
+	}
+
+	TArray<FBattleGridServerBotSnapshot> BotSnapshots;
+	NetworkSubsystem->GetLatestBotSnapshots(BotSnapshots);
+
+	TSet<int32> ActiveBotIds;
+	for (const FBattleGridServerBotSnapshot& BotSnapshot : BotSnapshots)
+	{
+		if (BotSnapshot.BotId <= 0)
+		{
+			continue;
+		}
+
+		ActiveBotIds.Add(BotSnapshot.BotId);
+
+		const FVector WorldLocation = ConvertServerPositionToWorld(
+			BotSnapshot.X,
+			BotSnapshot.Y,
+			ServerBotGhostHeight + BotSnapshot.Z
+		);
+
+		TObjectPtr<ABattleGridServerBotGhostActor>& GhostActor =
+			ServerBotGhostActors.FindOrAdd(BotSnapshot.BotId);
+		if (!GhostActor)
+		{
+			TSubclassOf<ABattleGridServerBotGhostActor> GhostClass =
+				ServerBotGhostActorClass;
+			if (!GhostClass)
+			{
+				GhostClass = ABattleGridServerBotGhostActor::StaticClass();
+			}
+
+			FActorSpawnParameters SpawnParameters;
+			SpawnParameters.Owner = this;
+			SpawnParameters.SpawnCollisionHandlingOverride =
+				ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+			GhostActor = World->SpawnActor<ABattleGridServerBotGhostActor>(
+				GhostClass,
+				WorldLocation,
+				FRotator::ZeroRotator,
+				SpawnParameters
+			);
+
+			if (GhostActor)
+			{
+				UE_LOG(
+					LogTemp,
+					Log,
+					TEXT("[BattleGrid] Spawned server bot ghost id=%d"),
+					BotSnapshot.BotId
+				);
+			}
+		}
+
+		if (GhostActor)
+		{
+			GhostActor->SetSnapshotData(BotSnapshot, WorldLocation);
+		}
+	}
+
+	for (auto Iterator = ServerBotGhostActors.CreateIterator(); Iterator; ++Iterator)
+	{
+		if (!Iterator.Value() || !ActiveBotIds.Contains(Iterator.Key()))
 		{
 			if (Iterator.Value())
 			{

@@ -88,6 +88,18 @@ Initial bot behavior can be simplified:
 - Fire at a limited rate.
 - Respawn after a delay, or spawn in waves if that is simpler.
 
+Implemented v1 server bot behavior:
+
+- Room 1 initializes eight fixed server bots.
+- Bots move toward the nearest alive non-invincible player within detect range.
+- Bots wander deterministically when no player is nearby.
+- Bots apply simplified direct body damage when in attack range.
+- Bots can be damaged by server hitscan head/body volumes.
+- Bot kills award +1 server score and increment server `bot_kills`.
+- Dead bots respawn after 8 seconds with 1.5 seconds of invincibility.
+
+This v1 does not use navmesh pathfinding, bot projectile visuals, animations, or tactical decision making.
+
 ## Health Pack Rules
 
 Recommended defaults:
@@ -212,11 +224,11 @@ Clients should handle:
 ## Current Limitations
 
 - The current Unreal client is still based on the earlier arena prototype and server ghost visualization.
-- The current server has player, projectile, target, and score state, but does not yet implement full PvPvE combat rules.
-- Player-vs-player hit validation is not implemented.
-- Bots are not implemented.
+- The current server has player, projectile, target, bot, hitscan, damage, respawn, and score state, but does not yet implement full match flow.
+- Player-vs-player hit validation is implemented as simple server hitscan spheres, not lag-compensated production combat.
+- Bots are implemented as simple server-side direct-damage AI, not full shooter AI.
 - Health packs are not implemented.
-- Magazine ammo, reload, ADS spread, headshots, and jump spread are not implemented.
+- Magazine ammo, reload, ADS spread, jump spread, and shot direction are implemented locally and sent to the server; server ammo validation is not authoritative yet.
 - Full client prediction and reconciliation are not implemented.
 - Existing local targets and server targets are still separate layers.
 - The current HUD is still partly a debug/demo HUD for server snapshot visibility.

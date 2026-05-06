@@ -54,6 +54,9 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerPlayerSnapshot
 	int32 TargetKills = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 BotKills = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	int32 LastSeq = 0;
 };
 
@@ -103,6 +106,45 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerTargetSnapshot
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	bool bAlive = false;
+};
+
+USTRUCT(BlueprintType)
+struct BATTLEGRIDCLIENT_API FBattleGridServerBotSnapshot
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 BotId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	FString Name;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float X = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float Y = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float Z = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float Yaw = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 HP = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 MaxHP = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	bool bAlive = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	bool bInvincible = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 TargetPlayerId = 0;
 };
 
 UCLASS()
@@ -158,9 +200,12 @@ public:
 	bool GetPlayerSnapshotById(int32 InPlayerId, FBattleGridServerPlayerSnapshot& OutSnapshot) const;
 	void GetLatestProjectileSnapshots(TArray<FBattleGridServerProjectileSnapshot>& OutProjectiles) const;
 	void GetLatestTargetSnapshots(TArray<FBattleGridServerTargetSnapshot>& OutTargets) const;
+	void GetLatestBotSnapshots(TArray<FBattleGridServerBotSnapshot>& OutBots) const;
 	int32 GetServerProjectileCount() const;
 	int32 GetServerTargetCount() const;
 	int32 GetServerAliveTargetCount() const;
+	int32 GetServerBotCount() const;
+	int32 GetServerAliveBotCount() const;
 	bool GetOwnPlayerSnapshot(FBattleGridServerPlayerSnapshot& OutSnapshot) const;
 	int32 GetOwnServerScore() const;
 	int32 GetOwnServerHP() const;
@@ -189,6 +234,7 @@ private:
 	TMap<int32, FBattleGridServerPlayerSnapshot> LatestPlayerSnapshots;
 	TMap<int32, FBattleGridServerProjectileSnapshot> LatestProjectileSnapshots;
 	TMap<int32, FBattleGridServerTargetSnapshot> LatestTargetSnapshots;
+	TMap<int32, FBattleGridServerBotSnapshot> LatestBotSnapshots;
 	bool bHasLoggedServerSummary = false;
 	bool bVerboseNetworkLogs = false;
 	bool bVerboseSnapshotLogs = false;

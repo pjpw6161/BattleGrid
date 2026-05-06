@@ -124,7 +124,9 @@ Expected response:
   "player_count": 1,
   "projectile_count": 0,
   "target_count": 5,
+  "bot_count": 8,
   "players": [],
+  "bots": [],
   "projectiles": [],
   "targets": []
 }
@@ -170,6 +172,7 @@ Expected response:
   "player_count": 1,
   "projectile_count": 1,
   "target_count": 5,
+  "bot_count": 8,
   "players": [
     {
       "player_id": 1,
@@ -198,6 +201,21 @@ Expected response:
         "ammo": 30,
         "spread_deg": 0.8
       }
+    }
+  ],
+  "bots": [
+    {
+      "bot_id": 1,
+      "name": "BOT-1",
+      "x": 300.0,
+      "y": 300.0,
+      "z": 0.0,
+      "yaw": -135.0,
+      "hp": 100,
+      "max_hp": 100,
+      "alive": true,
+      "invincible": false,
+      "target_player_id": 1
     }
   ],
   "projectiles": [
@@ -247,7 +265,23 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
       "deaths": 0,
       "player_kills": 0,
       "target_kills": 0,
+      "bot_kills": 0,
       "last_seq": 10
+    }
+  ],
+  "bots": [
+    {
+      "bot_id": 1,
+      "name": "BOT-1",
+      "x": 300.0,
+      "y": 300.0,
+      "z": 0.0,
+      "yaw": -135.0,
+      "hp": 100,
+      "max_hp": 100,
+      "alive": true,
+      "invincible": false,
+      "target_player_id": 1
     }
   ],
   "projectiles": [
@@ -283,8 +317,19 @@ Player fields:
 - `alive`: whether the player can move and be damaged.
 - `invincible`: true during the short post-respawn protection window.
 - `score`: server score from destroyed server targets.
-- `kills`, `deaths`, `player_kills`, `target_kills`: server combat counters.
+- `kills`, `deaths`, `player_kills`, `target_kills`, `bot_kills`: server combat counters.
 - `last_seq`: latest input sequence stored for the player.
+
+Bot fields:
+
+- `bot_id`: fixed server bot ID.
+- `name`: display name such as `BOT-1`.
+- `x`, `y`, `z`: server bot position.
+- `yaw`: server bot facing yaw in degrees.
+- `hp`, `max_hp`: bot health.
+- `alive`: whether the bot can move, attack, and be damaged.
+- `invincible`: true during the short post-respawn protection window.
+- `target_player_id`: current player target, or `0`.
 
 Projectile fields:
 
@@ -336,16 +381,21 @@ Mismatched player ID:
 - Server hitscan damage is applied immediately when a new fire input sequence is processed.
 - Hitscan target damage uses 20 damage and fixed server target spheres.
 - Hitscan player damage checks head sphere first for 40 damage, then body sphere for 20 damage.
+- Hitscan bot damage checks head sphere first for 40 damage, then body sphere for 20 damage.
 - Server target kills award +1 score; server player kills award +2 score.
+- Server bot kills award +1 score and increment `bot_kills`.
 - Dead players respawn after 8 seconds and are invincible for 1.5 seconds.
+- Dead bots respawn after 8 seconds and are invincible for 1.5 seconds.
+- Bots use simple server AI: move toward the nearest alive non-invincible player inside detect range, otherwise wander.
+- Bot attack v1 applies direct body damage when in range; bot projectiles are not implemented yet.
 
 ## Current Limitations
 
 - No binary protocol.
 - No authentication.
 - No real multiple-room support.
-- No server-side player damage.
-- No bots, health packs, lag compensation, or advanced hit validation yet.
+- Bot behavior is simple direct-damage AI with no pathfinding, animations, or projectile visualization.
+- No health packs, lag compensation, or advanced hit validation yet.
 - No target respawn.
 - No authoritative synchronization with Unreal-placed local targets.
 - No persistence or database.

@@ -92,18 +92,26 @@ Validation:
 
 Goal: add server-controlled PvE enemies that players can farm or contest.
 
+Current status: v1 implemented for debugging and portfolio demonstration. Bots are server-owned, included in snapshots, visualized in Unreal as ghost actors, can take hitscan damage, award score, attack players with simplified direct body damage, and respawn.
+
 Work:
 
-- Add `BotState` or extend a generic combatant state model.
+- Add `BotState`.
 - Spawn 8 bots by default.
-- Give bots HP, position, aim, fire cooldown, and respawn/wave behavior.
+- Give bots HP, position, yaw, attack cooldown, respawn, and invincibility.
 - Implement simple AI:
-  - choose nearest or most visible player
+  - choose nearest alive non-invincible player
   - move toward engagement range
-  - fire at a controlled rate
+  - apply direct body damage at a controlled rate
 - Include bots in snapshots.
-- Add Unreal bot ghost or real bot actor visualization.
-- Award +1 score to the player who kills a bot.
+- Add Unreal bot ghost visualization.
+- Award +1 score and +1 bot kill to the player who kills a bot.
+
+Remaining polish:
+
+- Replace direct-damage bot attack with visible weapon/projectile behavior.
+- Add smarter pathing/perception if the arena layout needs it.
+- Replace ghost visualization with production bot presentation.
 
 Validation:
 

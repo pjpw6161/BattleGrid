@@ -38,6 +38,7 @@ void UBattleGridNetworkSubsystem::Connect(const FString& InServerUrl, const FStr
 	LatestPlayerSnapshots.Empty();
 	LatestProjectileSnapshots.Empty();
 	LatestTargetSnapshots.Empty();
+	LatestBotSnapshots.Empty();
 	bHasLoggedServerSummary = false;
 	InputAckLogCounter = 0;
 	InputSendLogCounter = 0;
@@ -75,6 +76,7 @@ void UBattleGridNetworkSubsystem::Disconnect()
 	LatestPlayerSnapshots.Empty();
 	LatestProjectileSnapshots.Empty();
 	LatestTargetSnapshots.Empty();
+	LatestBotSnapshots.Empty();
 	bHasLoggedServerSummary = false;
 	InputAckLogCounter = 0;
 	InputSendLogCounter = 0;
@@ -238,7 +240,7 @@ FString UBattleGridNetworkSubsystem::GetServerSummaryText() const
 			: FString(TEXT("Vulnerable"));
 
 		return FString::Printf(
-			TEXT("Server: Connected | Player=%d Room=%d Snapshot=%d | ServerHP=%d/%d %s/%s | ServerScore=%d K/D=%d/%d TargetKills=%d | Targets=%d/%d | Projectiles=%d"),
+			TEXT("Server: Connected | Player=%d Room=%d Snapshot=%d | ServerHP=%d/%d %s/%s | ServerScore=%d K/D=%d/%d TargetKills=%d BotKills=%d | Targets=%d/%d | Bots=%d/%d | Projectiles=%d"),
 			PlayerId,
 			RoomId,
 			LastSnapshotTick,
@@ -250,8 +252,11 @@ FString UBattleGridNetworkSubsystem::GetServerSummaryText() const
 			bHasOwnSnapshot ? OwnSnapshot.Kills : 0,
 			bHasOwnSnapshot ? OwnSnapshot.Deaths : 0,
 			bHasOwnSnapshot ? OwnSnapshot.TargetKills : 0,
+			bHasOwnSnapshot ? OwnSnapshot.BotKills : 0,
 			GetServerAliveTargetCount(),
 			GetServerTargetCount(),
+			GetServerAliveBotCount(),
+			GetServerBotCount(),
 			GetServerProjectileCount()
 		);
 	}
@@ -323,6 +328,14 @@ void UBattleGridNetworkSubsystem::GetLatestTargetSnapshots(
 	LatestTargetSnapshots.GenerateValueArray(OutTargets);
 }
 
+void UBattleGridNetworkSubsystem::GetLatestBotSnapshots(
+	TArray<FBattleGridServerBotSnapshot>& OutBots
+) const
+{
+	OutBots.Reset();
+	LatestBotSnapshots.GenerateValueArray(OutBots);
+}
+
 int32 UBattleGridNetworkSubsystem::GetServerProjectileCount() const
 {
 	return LatestProjectileSnapshots.Num();
@@ -345,6 +358,25 @@ int32 UBattleGridNetworkSubsystem::GetServerAliveTargetCount() const
 	}
 
 	return AliveTargetCount;
+}
+
+int32 UBattleGridNetworkSubsystem::GetServerBotCount() const
+{
+	return LatestBotSnapshots.Num();
+}
+
+int32 UBattleGridNetworkSubsystem::GetServerAliveBotCount() const
+{
+	int32 AliveBotCount = 0;
+	for (const auto& BotEntry : LatestBotSnapshots)
+	{
+		if (BotEntry.Value.bAlive)
+		{
+			++AliveBotCount;
+		}
+	}
+
+	return AliveBotCount;
 }
 
 bool UBattleGridNetworkSubsystem::GetOwnPlayerSnapshot(
@@ -400,6 +432,7 @@ void UBattleGridNetworkSubsystem::HandleClosed(
 	LatestPlayerSnapshots.Empty();
 	LatestProjectileSnapshots.Empty();
 	LatestTargetSnapshots.Empty();
+	LatestBotSnapshots.Empty();
 	bHasLoggedServerSummary = false;
 	InputAckLogCounter = 0;
 	InputSendLogCounter = 0;
@@ -564,6 +597,7 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		double DeathsValue = 0.0;
 		double PlayerKillsValue = 0.0;
 		double TargetKillsValue = 0.0;
+		double BotKillsValue = 0.0;
 		double LastSeqValue = 0.0;
 		bool bAliveValue = true;
 		bool bInvincibleValue = false;
@@ -581,6 +615,7 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		PlayerObject->TryGetNumberField(TEXT("deaths"), DeathsValue);
 		PlayerObject->TryGetNumberField(TEXT("player_kills"), PlayerKillsValue);
 		PlayerObject->TryGetNumberField(TEXT("target_kills"), TargetKillsValue);
+		PlayerObject->TryGetNumberField(TEXT("bot_kills"), BotKillsValue);
 		PlayerObject->TryGetNumberField(TEXT("last_seq"), LastSeqValue);
 
 		PlayerSnapshot.PlayerId = static_cast<int32>(PlayerIdValue);
@@ -595,6 +630,7 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		PlayerSnapshot.Deaths = static_cast<int32>(DeathsValue);
 		PlayerSnapshot.PlayerKills = static_cast<int32>(PlayerKillsValue);
 		PlayerSnapshot.TargetKills = static_cast<int32>(TargetKillsValue);
+		PlayerSnapshot.BotKills = static_cast<int32>(BotKillsValue);
 		PlayerSnapshot.LastSeq = static_cast<int32>(LastSeqValue);
 
 		if (PlayerSnapshot.PlayerId > 0)
@@ -690,6 +726,61 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		}
 	}
 
+	LatestBotSnapshots.Empty();
+	const TArray<TSharedPtr<FJsonValue>>* BotsArray = nullptr;
+	if (JsonObject->TryGetArrayField(TEXT("bots"), BotsArray))
+	{
+		for (const TSharedPtr<FJsonValue>& BotValue : *BotsArray)
+		{
+			const TSharedPtr<FJsonObject> BotObject =
+				BotValue.IsValid() ? BotValue->AsObject() : nullptr;
+			if (!BotObject.IsValid())
+			{
+				continue;
+			}
+
+			FBattleGridServerBotSnapshot BotSnapshot;
+			double BotIdValue = 0.0;
+			double XValue = 0.0;
+			double YValue = 0.0;
+			double ZValue = 0.0;
+			double YawValue = 0.0;
+			double HPValue = 0.0;
+			double MaxHPValue = 0.0;
+			double TargetPlayerIdValue = 0.0;
+			bool bAliveValue = false;
+			bool bInvincibleValue = false;
+
+			BotObject->TryGetNumberField(TEXT("bot_id"), BotIdValue);
+			BotObject->TryGetStringField(TEXT("name"), BotSnapshot.Name);
+			BotObject->TryGetNumberField(TEXT("x"), XValue);
+			BotObject->TryGetNumberField(TEXT("y"), YValue);
+			BotObject->TryGetNumberField(TEXT("z"), ZValue);
+			BotObject->TryGetNumberField(TEXT("yaw"), YawValue);
+			BotObject->TryGetNumberField(TEXT("hp"), HPValue);
+			BotObject->TryGetNumberField(TEXT("max_hp"), MaxHPValue);
+			BotObject->TryGetBoolField(TEXT("alive"), bAliveValue);
+			BotObject->TryGetBoolField(TEXT("invincible"), bInvincibleValue);
+			BotObject->TryGetNumberField(TEXT("target_player_id"), TargetPlayerIdValue);
+
+			BotSnapshot.BotId = static_cast<int32>(BotIdValue);
+			BotSnapshot.X = static_cast<float>(XValue);
+			BotSnapshot.Y = static_cast<float>(YValue);
+			BotSnapshot.Z = static_cast<float>(ZValue);
+			BotSnapshot.Yaw = static_cast<float>(YawValue);
+			BotSnapshot.HP = static_cast<int32>(HPValue);
+			BotSnapshot.MaxHP = static_cast<int32>(MaxHPValue);
+			BotSnapshot.bAlive = bAliveValue;
+			BotSnapshot.bInvincible = bInvincibleValue;
+			BotSnapshot.TargetPlayerId = static_cast<int32>(TargetPlayerIdValue);
+
+			if (BotSnapshot.BotId > 0)
+			{
+				LatestBotSnapshots.Add(BotSnapshot.BotId, BotSnapshot);
+			}
+		}
+	}
+
 	const bool bFirstSnapshot = LastSnapshotTick <= 0;
 	LastSnapshotTick = SnapshotTick;
 	LastSnapshotRoomId = SnapshotRoomId;
@@ -706,11 +797,12 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		UE_LOG(
 			LogTemp,
 			Log,
-			TEXT("[BattleGrid] Snapshot received. tick=%d players=%d projectiles=%d targets=%d"),
+			TEXT("[BattleGrid] Snapshot received. tick=%d players=%d projectiles=%d targets=%d bots=%d"),
 			LastSnapshotTick,
 			LatestPlayerSnapshots.Num(),
 			LatestProjectileSnapshots.Num(),
-			LatestTargetSnapshots.Num()
+			LatestTargetSnapshots.Num(),
+			LatestBotSnapshots.Num()
 		);
 	}
 

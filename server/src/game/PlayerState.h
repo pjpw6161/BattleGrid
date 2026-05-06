@@ -30,6 +30,7 @@ struct PlayerState
     int kills = 0;
     int playerKills = 0;
     int targetKills = 0;
+    int botKills = 0;
     double respawnTimerSeconds = 0.0;
     double invincibleTimerSeconds = 0.0;
     double bodyRadius = 60.0;
