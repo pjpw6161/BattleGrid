@@ -20,5 +20,6 @@ struct PlayerInput
     double spreadDegrees = 0.0;
     double shotDirX = 0.0;
     double shotDirY = 0.0;
+    double shotDirZ = 0.0;
 };
 }

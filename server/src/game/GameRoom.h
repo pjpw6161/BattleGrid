@@ -33,6 +33,8 @@ public:
 private:
     void InitializeDefaultTargets() const;
     void SpawnProjectile(std::uint64_t ownerPlayerId, double dirX, double dirY);
+    void ProcessPlayerRespawns(double deltaSeconds);
+    void ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input);
     void UpdateProjectiles(double deltaSeconds);
     void UpdateProjectileTargetCollisions();
     void RemoveInactiveProjectiles();

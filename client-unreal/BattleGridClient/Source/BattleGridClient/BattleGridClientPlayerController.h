@@ -270,6 +270,7 @@ private:
 	bool bPendingReloadInput;
 	int32 ShotSequence;
 	FVector2D LastShotDirectionServer;
+	float LastShotDirectionServerZ;
 	float LastShotSpreadDegrees;
 	int32 InputSequence;
 	float LastInputSendTime;

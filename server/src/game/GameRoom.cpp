@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <sstream>
 #include <utility>
 
@@ -16,6 +17,127 @@ constexpr double ArenaMax = 2000.0;
 constexpr double ProjectileArenaMin = -2500.0;
 constexpr double ProjectileArenaMax = 2500.0;
 constexpr double ProjectileSpawnForwardOffset = 50.0;
+constexpr int BodyDamage = 20;
+constexpr int HeadshotDamage = 40;
+constexpr double HitscanRange = 3000.0;
+constexpr bool bUseHitscanDamage = true;
+constexpr bool bProjectileCollisionDamageEnabled = false;
+constexpr double FireOriginHeight = 100.0;
+constexpr double TargetCenterZ = 80.0;
+constexpr double RespawnDelaySeconds = 8.0;
+constexpr double RespawnInvincibilitySeconds = 1.5;
+
+struct Vec3
+{
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+};
+
+struct HitscanHit
+{
+    enum class Type
+    {
+        None,
+        Target,
+        Player,
+    };
+
+    Type type = Type::None;
+    double distance = std::numeric_limits<double>::max();
+    std::uint64_t targetId = 0;
+    std::uint64_t victimPlayerId = 0;
+    bool headshot = false;
+    int damage = 0;
+};
+
+double Dot(const Vec3& lhs, const Vec3& rhs)
+{
+    return (lhs.x * rhs.x) + (lhs.y * rhs.y) + (lhs.z * rhs.z);
+}
+
+Vec3 Subtract(const Vec3& lhs, const Vec3& rhs)
+{
+    return Vec3{lhs.x - rhs.x, lhs.y - rhs.y, lhs.z - rhs.z};
+}
+
+bool Normalize(Vec3& value)
+{
+    const double length = std::sqrt(Dot(value, value));
+    if (length <= 0.0001)
+    {
+        return false;
+    }
+
+    value.x /= length;
+    value.y /= length;
+    value.z /= length;
+    return true;
+}
+
+bool RaySphereIntersection(
+    const Vec3& origin,
+    const Vec3& direction,
+    const Vec3& center,
+    double radius,
+    double range,
+    double& outDistance
+)
+{
+    const Vec3 oc = Subtract(origin, center);
+    const double b = 2.0 * Dot(oc, direction);
+    const double c = Dot(oc, oc) - (radius * radius);
+    const double discriminant = (b * b) - (4.0 * c);
+    if (discriminant < 0.0)
+    {
+        return false;
+    }
+
+    const double sqrtDiscriminant = std::sqrt(discriminant);
+    double distance = (-b - sqrtDiscriminant) * 0.5;
+    if (distance < 0.0)
+    {
+        distance = (-b + sqrtDiscriminant) * 0.5;
+    }
+
+    if (distance < 0.0 || distance > range)
+    {
+        return false;
+    }
+
+    outDistance = distance;
+    return true;
+}
+
+Vec3 BuildShotDirection(const PlayerInput& input)
+{
+    Vec3 direction{input.shotDirX, input.shotDirY, input.shotDirZ};
+    if (!Normalize(direction))
+    {
+        direction = Vec3{input.aimX, input.aimY, 0.0};
+        if (!Normalize(direction))
+        {
+            direction = Vec3{1.0, 0.0, 0.0};
+        }
+    }
+
+    return direction;
+}
+
+void AssignRespawnPosition(PlayerState& player)
+{
+    const int spawnIndex = static_cast<int>((player.playerId - 1) % 4);
+    const Vec3 spawnPoints[] = {
+        {-600.0, -600.0, 0.0},
+        {600.0, -600.0, 0.0},
+        {-600.0, 600.0, 0.0},
+        {600.0, 600.0, 0.0},
+    };
+
+    player.x = spawnPoints[spawnIndex].x;
+    player.y = spawnPoints[spawnIndex].y;
+    player.z = spawnPoints[spawnIndex].z;
+}
 
 nlohmann::json BuildPlayerSnapshotJson(const PlayerState& player)
 {
@@ -25,7 +147,14 @@ nlohmann::json BuildPlayerSnapshotJson(const PlayerState& player)
     playerJson["x"] = player.x;
     playerJson["y"] = player.y;
     playerJson["hp"] = player.hp;
+    playerJson["max_hp"] = player.maxHp;
+    playerJson["alive"] = player.alive;
+    playerJson["invincible"] = player.invincible;
     playerJson["score"] = player.score;
+    playerJson["kills"] = player.kills;
+    playerJson["deaths"] = player.deaths;
+    playerJson["player_kills"] = player.playerKills;
+    playerJson["target_kills"] = player.targetKills;
     playerJson["last_seq"] = player.latestInput.seq;
     return playerJson;
 }
@@ -124,12 +253,13 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
 {
     std::lock_guard lock(mutex);
     InitializeDefaultTargets();
+    ProcessPlayerRespawns(deltaSeconds);
 
     for (auto& [playerId, player] : players)
     {
         static_cast<void>(playerId);
 
-        if (!player.connected)
+        if (!player.connected || !player.alive)
         {
             continue;
         }
@@ -168,6 +298,10 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
                 projectileDirX,
                 projectileDirY
             );
+            if (bUseHitscanDamage)
+            {
+                ProcessHitscanFire(player, player.latestInput);
+            }
             player.lastProcessedFireSeq = player.latestInput.seq;
         }
 
@@ -185,7 +319,10 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
     }
 
     UpdateProjectiles(deltaSeconds);
-    UpdateProjectileTargetCollisions();
+    if (bProjectileCollisionDamageEnabled || !bUseHitscanDamage)
+    {
+        UpdateProjectileTargetCollisions();
+    }
     RemoveInactiveProjectiles();
 }
 
@@ -268,17 +405,28 @@ nlohmann::json GameRoom::ToDebugJson() const
         inputJson["spread_deg"] = input.spreadDegrees;
         inputJson["shot_dir_x"] = input.shotDirX;
         inputJson["shot_dir_y"] = input.shotDirY;
+        inputJson["shot_dir_z"] = input.shotDirZ;
 
         nlohmann::json playerJson;
         playerJson["player_id"] = playerId;
         playerJson["room_id"] = player.roomId;
         playerJson["nickname"] = player.nickname;
         playerJson["connected"] = player.connected;
+        playerJson["alive"] = player.alive;
+        playerJson["invincible"] = player.invincible;
         playerJson["x"] = player.x;
         playerJson["y"] = player.y;
+        playerJson["z"] = player.z;
         playerJson["speed"] = player.speed;
         playerJson["hp"] = player.hp;
+        playerJson["max_hp"] = player.maxHp;
         playerJson["score"] = player.score;
+        playerJson["kills"] = player.kills;
+        playerJson["deaths"] = player.deaths;
+        playerJson["player_kills"] = player.playerKills;
+        playerJson["target_kills"] = player.targetKills;
+        playerJson["respawn_timer"] = player.respawnTimerSeconds;
+        playerJson["invincible_timer"] = player.invincibleTimerSeconds;
         playerJson["latest_input"] = std::move(inputJson);
 
         json["players"].push_back(std::move(playerJson));
@@ -378,6 +526,232 @@ void GameRoom::SpawnProjectile(
         << " dir_x=" << projectile.dirX
         << " dir_y=" << projectile.dirY;
     Logger::Info(logMessage.str());
+}
+
+void GameRoom::ProcessPlayerRespawns(double deltaSeconds)
+{
+    for (auto& [playerId, player] : players)
+    {
+        static_cast<void>(playerId);
+
+        if (!player.connected)
+        {
+            continue;
+        }
+
+        if (!player.alive)
+        {
+            player.respawnTimerSeconds -= deltaSeconds;
+            if (player.respawnTimerSeconds > 0.0)
+            {
+                continue;
+            }
+
+            player.alive = true;
+            player.invincible = true;
+            player.hp = player.maxHp;
+            player.respawnTimerSeconds = 0.0;
+            player.invincibleTimerSeconds = RespawnInvincibilitySeconds;
+            player.latestInput.moveX = 0.0;
+            player.latestInput.moveY = 0.0;
+            player.latestInput.fire = false;
+            AssignRespawnPosition(player);
+
+            Logger::Info("Player respawned player_id=" + std::to_string(player.playerId));
+            continue;
+        }
+
+        if (player.invincible)
+        {
+            player.invincibleTimerSeconds -= deltaSeconds;
+            if (player.invincibleTimerSeconds <= 0.0)
+            {
+                player.invincible = false;
+                player.invincibleTimerSeconds = 0.0;
+            }
+        }
+    }
+}
+
+void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input)
+{
+    if (!shooter.alive)
+    {
+        return;
+    }
+
+    const Vec3 origin{shooter.x, shooter.y, shooter.z + FireOriginHeight};
+    const Vec3 direction = BuildShotDirection(input);
+
+    HitscanHit bestHit;
+
+    for (const auto& [targetId, target] : targets)
+    {
+        if (!target.IsAlive())
+        {
+            continue;
+        }
+
+        double hitDistance = 0.0;
+        const Vec3 center{target.x, target.y, TargetCenterZ};
+        if (
+            RaySphereIntersection(
+                origin,
+                direction,
+                center,
+                target.radius,
+                HitscanRange,
+                hitDistance
+            )
+            && hitDistance < bestHit.distance
+        )
+        {
+            bestHit.type = HitscanHit::Type::Target;
+            bestHit.distance = hitDistance;
+            bestHit.targetId = targetId;
+            bestHit.victimPlayerId = 0;
+            bestHit.headshot = false;
+            bestHit.damage = BodyDamage;
+        }
+    }
+
+    for (const auto& [victimId, victim] : players)
+    {
+        if (
+            victimId == shooter.playerId
+            || !victim.connected
+            || !victim.alive
+            || victim.invincible
+        )
+        {
+            continue;
+        }
+
+        double hitDistance = 0.0;
+        const Vec3 headCenter{victim.x, victim.y, victim.z + victim.headHeight};
+        if (
+            RaySphereIntersection(
+                origin,
+                direction,
+                headCenter,
+                victim.headRadius,
+                HitscanRange,
+                hitDistance
+            )
+            && hitDistance < bestHit.distance
+        )
+        {
+            bestHit.type = HitscanHit::Type::Player;
+            bestHit.distance = hitDistance;
+            bestHit.targetId = 0;
+            bestHit.victimPlayerId = victimId;
+            bestHit.headshot = true;
+            bestHit.damage = HeadshotDamage;
+            continue;
+        }
+
+        const Vec3 bodyCenter{victim.x, victim.y, victim.z + victim.bodyHeight};
+        if (
+            RaySphereIntersection(
+                origin,
+                direction,
+                bodyCenter,
+                victim.bodyRadius,
+                HitscanRange,
+                hitDistance
+            )
+            && hitDistance < bestHit.distance
+        )
+        {
+            bestHit.type = HitscanHit::Type::Player;
+            bestHit.distance = hitDistance;
+            bestHit.targetId = 0;
+            bestHit.victimPlayerId = victimId;
+            bestHit.headshot = false;
+            bestHit.damage = BodyDamage;
+        }
+    }
+
+    if (bestHit.type == HitscanHit::Type::Target)
+    {
+        const auto target = targets.find(bestHit.targetId);
+        if (target == targets.end())
+        {
+            return;
+        }
+
+        target->second.ApplyDamage(bestHit.damage);
+
+        std::ostringstream hitLogMessage;
+        hitLogMessage
+            << "Hitscan target hit shooter=" << shooter.playerId
+            << " target=" << bestHit.targetId
+            << " damage=" << bestHit.damage
+            << " hp=" << target->second.hp
+            << "/" << target->second.maxHp;
+        Logger::Info(hitLogMessage.str());
+
+        if (!target->second.IsAlive())
+        {
+            shooter.score += 1;
+            shooter.targetKills += 1;
+
+            std::ostringstream destroyLogMessage;
+            destroyLogMessage
+                << "Server target destroyed target_id=" << bestHit.targetId
+                << " shooter=" << shooter.playerId
+                << " score=" << shooter.score;
+            Logger::Info(destroyLogMessage.str());
+        }
+
+        return;
+    }
+
+    if (bestHit.type == HitscanHit::Type::Player)
+    {
+        const auto victim = players.find(bestHit.victimPlayerId);
+        if (victim == players.end())
+        {
+            return;
+        }
+
+        PlayerState& victimPlayer = victim->second;
+        victimPlayer.hp = std::max(0, victimPlayer.hp - bestHit.damage);
+
+        std::ostringstream hitLogMessage;
+        hitLogMessage
+            << "Hitscan player hit shooter=" << shooter.playerId
+            << " victim=" << victimPlayer.playerId
+            << " damage=" << bestHit.damage
+            << " headshot=" << (bestHit.headshot ? "true" : "false")
+            << " hp=" << victimPlayer.hp
+            << "/" << victimPlayer.maxHp;
+        Logger::Info(hitLogMessage.str());
+
+        if (victimPlayer.hp <= 0)
+        {
+            victimPlayer.alive = false;
+            victimPlayer.invincible = false;
+            victimPlayer.deaths += 1;
+            victimPlayer.respawnTimerSeconds = RespawnDelaySeconds;
+            victimPlayer.invincibleTimerSeconds = 0.0;
+            victimPlayer.latestInput.fire = false;
+            victimPlayer.latestInput.moveX = 0.0;
+            victimPlayer.latestInput.moveY = 0.0;
+
+            shooter.score += 2;
+            shooter.kills += 1;
+            shooter.playerKills += 1;
+
+            std::ostringstream killLogMessage;
+            killLogMessage
+                << "Player killed killer=" << shooter.playerId
+                << " victim=" << victimPlayer.playerId
+                << " headshot=" << (bestHit.headshot ? "true" : "false")
+                << " killer_score=" << shooter.score;
+            Logger::Info(killLogMessage.str());
+        }
+    }
 }
 
 void GameRoom::UpdateProjectiles(double deltaSeconds)

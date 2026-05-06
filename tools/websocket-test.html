@@ -37,6 +37,8 @@
     <button id="sendJoin">Send Join</button>
     <button id="sendInput">Send Input</button>
     <button id="sendFireInput">Send Fire Input</button>
+    <button id="sendBodyShot">Send Body Shot</button>
+    <button id="sendHeadshot">Send Headshot-like Shot</button>
     <button id="startFiring">Start Firing</button>
     <button id="stopFiring">Stop Firing</button>
     <button id="startMovingRight">Start Moving Right</button>
@@ -73,17 +75,29 @@
       log(`sent: ${message}`);
     }
 
-    function sendInput(moveX, moveY, fire) {
+    function sendInput(moveX, moveY, fire, options = {}) {
       inputSeq += 1;
+      const shotDirX = options.shotDirX ?? 1;
+      const shotDirY = options.shotDirY ?? 0;
+      const shotDirZ = options.shotDirZ ?? 0;
       send(JSON.stringify({
         type: "input",
         seq: inputSeq,
         player_id: joinedPlayerId,
         move_x: moveX,
         move_y: moveY,
-        aim_x: 1,
-        aim_y: 0,
-        fire
+        aim_x: options.aimX ?? shotDirX,
+        aim_y: options.aimY ?? shotDirY,
+        shot_dir_x: shotDirX,
+        shot_dir_y: shotDirY,
+        shot_dir_z: shotDirZ,
+        fire,
+        reload: options.reload ?? false,
+        ads: options.ads ?? false,
+        sprint: options.sprint ?? false,
+        jump: options.jump ?? false,
+        ammo: options.ammo ?? 30,
+        spread_deg: options.spreadDeg ?? 0
       }));
     }
 
@@ -109,7 +123,12 @@
             const players = Array.isArray(message.players) ? message.players : [];
             const ownPlayer = players.find((player) => player.player_id === joinedPlayerId);
             if (ownPlayer) {
-              log(`snapshot tick=${message.tick} player_score=${ownPlayer.score}`);
+              log(
+                `snapshot tick=${message.tick} player_hp=${ownPlayer.hp}/${ownPlayer.max_hp} ` +
+                `alive=${ownPlayer.alive} invincible=${ownPlayer.invincible} ` +
+                `score=${ownPlayer.score} kills=${ownPlayer.kills} deaths=${ownPlayer.deaths} ` +
+                `target_kills=${ownPlayer.target_kills}`
+              );
             }
             if (projectiles.length > 0) {
               const latest = projectiles[projectiles.length - 1];
@@ -157,6 +176,25 @@
 
     document.getElementById("sendFireInput").addEventListener("click", () => {
       sendInput(0, 0, true);
+    });
+
+    document.getElementById("sendBodyShot").addEventListener("click", () => {
+      sendInput(0, 0, true, {
+        shotDirX: 1,
+        shotDirY: 0,
+        shotDirZ: 0,
+        spreadDeg: 0
+      });
+    });
+
+    document.getElementById("sendHeadshot").addEventListener("click", () => {
+      sendInput(0, 0, true, {
+        shotDirX: 1,
+        shotDirY: 0,
+        shotDirZ: 0.6,
+        spreadDeg: 0,
+        ads: true
+      });
     });
 
     document.getElementById("startFiring").addEventListener("click", () => {

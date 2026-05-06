@@ -106,6 +106,7 @@ void UBattleGridNetworkSubsystem::SendInput(
 	float AimY,
 	float ShotDirX,
 	float ShotDirY,
+	float ShotDirZ,
 	bool bFire,
 	bool bReload,
 	bool bADS,
@@ -130,6 +131,7 @@ void UBattleGridNetworkSubsystem::SendInput(
 	JsonObject->SetNumberField(TEXT("aim_y"), AimY);
 	JsonObject->SetNumberField(TEXT("shot_dir_x"), ShotDirX);
 	JsonObject->SetNumberField(TEXT("shot_dir_y"), ShotDirY);
+	JsonObject->SetNumberField(TEXT("shot_dir_z"), ShotDirZ);
 	JsonObject->SetBoolField(TEXT("fire"), bFire);
 	JsonObject->SetBoolField(TEXT("reload"), bReload);
 	JsonObject->SetBoolField(TEXT("ads"), bADS);
@@ -226,12 +228,28 @@ FString UBattleGridNetworkSubsystem::GetServerSummaryText() const
 {
 	if (bHasJoined)
 	{
+		FBattleGridServerPlayerSnapshot OwnSnapshot;
+		const bool bHasOwnSnapshot = GetOwnPlayerSnapshot(OwnSnapshot);
+		const FString AliveText = !bHasOwnSnapshot
+			? FString(TEXT("-"))
+			: (OwnSnapshot.bAlive ? FString(TEXT("Alive")) : FString(TEXT("Dead")));
+		const FString InvincibleText = bHasOwnSnapshot && OwnSnapshot.bInvincible
+			? FString(TEXT("Invincible"))
+			: FString(TEXT("Vulnerable"));
+
 		return FString::Printf(
-			TEXT("Server: Connected | Player=%d Room=%d Snapshot=%d | ServerScore=%d | Targets=%d/%d | Projectiles=%d"),
+			TEXT("Server: Connected | Player=%d Room=%d Snapshot=%d | ServerHP=%d/%d %s/%s | ServerScore=%d K/D=%d/%d TargetKills=%d | Targets=%d/%d | Projectiles=%d"),
 			PlayerId,
 			RoomId,
 			LastSnapshotTick,
+			bHasOwnSnapshot ? OwnSnapshot.HP : 0,
+			bHasOwnSnapshot ? OwnSnapshot.MaxHP : 0,
+			*AliveText,
+			*InvincibleText,
 			GetOwnServerScore(),
+			bHasOwnSnapshot ? OwnSnapshot.Kills : 0,
+			bHasOwnSnapshot ? OwnSnapshot.Deaths : 0,
+			bHasOwnSnapshot ? OwnSnapshot.TargetKills : 0,
 			GetServerAliveTargetCount(),
 			GetServerTargetCount(),
 			GetServerProjectileCount()
@@ -540,22 +558,43 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		double XValue = 0.0;
 		double YValue = 0.0;
 		double HPValue = 0.0;
+		double MaxHPValue = 0.0;
 		double ScoreValue = 0.0;
+		double KillsValue = 0.0;
+		double DeathsValue = 0.0;
+		double PlayerKillsValue = 0.0;
+		double TargetKillsValue = 0.0;
 		double LastSeqValue = 0.0;
+		bool bAliveValue = true;
+		bool bInvincibleValue = false;
 
 		PlayerObject->TryGetNumberField(TEXT("player_id"), PlayerIdValue);
 		PlayerObject->TryGetStringField(TEXT("nickname"), PlayerSnapshot.Nickname);
 		PlayerObject->TryGetNumberField(TEXT("x"), XValue);
 		PlayerObject->TryGetNumberField(TEXT("y"), YValue);
 		PlayerObject->TryGetNumberField(TEXT("hp"), HPValue);
+		PlayerObject->TryGetNumberField(TEXT("max_hp"), MaxHPValue);
+		PlayerObject->TryGetBoolField(TEXT("alive"), bAliveValue);
+		PlayerObject->TryGetBoolField(TEXT("invincible"), bInvincibleValue);
 		PlayerObject->TryGetNumberField(TEXT("score"), ScoreValue);
+		PlayerObject->TryGetNumberField(TEXT("kills"), KillsValue);
+		PlayerObject->TryGetNumberField(TEXT("deaths"), DeathsValue);
+		PlayerObject->TryGetNumberField(TEXT("player_kills"), PlayerKillsValue);
+		PlayerObject->TryGetNumberField(TEXT("target_kills"), TargetKillsValue);
 		PlayerObject->TryGetNumberField(TEXT("last_seq"), LastSeqValue);
 
 		PlayerSnapshot.PlayerId = static_cast<int32>(PlayerIdValue);
 		PlayerSnapshot.X = static_cast<float>(XValue);
 		PlayerSnapshot.Y = static_cast<float>(YValue);
 		PlayerSnapshot.HP = static_cast<int32>(HPValue);
+		PlayerSnapshot.MaxHP = static_cast<int32>(MaxHPValue);
+		PlayerSnapshot.bAlive = bAliveValue;
+		PlayerSnapshot.bInvincible = bInvincibleValue;
 		PlayerSnapshot.Score = static_cast<int32>(ScoreValue);
+		PlayerSnapshot.Kills = static_cast<int32>(KillsValue);
+		PlayerSnapshot.Deaths = static_cast<int32>(DeathsValue);
+		PlayerSnapshot.PlayerKills = static_cast<int32>(PlayerKillsValue);
+		PlayerSnapshot.TargetKills = static_cast<int32>(TargetKillsValue);
 		PlayerSnapshot.LastSeq = static_cast<int32>(LastSeqValue);
 
 		if (PlayerSnapshot.PlayerId > 0)

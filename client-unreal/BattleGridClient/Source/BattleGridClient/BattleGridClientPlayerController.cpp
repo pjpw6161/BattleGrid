@@ -72,6 +72,7 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bPendingReloadInput = false;
 	ShotSequence = 0;
 	LastShotDirectionServer = FVector2D::ZeroVector;
+	LastShotDirectionServerZ = 0.0f;
 	LastShotSpreadDegrees = 0.0f;
 	InputSequence = 0;
 	LastInputSendTime = 0.0f;
@@ -286,12 +287,31 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 		{
 			if (NetworkSubsystem->HasJoined())
 			{
+				FBattleGridServerPlayerSnapshot OwnSnapshot;
+				const bool bHasOwnSnapshot =
+					NetworkSubsystem->GetOwnPlayerSnapshot(OwnSnapshot);
+				const FString ServerAliveText = !bHasOwnSnapshot
+					? FString(TEXT("-"))
+					: (OwnSnapshot.bAlive ? FString(TEXT("Alive")) : FString(TEXT("Dead")));
+				const FString ServerInvincibleText =
+					bHasOwnSnapshot && OwnSnapshot.bInvincible
+						? FString(TEXT("Invincible"))
+						: FString(TEXT("Vulnerable"));
+
 				return FString::Printf(
-					TEXT("Profile: %s | Server: Connected | Player=%d Room=%d Snapshot=%d\nTargets: %d/%d | Projectiles: %d | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
+					TEXT("Profile: %s | Server: Connected | Player=%d Room=%d Snapshot=%d\nServer HP: %d/%d %s/%s | Server Score: %d | K/D: %d/%d | TargetKills: %d\nTargets: %d/%d | Projectiles: %d | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
 					*ProfileLabel,
 					NetworkSubsystem->GetPlayerId(),
 					NetworkSubsystem->GetRoomId(),
 					NetworkSubsystem->GetLastSnapshotTick(),
+					bHasOwnSnapshot ? OwnSnapshot.HP : 0,
+					bHasOwnSnapshot ? OwnSnapshot.MaxHP : 0,
+					*ServerAliveText,
+					*ServerInvincibleText,
+					NetworkSubsystem->GetOwnServerScore(),
+					bHasOwnSnapshot ? OwnSnapshot.Kills : 0,
+					bHasOwnSnapshot ? OwnSnapshot.Deaths : 0,
+					bHasOwnSnapshot ? OwnSnapshot.TargetKills : 0,
 					NetworkSubsystem->GetServerAliveTargetCount(),
 					NetworkSubsystem->GetServerTargetCount(),
 					NetworkSubsystem->GetServerProjectileCount(),
@@ -1070,6 +1090,7 @@ void ABattleGridClientPlayerController::TryFireWeapon()
 
 	const FVector FireDirection = CalculateShotDirectionWithSpread(ShotSpread);
 	LastShotDirectionServer = ConvertUnrealDirectionToServerDirection(FireDirection);
+	LastShotDirectionServerZ = FireDirection.Z;
 
 	const FVector ProjectileSpawnLocation =
 		ControlledPawn->GetActorLocation()
@@ -1222,9 +1243,7 @@ FVector ABattleGridClientPlayerController::CalculateShotDirectionWithSpread(
 	float SpreadDegrees
 ) const
 {
-	const FRotator ShotYawRotation(0.0f, GetControlRotation().Yaw, 0.0f);
-	FVector ShotDirection = ShotYawRotation.Vector();
-	ShotDirection.Z = 0.0f;
+	FVector ShotDirection = GetControlRotation().Vector();
 	if (!ShotDirection.Normalize())
 	{
 		ShotDirection = FVector::ForwardVector;
@@ -1236,12 +1255,10 @@ FVector ABattleGridClientPlayerController::CalculateShotDirectionWithSpread(
 		return ShotDirection;
 	}
 
-	const float SpreadYawOffsetDegrees = FMath::RandRange(
-		-ClampedSpreadDegrees,
-		ClampedSpreadDegrees
+	ShotDirection = FMath::VRandCone(
+		ShotDirection,
+		FMath::DegreesToRadians(ClampedSpreadDegrees)
 	);
-	ShotDirection = ShotDirection.RotateAngleAxis(SpreadYawOffsetDegrees, FVector::UpVector);
-	ShotDirection.Z = 0.0f;
 	if (!ShotDirection.Normalize())
 	{
 		ShotDirection = FVector::ForwardVector;
@@ -1333,9 +1350,11 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 	AimY = ServerAimDirection.Y;
 
 	FVector2D ServerShotDirection = ServerAimDirection;
+	float ServerShotDirectionZ = 0.0f;
 	if (bPendingFireInput && LastShotDirectionServer.SizeSquared() > KINDA_SMALL_NUMBER)
 	{
 		ServerShotDirection = LastShotDirectionServer;
+		ServerShotDirectionZ = LastShotDirectionServerZ;
 	}
 
 	int32 CurrentAmmo = 0;
@@ -1400,6 +1419,7 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 		AimY,
 		ServerShotDirection.X,
 		ServerShotDirection.Y,
+		ServerShotDirectionZ,
 		bFire,
 		bReload,
 		bIsADSActive,

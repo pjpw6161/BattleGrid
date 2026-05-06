@@ -213,6 +213,7 @@ std::string MessageDispatcher::HandleInput(const nlohmann::json& message)
     const double spreadDegrees = ReadDouble(message, "spread_deg", 0.0);
     const double shotDirX = ReadDouble(message, "shot_dir_x", aimX);
     const double shotDirY = ReadDouble(message, "shot_dir_y", aimY);
+    const double shotDirZ = ReadDouble(message, "shot_dir_z", 0.0);
 
     if (messagePlayerId != sessionState.playerId)
     {
@@ -245,6 +246,7 @@ std::string MessageDispatcher::HandleInput(const nlohmann::json& message)
     input.spreadDegrees = spreadDegrees;
     input.shotDirX = shotDirX;
     input.shotDirY = shotDirY;
+    input.shotDirZ = shotDirZ;
 
     if (!room->UpdateInput(sessionState.playerId, input))
     {

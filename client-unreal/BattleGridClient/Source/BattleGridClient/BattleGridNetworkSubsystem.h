@@ -30,7 +30,28 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerPlayerSnapshot
 	int32 HP = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 MaxHP = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	bool bAlive = true;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	bool bInvincible = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	int32 Score = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 Kills = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 Deaths = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 PlayerKills = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 TargetKills = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	int32 LastSeq = 0;
@@ -104,6 +125,7 @@ public:
 		float AimY,
 		float ShotDirX,
 		float ShotDirY,
+		float ShotDirZ,
 		bool bFire,
 		bool bReload,
 		bool bADS,
