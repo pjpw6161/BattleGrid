@@ -11,6 +11,9 @@ void UBattleGridCombatWidget::UpdateHud(
 	int32 Score,
 	int32 TargetScore,
 	int32 ServerScore,
+	int32 CurrentAmmo,
+	int32 MagazineSize,
+	bool bIsReloading,
 	const FString& CombatMessage,
 	bool bShowCombatMessage,
 	bool bHasWon,
@@ -44,18 +47,22 @@ void UBattleGridCombatWidget::UpdateHud(
 
 	if (ScoreText)
 	{
+		const FString AmmoText = bIsReloading
+			? FString(TEXT("Reloading..."))
+			: FString::Printf(TEXT("%d/%d"), CurrentAmmo, MagazineSize);
 		ScoreText->SetText(FText::FromString(FString::Printf(
-			TEXT("Local Score: %d / %d | Server Score: %d"),
+			TEXT("Local Score: %d / %d | Server Score: %d | Ammo: %s"),
 			Score,
 			TargetScore,
-			ServerScore
+			ServerScore,
+			*AmmoText
 		)));
 	}
 
 	if (CombatMessageText)
 	{
 		const FString DisplayMessage = bHasWon
-			? FString(TEXT("Victory! Press R to Restart"))
+			? FString(TEXT("Victory! Press F5/Enter to Restart"))
 			: CombatMessage;
 
 		CombatMessageText->SetText(FText::FromString(DisplayMessage));
@@ -67,8 +74,8 @@ void UBattleGridCombatWidget::UpdateHud(
 	if (ControlsText)
 	{
 		const FString BaseControlsMessage = bHasWon
-			? FString(TEXT("Victory! Press R to Restart"))
-			: FString(TEXT("WASD Move | Mouse Look | LMB Fire | RMB ADS | Shift Sprint | Space Jump | R Restart"));
+			? FString(TEXT("Victory! Press F5/Enter to Restart"))
+			: FString(TEXT("WASD Move | Mouse Look | LMB Fire | RMB ADS | Shift Sprint | Space Jump | R Reload | F5/Enter Restart"));
 		const FString FullControlsMessage = NetworkStatusText.IsEmpty()
 			? BaseControlsMessage
 			: FString::Printf(TEXT("%s\n%s"), *NetworkStatusText, *BaseControlsMessage);

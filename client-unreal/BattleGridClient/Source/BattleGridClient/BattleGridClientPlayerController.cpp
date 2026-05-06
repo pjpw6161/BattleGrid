@@ -8,6 +8,7 @@
 #include "BattleGridServerGhostActor.h"
 #include "BattleGridServerProjectileGhostActor.h"
 #include "BattleGridServerTargetGhostActor.h"
+#include "BattleGridWeaponComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/GameInstance.h"
@@ -155,7 +156,7 @@ void ABattleGridClientPlayerController::AddScore(int32 Amount)
 	if (Score >= GetTargetScore())
 	{
 		bHasWon = true;
-		SetCombatMessage(TEXT("Victory! Press R to Restart"), 3600.0f);
+		SetCombatMessage(TEXT("Victory! Press F5/Enter to Restart"), 3600.0f);
 		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Victory!"));
 	}
 }
@@ -727,6 +728,20 @@ void ABattleGridClientPlayerController::SetupInputComponent()
 		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] JumpAction is not assigned."));
 	}
 
+	if (ReloadAction)
+	{
+		EnhancedInputComponent->BindAction(
+			ReloadAction,
+			ETriggerEvent::Started,
+			this,
+			&ABattleGridClientPlayerController::ReloadStarted
+		);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] ReloadAction is not assigned."));
+	}
+
 	if (RestartAction)
 	{
 		EnhancedInputComponent->BindAction(
@@ -925,6 +940,33 @@ void ABattleGridClientPlayerController::JumpEnded(const FInputActionValue& Value
 	}
 }
 
+void ABattleGridClientPlayerController::ReloadStarted(const FInputActionValue& Value)
+{
+	static_cast<void>(Value);
+
+	if (IsPlayerDead() || HasWon())
+	{
+		return;
+	}
+
+	ABattleGridClientCharacter* BattleGridCharacter =
+		Cast<ABattleGridClientCharacter>(GetPawn());
+	if (!BattleGridCharacter)
+	{
+		return;
+	}
+
+	UBattleGridWeaponComponent* WeaponComponent =
+		BattleGridCharacter->GetWeaponComponent();
+	if (!WeaponComponent)
+	{
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Reload input."));
+	WeaponComponent->StartReload();
+}
+
 void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Value)
 {
 	static_cast<void>(Value);
@@ -944,16 +986,43 @@ void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Val
 
 	UpdateAimRotation();
 
-	bPendingFireInput = true;
-	SendInputToServer(true);
-
-	const float CurrentTime = World->GetTimeSeconds();
-	const float CooldownSeconds = FMath::Max(0.0f, FireCooldownSeconds);
-
-	if (CurrentTime - LastFireTime < CooldownSeconds)
+	ABattleGridClientCharacter* BattleGridCharacter =
+		Cast<ABattleGridClientCharacter>(ControlledPawn);
+	UBattleGridWeaponComponent* WeaponComponent = BattleGridCharacter
+		? BattleGridCharacter->GetWeaponComponent()
+		: nullptr;
+	if (!WeaponComponent)
 	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] Cannot fire. WeaponComponent is missing."));
 		return;
 	}
+
+	if (!WeaponComponent->TryConsumeAmmoForShot())
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Cannot fire. Ammo=%d Reloading=%s"),
+			WeaponComponent->GetCurrentAmmo(),
+			WeaponComponent->IsReloading() ? TEXT("true") : TEXT("false")
+		);
+
+		if (WeaponComponent->GetCurrentAmmo() <= 0 && !WeaponComponent->IsReloading())
+		{
+			WeaponComponent->StartReload();
+		}
+		return;
+	}
+
+	const float ShotSpread = WeaponComponent->CalculateCurrentSpread(
+		bIsADSActive,
+		bIsSprinting,
+		IsControlledPawnFalling()
+	);
+	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Shot spread=%.2f"), ShotSpread);
+
+	bPendingFireInput = true;
+	SendInputToServer(true);
 
 	const FRotator FireYawRotation(0.0f, GetControlRotation().Yaw, 0.0f);
 	FVector FireDirection = FireYawRotation.Vector();
@@ -990,8 +1059,14 @@ void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Val
 		SpawnParameters
 	))
 	{
-		LastFireTime = CurrentTime;
-		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Projectile fired."));
+		LastFireTime = World->GetTimeSeconds();
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Weapon fired. Ammo=%d/%d"),
+			WeaponComponent->GetCurrentAmmo(),
+			WeaponComponent->GetMagazineSize()
+		);
 	}
 }
 

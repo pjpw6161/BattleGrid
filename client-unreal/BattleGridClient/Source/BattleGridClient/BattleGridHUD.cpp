@@ -1,7 +1,9 @@
 #include "BattleGridHUD.h"
 
+#include "BattleGridClientCharacter.h"
 #include "BattleGridClientPlayerController.h"
 #include "BattleGridCombatWidget.h"
+#include "BattleGridWeaponComponent.h"
 #include "Blueprint/UserWidget.h"
 
 ABattleGridHUD::ABattleGridHUD()
@@ -54,12 +56,30 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		return;
 	}
 
+	int32 CurrentAmmo = 0;
+	int32 MagazineSize = 0;
+	bool bIsReloading = false;
+	if (const ABattleGridClientCharacter* BattleGridCharacter =
+		Cast<ABattleGridClientCharacter>(BattleGridController->GetPawn()))
+	{
+		if (const UBattleGridWeaponComponent* WeaponComponent =
+			BattleGridCharacter->GetWeaponComponent())
+		{
+			CurrentAmmo = WeaponComponent->GetCurrentAmmo();
+			MagazineSize = WeaponComponent->GetMagazineSize();
+			bIsReloading = WeaponComponent->IsReloading();
+		}
+	}
+
 	CombatWidget->UpdateHud(
 		BattleGridController->GetCurrentPlayerHealth(),
 		BattleGridController->GetMaxPlayerHealth(),
 		BattleGridController->GetScore(),
 		BattleGridController->GetTargetScore(),
 		BattleGridController->GetOwnServerScore(),
+		CurrentAmmo,
+		MagazineSize,
+		bIsReloading,
 		BattleGridController->GetCombatMessage(),
 		BattleGridController->HasActiveCombatMessage(),
 		BattleGridController->HasWon(),
@@ -109,6 +129,24 @@ void ABattleGridHUD::DrawHUD()
 		return;
 	}
 
+	int32 CurrentAmmo = 0;
+	int32 MagazineSize = 0;
+	bool bIsReloading = false;
+	if (const ABattleGridClientCharacter* BattleGridCharacter =
+		Cast<ABattleGridClientCharacter>(BattleGridController->GetPawn()))
+	{
+		if (const UBattleGridWeaponComponent* WeaponComponent =
+			BattleGridCharacter->GetWeaponComponent())
+		{
+			CurrentAmmo = WeaponComponent->GetCurrentAmmo();
+			MagazineSize = WeaponComponent->GetMagazineSize();
+			bIsReloading = WeaponComponent->IsReloading();
+		}
+	}
+	const FString AmmoText = bIsReloading
+		? FString(TEXT("Reloading..."))
+		: FString::Printf(TEXT("%d/%d"), CurrentAmmo, MagazineSize);
+
 	DrawText(
 		FString::Printf(
 			TEXT("Local HP: %.0f / %.0f"),
@@ -124,10 +162,11 @@ void ABattleGridHUD::DrawHUD()
 
 	DrawText(
 		FString::Printf(
-			TEXT("Local Score: %d / %d | Server Score: %d"),
+			TEXT("Local Score: %d / %d | Server Score: %d | Ammo: %s"),
 			BattleGridController->GetScore(),
 			BattleGridController->GetTargetScore(),
-			BattleGridController->GetOwnServerScore()
+			BattleGridController->GetOwnServerScore(),
+			*AmmoText
 		),
 		FLinearColor::White,
 		HudX + 20.0f,
@@ -147,8 +186,8 @@ void ABattleGridHUD::DrawHUD()
 
 	DrawText(
 		BattleGridController->HasWon()
-			? FString(TEXT("Victory! Press R to Restart"))
-			: FString(TEXT("WASD Move | Mouse Look | LMB Fire | RMB ADS | Shift Sprint | Space Jump | R Restart")),
+			? FString(TEXT("Victory! Press F5/Enter to Restart"))
+			: FString(TEXT("WASD Move | Mouse Look | LMB Fire | RMB ADS | Shift Sprint | Space Jump | R Reload | F5/Enter Restart")),
 		FLinearColor(0.8f, 0.9f, 1.0f, 1.0f),
 		HudX + 20.0f,
 		HudY + 15.0f + LineHeight * 5.0f,
@@ -159,7 +198,7 @@ void ABattleGridHUD::DrawHUD()
 	if (BattleGridController->HasActiveCombatMessage() || BattleGridController->HasWon())
 	{
 		const FString CombatDisplayMessage = BattleGridController->HasWon()
-			? FString(TEXT("Victory! Press R to Restart"))
+			? FString(TEXT("Victory! Press F5/Enter to Restart"))
 			: BattleGridController->GetCombatMessage();
 
 		DrawText(

@@ -4,6 +4,7 @@
 
 #include "BattleGridClientPlayerController.h"
 #include "BattleGridHealthComponent.h"
+#include "BattleGridWeaponComponent.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Camera/CameraComponent.h"
 #include "Components/DecalComponent.h"
@@ -20,6 +21,7 @@ ABattleGridClientCharacter::ABattleGridClientCharacter()
 	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
 
 	HealthComponent = CreateDefaultSubobject<UBattleGridHealthComponent>(TEXT("HealthComponent"));
+	WeaponComponent = CreateDefaultSubobject<UBattleGridWeaponComponent>(TEXT("WeaponComponent"));
 
 	// Don't rotate character to camera direction
 	bUseControllerRotationPitch = false;

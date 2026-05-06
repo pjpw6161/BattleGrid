@@ -11,6 +11,7 @@
 class UCameraComponent;
 class AController;
 class UBattleGridHealthComponent;
+class UBattleGridWeaponComponent;
 class USpringArmComponent;
 
 /**
@@ -67,6 +68,7 @@ public:
 	bool IsAimingDownSights() const { return bADSActive; }
 	void SetSprinting(bool bInSprinting);
 	bool IsSprinting() const { return bSprinting; }
+	UBattleGridWeaponComponent* GetWeaponComponent() const { return WeaponComponent.Get(); }
 
 private:
 	void HandleDeath();
@@ -77,6 +79,9 @@ private:
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UBattleGridHealthComponent> HealthComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Combat", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UBattleGridWeaponComponent> WeaponComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Camera", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float DefaultArmLength;

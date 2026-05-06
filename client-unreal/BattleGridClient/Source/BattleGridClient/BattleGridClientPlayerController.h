@@ -81,6 +81,9 @@ public:
 	TObjectPtr<UInputAction> JumpAction;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
+	TObjectPtr<UInputAction> ReloadAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputAction> RestartAction;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Game", meta = (ClampMin = "1"))
@@ -227,6 +230,7 @@ private:
 	void SprintEnded(const FInputActionValue& Value);
 	void JumpStarted(const FInputActionValue& Value);
 	void JumpEnded(const FInputActionValue& Value);
+	void ReloadStarted(const FInputActionValue& Value);
 
 	FString ResolveServerProfileLabel() const;
 	void UpdateAimRotation();
