@@ -53,6 +53,8 @@ public:
 	bool HasOwnServerWorldLocation() const;
 	FVector GetLastOwnServerWorldLocation() const;
 	bool IsUsingServerPositionCorrection() const;
+	bool IsAimingDownSights() const;
+	bool IsSprinting() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputMappingContext> BattleGridMappingContext;
@@ -64,7 +66,19 @@ public:
 	TObjectPtr<UInputAction> MoveRightAction;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
+	TObjectPtr<UInputAction> LookAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputAction> FireAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
+	TObjectPtr<UInputAction> AdsAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
+	TObjectPtr<UInputAction> SprintAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
+	TObjectPtr<UInputAction> JumpAction;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputAction> RestartAction;
@@ -95,6 +109,27 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Network", meta = (ClampMin = "0.0"))
 	float InputSendIntervalSeconds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Movement", meta = (ClampMin = "0.0"))
+	float NormalMoveSpeed;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Movement", meta = (ClampMin = "0.0"))
+	float SprintMoveSpeed;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Movement", meta = (ClampMin = "0.0"))
+	float ADSMoveSpeed;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Camera")
+	float LookYawSensitivity;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Camera")
+	float LookPitchSensitivity;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Camera")
+	float ViewPitchMin;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Camera")
+	float ViewPitchMax;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
 	bool bDemoMode;
@@ -184,10 +219,20 @@ private:
 	void MoveRight(const FInputActionValue& Value);
 	void MoveForwardReleased(const FInputActionValue& Value);
 	void MoveRightReleased(const FInputActionValue& Value);
+	void Look(const FInputActionValue& Value);
 	void FireStarted(const FInputActionValue& Value);
+	void AdsStarted(const FInputActionValue& Value);
+	void AdsEnded(const FInputActionValue& Value);
+	void SprintStarted(const FInputActionValue& Value);
+	void SprintEnded(const FInputActionValue& Value);
+	void JumpStarted(const FInputActionValue& Value);
+	void JumpEnded(const FInputActionValue& Value);
 
 	FString ResolveServerProfileLabel() const;
 	void UpdateAimRotation();
+	void ApplyMovementAndADSState();
+	bool IsControlledPawnFalling() const;
+	FVector GetCameraRelativeMovementDirection(float ForwardAxis, float RightAxis) const;
 	void SendInputToServerIfNeeded();
 	void SendInputToServer(bool bForceSend);
 	void UpdateServerGhostsFromSnapshot();
@@ -209,6 +254,9 @@ private:
 	bool bHasWon;
 	float CurrentMoveForward;
 	float CurrentMoveRight;
+	bool bADSInputHeld;
+	bool bIsADSActive;
+	bool bIsSprinting;
 	bool bPendingFireInput;
 	int32 InputSequence;
 	float LastInputSendTime;

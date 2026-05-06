@@ -26,26 +26,42 @@ ABattleGridClientCharacter::ABattleGridClientCharacter()
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
 
+	DefaultArmLength = 450.0f;
+	AdsArmLength = 300.0f;
+	DefaultSocketOffset = FVector(0.0f, 60.0f, 60.0f);
+	AdsSocketOffset = FVector(0.0f, 90.0f, 50.0f);
+	CameraInterpSpeed = 12.0f;
+	CameraLagSpeed = 12.0f;
+	DefaultFOV = 90.0f;
+	AdsFOV = 70.0f;
+	bADSActive = false;
+	bSprinting = false;
+
 	// Configure character movement
 	GetCharacterMovement()->bOrientRotationToMovement = false;
 	GetCharacterMovement()->RotationRate = FRotator(0.f, 640.f, 0.f);
-	GetCharacterMovement()->bConstrainToPlane = true;
-	GetCharacterMovement()->bSnapToPlaneAtStart = true;
+	GetCharacterMovement()->bConstrainToPlane = false;
+	GetCharacterMovement()->bSnapToPlaneAtStart = false;
+	GetCharacterMovement()->MaxWalkSpeed = 600.0f;
+	GetCharacterMovement()->JumpZVelocity = 600.0f;
+	GetCharacterMovement()->AirControl = 0.35f;
 
 	// Create the camera boom component
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->SetUsingAbsoluteRotation(true);
-	CameraBoom->TargetArmLength = 800.f;
-	CameraBoom->SetRelativeRotation(FRotator(-60.f, 0.f, 0.f));
-	CameraBoom->bDoCollisionTest = false;
+	CameraBoom->SetUsingAbsoluteRotation(false);
+	CameraBoom->bUsePawnControlRotation = true;
+	CameraBoom->bDoCollisionTest = true;
+	CameraBoom->bEnableCameraLag = true;
 
 	// Create the camera component
 	TopDownCameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("TopDownCamera"));
+	FollowCamera = TopDownCameraComponent;
 
-	TopDownCameraComponent->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
-	TopDownCameraComponent->bUsePawnControlRotation = false;
+	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
+	FollowCamera->bUsePawnControlRotation = false;
+	ApplyCameraSettings(0.0f);
 
 	// Activate ticking in order to update the cursor every frame.
 	PrimaryActorTick.bCanEverTick = true;
@@ -73,6 +89,8 @@ void ABattleGridClientCharacter::BeginPlay()
 void ABattleGridClientCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	ApplyCameraSettings(DeltaSeconds);
 }
 
 float ABattleGridClientCharacter::TakeDamage(
@@ -115,6 +133,8 @@ void ABattleGridClientCharacter::HandleDeath()
 	}
 
 	bIsDead = true;
+	SetAimingDownSights(false);
+	SetSprinting(false);
 
 	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Player died."));
 
@@ -153,6 +173,8 @@ void ABattleGridClientCharacter::Respawn()
 	}
 
 	bIsDead = false;
+	SetAimingDownSights(false);
+	SetSprinting(false);
 
 	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
@@ -189,4 +211,68 @@ void ABattleGridClientCharacter::SyncHealthToPlayerController() const
 			HealthComponent->GetMaxHealth()
 		);
 	}
+}
+
+void ABattleGridClientCharacter::SetADSActive(bool bNewADSActive)
+{
+	SetAimingDownSights(bNewADSActive);
+}
+
+void ABattleGridClientCharacter::SetAimingDownSights(bool bInADS)
+{
+	bADSActive = bInADS;
+}
+
+void ABattleGridClientCharacter::SetSprinting(bool bInSprinting)
+{
+	bSprinting = bInSprinting;
+}
+
+void ABattleGridClientCharacter::ApplyCameraSettings(float DeltaSeconds)
+{
+	if (!CameraBoom || !FollowCamera)
+	{
+		return;
+	}
+
+	const float TargetArmLength = bADSActive ? AdsArmLength : DefaultArmLength;
+	const FVector TargetSocketOffset = bADSActive ? AdsSocketOffset : DefaultSocketOffset;
+	const float TargetFOV = bADSActive ? AdsFOV : DefaultFOV;
+	const float BlendSpeed = FMath::Max(0.0f, CameraInterpSpeed);
+
+	CameraBoom->SetUsingAbsoluteRotation(false);
+	CameraBoom->bUsePawnControlRotation = true;
+	CameraBoom->bDoCollisionTest = true;
+	CameraBoom->bEnableCameraLag = true;
+	CameraBoom->SetRelativeLocation(FVector::ZeroVector);
+	CameraBoom->SetRelativeRotation(FRotator::ZeroRotator);
+	CameraBoom->CameraLagSpeed = FMath::Max(0.0f, CameraLagSpeed);
+	FollowCamera->bUsePawnControlRotation = false;
+
+	if (DeltaSeconds <= 0.0f || BlendSpeed <= 0.0f)
+	{
+		CameraBoom->TargetArmLength = TargetArmLength;
+		CameraBoom->SocketOffset = TargetSocketOffset;
+		FollowCamera->SetFieldOfView(TargetFOV);
+		return;
+	}
+
+	CameraBoom->TargetArmLength = FMath::FInterpTo(
+		CameraBoom->TargetArmLength,
+		TargetArmLength,
+		DeltaSeconds,
+		BlendSpeed
+	);
+	CameraBoom->SocketOffset = FMath::VInterpTo(
+		CameraBoom->SocketOffset,
+		TargetSocketOffset,
+		DeltaSeconds,
+		BlendSpeed
+	);
+	FollowCamera->SetFieldOfView(FMath::FInterpTo(
+		FollowCamera->FieldOfView,
+		TargetFOV,
+		DeltaSeconds,
+		BlendSpeed
+	));
 }

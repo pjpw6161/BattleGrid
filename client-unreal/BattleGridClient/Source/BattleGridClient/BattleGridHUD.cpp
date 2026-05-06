@@ -148,7 +148,7 @@ void ABattleGridHUD::DrawHUD()
 	DrawText(
 		BattleGridController->HasWon()
 			? FString(TEXT("Victory! Press R to Restart"))
-			: FString(TEXT("WASD Move | Mouse Aim | LMB Fire | R Restart")),
+			: FString(TEXT("WASD Move | Mouse Look | LMB Fire | RMB ADS | Shift Sprint | Space Jump | R Restart")),
 		FLinearColor(0.8f, 0.9f, 1.0f, 1.0f),
 		HudX + 20.0f,
 		HudY + 15.0f + LineHeight * 5.0f,

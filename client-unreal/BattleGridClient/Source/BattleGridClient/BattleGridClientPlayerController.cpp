@@ -2,6 +2,7 @@
 
 #include "BattleGridClientPlayerController.h"
 
+#include "BattleGridClientCharacter.h"
 #include "BattleGridNetworkSubsystem.h"
 #include "BattleGridProjectile.h"
 #include "BattleGridServerGhostActor.h"
@@ -12,6 +13,9 @@
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "Camera/PlayerCameraManager.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
 #include "InputAction.h"
 #include "InputActionValue.h"
@@ -20,7 +24,7 @@
 
 ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 {
-	bShowMouseCursor = true;
+	bShowMouseCursor = false;
 	DefaultMouseCursor = EMouseCursor::Crosshairs;
 
 	PrimaryActorTick.bCanEverTick = true;
@@ -41,6 +45,13 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	ServerProfileLabel = TEXT("Local");
 	Nickname = TEXT("player1");
 	InputSendIntervalSeconds = 0.05f;
+	NormalMoveSpeed = 600.0f;
+	SprintMoveSpeed = 850.0f;
+	ADSMoveSpeed = 400.0f;
+	LookYawSensitivity = 1.0f;
+	LookPitchSensitivity = -1.0f;
+	ViewPitchMin = -55.0f;
+	ViewPitchMax = 35.0f;
 	bDemoMode = true;
 	bVerboseNetworkLogs = false;
 	bVerboseSnapshotLogs = false;
@@ -52,6 +63,9 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bHasWon = false;
 	CurrentMoveForward = 0.0f;
 	CurrentMoveRight = 0.0f;
+	bADSInputHeld = false;
+	bIsADSActive = false;
+	bIsSprinting = false;
 	bPendingFireInput = false;
 	InputSequence = 0;
 	LastInputSendTime = 0.0f;
@@ -177,6 +191,14 @@ void ABattleGridClientPlayerController::SetPlayerHealth(float Current, float Max
 void ABattleGridClientPlayerController::SetPlayerDead(bool bDead)
 {
 	bPlayerDead = bDead;
+
+	if (bPlayerDead)
+	{
+		bADSInputHeld = false;
+		bIsADSActive = false;
+		bIsSprinting = false;
+		ApplyMovementAndADSState();
+	}
 }
 
 void ABattleGridClientPlayerController::RestartGame()
@@ -248,6 +270,8 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 	const FString ErrorText = bShowServerPositionError && HasOwnServerWorldLocation()
 		? FString::Printf(TEXT("%.1f"), GetLastServerPositionError())
 		: FString(TEXT("-"));
+	const FString ADSStatusText = bIsADSActive ? FString(TEXT("On")) : FString(TEXT("Off"));
+	const FString SprintStatusText = bIsSprinting ? FString(TEXT("On")) : FString(TEXT("Off"));
 
 	if (const UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -257,7 +281,7 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 			if (NetworkSubsystem->HasJoined())
 			{
 				return FString::Printf(
-					TEXT("Profile: %s | Server: Connected | Player=%d Room=%d Snapshot=%d\nTargets: %d/%d | Projectiles: %d | Error: %s | Correction: %s"),
+					TEXT("Profile: %s | Server: Connected | Player=%d Room=%d Snapshot=%d\nTargets: %d/%d | Projectiles: %d | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
 					*ProfileLabel,
 					NetworkSubsystem->GetPlayerId(),
 					NetworkSubsystem->GetRoomId(),
@@ -266,17 +290,21 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 					NetworkSubsystem->GetServerTargetCount(),
 					NetworkSubsystem->GetServerProjectileCount(),
 					*ErrorText,
-					*CorrectionText
+					*CorrectionText,
+					*ADSStatusText,
+					*SprintStatusText
 				);
 			}
 
 			if (NetworkSubsystem->IsConnected())
 			{
 				return FString::Printf(
-					TEXT("Profile: %s | Server: Connected | Joining...\nTargets: - | Projectiles: - | Error: %s | Correction: %s"),
+					TEXT("Profile: %s | Server: Connected | Joining...\nTargets: - | Projectiles: - | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
 					*ProfileLabel,
 					*ErrorText,
-					*CorrectionText
+					*CorrectionText,
+					*ADSStatusText,
+					*SprintStatusText
 				);
 			}
 
@@ -284,21 +312,25 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 			if (!LastNetworkError.IsEmpty())
 			{
 				return FString::Printf(
-					TEXT("Profile: %s | Server: Error | %s\nTargets: - | Projectiles: - | Error: %s | Correction: %s"),
+					TEXT("Profile: %s | Server: Error | %s\nTargets: - | Projectiles: - | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
 					*ProfileLabel,
 					*LastNetworkError,
 					*ErrorText,
-					*CorrectionText
+					*CorrectionText,
+					*ADSStatusText,
+					*SprintStatusText
 				);
 			}
 		}
 	}
 
 	return FString::Printf(
-		TEXT("Profile: %s | Server: Disconnected\nTargets: - | Projectiles: - | Error: %s | Correction: %s"),
+		TEXT("Profile: %s | Server: Disconnected\nTargets: - | Projectiles: - | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
 		*ProfileLabel,
 		*ErrorText,
-		*CorrectionText
+		*CorrectionText,
+		*ADSStatusText,
+		*SprintStatusText
 	);
 }
 
@@ -434,21 +466,39 @@ bool ABattleGridClientPlayerController::IsUsingServerPositionCorrection() const
 	return bUseServerPositionCorrection;
 }
 
+bool ABattleGridClientPlayerController::IsAimingDownSights() const
+{
+	return bIsADSActive;
+}
+
+bool ABattleGridClientPlayerController::IsSprinting() const
+{
+	return bIsSprinting;
+}
+
 void ABattleGridClientPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	bShowMouseCursor = true;
+	bShowMouseCursor = false;
+	SetInputMode(FInputModeGameOnly());
+	if (PlayerCameraManager)
+	{
+		PlayerCameraManager->ViewPitchMin = FMath::Min(ViewPitchMin, ViewPitchMax);
+		PlayerCameraManager->ViewPitchMax = FMath::Max(ViewPitchMin, ViewPitchMax);
+	}
 
 	if (const APawn* ControlledPawn = GetPawn())
 	{
 		ServerSnapshotOrigin = ControlledPawn->GetActorLocation();
+		SetControlRotation(ControlledPawn->GetActorRotation());
 	}
 	else
 	{
 		ServerSnapshotOrigin = FVector::ZeroVector;
 	}
 	bServerSnapshotOriginInitialized = true;
+	ApplyMovementAndADSState();
 
 	if (ULocalPlayer* LocalPlayer = GetLocalPlayer())
 	{
@@ -571,6 +621,20 @@ void ABattleGridClientPlayerController::SetupInputComponent()
 		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] MoveRightAction is not assigned."));
 	}
 
+	if (LookAction)
+	{
+		EnhancedInputComponent->BindAction(
+			LookAction,
+			ETriggerEvent::Triggered,
+			this,
+			&ABattleGridClientPlayerController::Look
+		);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] LookAction is not assigned."));
+	}
+
 	if (FireAction)
 	{
 		EnhancedInputComponent->BindAction(
@@ -583,6 +647,84 @@ void ABattleGridClientPlayerController::SetupInputComponent()
 	else
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] FireAction is not assigned."));
+	}
+
+	if (AdsAction)
+	{
+		EnhancedInputComponent->BindAction(
+			AdsAction,
+			ETriggerEvent::Started,
+			this,
+			&ABattleGridClientPlayerController::AdsStarted
+		);
+		EnhancedInputComponent->BindAction(
+			AdsAction,
+			ETriggerEvent::Completed,
+			this,
+			&ABattleGridClientPlayerController::AdsEnded
+		);
+		EnhancedInputComponent->BindAction(
+			AdsAction,
+			ETriggerEvent::Canceled,
+			this,
+			&ABattleGridClientPlayerController::AdsEnded
+		);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] AdsAction is not assigned."));
+	}
+
+	if (SprintAction)
+	{
+		EnhancedInputComponent->BindAction(
+			SprintAction,
+			ETriggerEvent::Started,
+			this,
+			&ABattleGridClientPlayerController::SprintStarted
+		);
+		EnhancedInputComponent->BindAction(
+			SprintAction,
+			ETriggerEvent::Completed,
+			this,
+			&ABattleGridClientPlayerController::SprintEnded
+		);
+		EnhancedInputComponent->BindAction(
+			SprintAction,
+			ETriggerEvent::Canceled,
+			this,
+			&ABattleGridClientPlayerController::SprintEnded
+		);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] SprintAction is not assigned."));
+	}
+
+	if (JumpAction)
+	{
+		EnhancedInputComponent->BindAction(
+			JumpAction,
+			ETriggerEvent::Started,
+			this,
+			&ABattleGridClientPlayerController::JumpStarted
+		);
+		EnhancedInputComponent->BindAction(
+			JumpAction,
+			ETriggerEvent::Completed,
+			this,
+			&ABattleGridClientPlayerController::JumpEnded
+		);
+		EnhancedInputComponent->BindAction(
+			JumpAction,
+			ETriggerEvent::Canceled,
+			this,
+			&ABattleGridClientPlayerController::JumpEnded
+		);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] JumpAction is not assigned."));
 	}
 
 	if (RestartAction)
@@ -604,6 +746,7 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
 
+	ApplyMovementAndADSState();
 	UpdateAimRotation();
 	SendInputToServerIfNeeded();
 	UpdateServerGhostsFromSnapshot();
@@ -631,7 +774,10 @@ void ABattleGridClientPlayerController::MoveForward(const FInputActionValue& Val
 
 	if (APawn* ControlledPawn = GetPawn())
 	{
-		ControlledPawn->AddMovementInput(FVector::ForwardVector, AxisValue);
+		const FRotator ControlYawRotation(0.0f, GetControlRotation().Yaw, 0.0f);
+		const FVector ForwardDirection =
+			FRotationMatrix(ControlYawRotation).GetUnitAxis(EAxis::X);
+		ControlledPawn->AddMovementInput(ForwardDirection, AxisValue);
 	}
 }
 
@@ -654,7 +800,10 @@ void ABattleGridClientPlayerController::MoveRight(const FInputActionValue& Value
 
 	if (APawn* ControlledPawn = GetPawn())
 	{
-		ControlledPawn->AddMovementInput(FVector::RightVector, AxisValue);
+		const FRotator ControlYawRotation(0.0f, GetControlRotation().Yaw, 0.0f);
+		const FVector RightDirection =
+			FRotationMatrix(ControlYawRotation).GetUnitAxis(EAxis::Y);
+		ControlledPawn->AddMovementInput(RightDirection, AxisValue);
 	}
 }
 
@@ -682,6 +831,100 @@ void ABattleGridClientPlayerController::MoveRightReleased(const FInputActionValu
 	SendInputToServer(true);
 }
 
+void ABattleGridClientPlayerController::Look(const FInputActionValue& Value)
+{
+	if (IsPlayerDead() || HasWon())
+	{
+		return;
+	}
+
+	const FVector2D LookAxis = Value.Get<FVector2D>();
+	if (LookAxis.IsNearlyZero())
+	{
+		return;
+	}
+
+	if (PlayerCameraManager)
+	{
+		PlayerCameraManager->ViewPitchMin = FMath::Min(ViewPitchMin, ViewPitchMax);
+		PlayerCameraManager->ViewPitchMax = FMath::Max(ViewPitchMin, ViewPitchMax);
+	}
+
+	AddYawInput(LookAxis.X * LookYawSensitivity);
+	AddPitchInput(LookAxis.Y * LookPitchSensitivity);
+}
+
+void ABattleGridClientPlayerController::AdsStarted(const FInputActionValue& Value)
+{
+	static_cast<void>(Value);
+
+	if (IsPlayerDead() || HasWon())
+	{
+		return;
+	}
+
+	bADSInputHeld = true;
+	ApplyMovementAndADSState();
+}
+
+void ABattleGridClientPlayerController::AdsEnded(const FInputActionValue& Value)
+{
+	static_cast<void>(Value);
+
+	bADSInputHeld = false;
+	ApplyMovementAndADSState();
+}
+
+void ABattleGridClientPlayerController::SprintStarted(const FInputActionValue& Value)
+{
+	static_cast<void>(Value);
+
+	if (IsPlayerDead() || HasWon())
+	{
+		return;
+	}
+
+	bIsSprinting = true;
+	bADSInputHeld = false;
+	ApplyMovementAndADSState();
+}
+
+void ABattleGridClientPlayerController::SprintEnded(const FInputActionValue& Value)
+{
+	static_cast<void>(Value);
+
+	bIsSprinting = false;
+	ApplyMovementAndADSState();
+}
+
+void ABattleGridClientPlayerController::JumpStarted(const FInputActionValue& Value)
+{
+	static_cast<void>(Value);
+
+	if (IsPlayerDead() || HasWon())
+	{
+		return;
+	}
+
+	bADSInputHeld = false;
+	ApplyMovementAndADSState();
+
+	if (ACharacter* ControlledCharacter = Cast<ACharacter>(GetPawn()))
+	{
+		ControlledCharacter->Jump();
+	}
+}
+
+void ABattleGridClientPlayerController::JumpEnded(const FInputActionValue& Value)
+{
+	static_cast<void>(Value);
+
+	if (ACharacter* ControlledCharacter = Cast<ACharacter>(GetPawn()))
+	{
+		ControlledCharacter->StopJumping();
+	}
+}
+
 void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Value)
 {
 	static_cast<void>(Value);
@@ -699,6 +942,8 @@ void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Val
 		return;
 	}
 
+	UpdateAimRotation();
+
 	bPendingFireInput = true;
 	SendInputToServer(true);
 
@@ -710,7 +955,8 @@ void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Val
 		return;
 	}
 
-	FVector FireDirection = ControlledPawn->GetActorForwardVector();
+	const FRotator FireYawRotation(0.0f, GetControlRotation().Yaw, 0.0f);
+	FVector FireDirection = FireYawRotation.Vector();
 	FireDirection.Z = 0.0f;
 	FireDirection.Normalize();
 
@@ -763,24 +1009,92 @@ void ABattleGridClientPlayerController::UpdateAimRotation()
 		return;
 	}
 
-	FHitResult HitResult;
-	const bool bHit = GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
+	const FRotator CurrentControlRotation = GetControlRotation();
+	ControlledPawn->SetActorRotation(FRotator(0.0f, CurrentControlRotation.Yaw, 0.0f));
+}
 
-	if (!bHit)
+void ABattleGridClientPlayerController::ApplyMovementAndADSState()
+{
+	APawn* ControlledPawn = GetPawn();
+	if (!ControlledPawn)
 	{
 		return;
 	}
 
-	FVector Direction = HitResult.ImpactPoint - ControlledPawn->GetActorLocation();
-	Direction.Z = 0.0f;
-
-	if (Direction.SizeSquared() < 1.0f)
+	if (IsControlledPawnFalling())
 	{
-		return;
+		bADSInputHeld = false;
 	}
 
-	const FRotator AimRotation = Direction.Rotation();
-	ControlledPawn->SetActorRotation(FRotator(0.0f, AimRotation.Yaw, 0.0f));
+	const bool bCanADS =
+		bADSInputHeld
+		&& !bIsSprinting
+		&& !IsControlledPawnFalling()
+		&& !IsPlayerDead()
+		&& !HasWon();
+	bIsADSActive = bCanADS;
+
+	if (ABattleGridClientCharacter* BattleGridCharacter =
+		Cast<ABattleGridClientCharacter>(ControlledPawn))
+	{
+		BattleGridCharacter->SetAimingDownSights(bIsADSActive);
+		BattleGridCharacter->SetSprinting(bIsSprinting);
+	}
+
+	if (ACharacter* ControlledCharacter = Cast<ACharacter>(ControlledPawn))
+	{
+		if (UCharacterMovementComponent* MovementComponent =
+			ControlledCharacter->GetCharacterMovement())
+		{
+			float DesiredSpeed = NormalMoveSpeed;
+			if (bIsSprinting && !bIsADSActive)
+			{
+				DesiredSpeed = SprintMoveSpeed;
+			}
+			else if (bIsADSActive)
+			{
+				DesiredSpeed = ADSMoveSpeed;
+			}
+
+			MovementComponent->MaxWalkSpeed = FMath::Max(0.0f, DesiredSpeed);
+		}
+	}
+}
+
+bool ABattleGridClientPlayerController::IsControlledPawnFalling() const
+{
+	const ACharacter* ControlledCharacter = Cast<ACharacter>(GetPawn());
+	if (!ControlledCharacter)
+	{
+		return false;
+	}
+
+	const UCharacterMovementComponent* MovementComponent =
+		ControlledCharacter->GetCharacterMovement();
+	return MovementComponent && MovementComponent->IsFalling();
+}
+
+FVector ABattleGridClientPlayerController::GetCameraRelativeMovementDirection(
+	float ForwardAxis,
+	float RightAxis
+) const
+{
+	const FRotator ControlYawRotation(0.0f, GetControlRotation().Yaw, 0.0f);
+	const FVector ForwardDirection =
+		FRotationMatrix(ControlYawRotation).GetUnitAxis(EAxis::X);
+	const FVector RightDirection =
+		FRotationMatrix(ControlYawRotation).GetUnitAxis(EAxis::Y);
+	FVector MovementDirection =
+		ForwardDirection * ForwardAxis
+		+ RightDirection * RightAxis;
+	MovementDirection.Z = 0.0f;
+
+	if (!MovementDirection.Normalize())
+	{
+		return FVector::ZeroVector;
+	}
+
+	return MovementDirection;
 }
 
 void ABattleGridClientPlayerController::SendInputToServerIfNeeded()
@@ -828,30 +1142,46 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 	const bool bHasMovementInput =
 		!FMath::IsNearlyZero(CurrentMoveForward)
 		|| !FMath::IsNearlyZero(CurrentMoveRight);
+	const float MovementInputMagnitude = FMath::Clamp(
+		FVector2D(CurrentMoveForward, CurrentMoveRight).Size(),
+		0.0f,
+		1.0f
+	);
+	float ServerMoveX = 0.0f;
+	float ServerMoveY = 0.0f;
+	if (bHasMovementInput)
+	{
+		const FVector UnrealMovementDirection = GetCameraRelativeMovementDirection(
+			CurrentMoveForward,
+			CurrentMoveRight
+		);
+		const FVector2D ServerMovementDirection =
+			ConvertUnrealDirectionToServerDirection(UnrealMovementDirection);
+		ServerMoveX = ServerMovementDirection.X * MovementInputMagnitude;
+		ServerMoveY = ServerMovementDirection.Y * MovementInputMagnitude;
+	}
 
 	float AimX = 0.0f;
 	float AimY = 0.0f;
 	FVector UnrealAimDirection = FVector::ForwardVector;
-	if (const APawn* ControlledPawn = GetPawn())
+	const FRotator AimYawRotation(0.0f, GetControlRotation().Yaw, 0.0f);
+	UnrealAimDirection = AimYawRotation.Vector();
+	UnrealAimDirection.Z = 0.0f;
+	if (!UnrealAimDirection.Normalize())
 	{
-		UnrealAimDirection = ControlledPawn->GetActorForwardVector();
-		UnrealAimDirection.Z = 0.0f;
-		if (!UnrealAimDirection.Normalize())
-		{
-			UnrealAimDirection = FVector::ForwardVector;
-		}
-
-		const FVector2D ServerAimDirection =
-			ConvertUnrealDirectionToServerDirection(UnrealAimDirection);
-		AimX = ServerAimDirection.X;
-		AimY = ServerAimDirection.Y;
+		UnrealAimDirection = FVector::ForwardVector;
 	}
+
+	const FVector2D ServerAimDirection =
+		ConvertUnrealDirectionToServerDirection(UnrealAimDirection);
+	AimX = ServerAimDirection.X;
+	AimY = ServerAimDirection.Y;
 
 	constexpr float InputChangeThreshold = 0.01f;
 	const bool bMovementChanged =
 		!bHasLastSentInput
-		|| FMath::Abs(CurrentMoveForward - LastSentMoveForward) > InputChangeThreshold
-		|| FMath::Abs(CurrentMoveRight - LastSentMoveRight) > InputChangeThreshold;
+		|| FMath::Abs(ServerMoveY - LastSentMoveForward) > InputChangeThreshold
+		|| FMath::Abs(ServerMoveX - LastSentMoveRight) > InputChangeThreshold;
 	const bool bAimChanged =
 		!bHasLastSentInput
 		|| FMath::Abs(AimX - LastSentAimX) > InputChangeThreshold
@@ -887,15 +1217,15 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 
 	NetworkSubsystem->SendInput(
 		InputSequence,
-		CurrentMoveRight,
-		CurrentMoveForward,
+		ServerMoveX,
+		ServerMoveY,
 		AimX,
 		AimY,
 		bFire
 	);
 
-	LastSentMoveForward = CurrentMoveForward;
-	LastSentMoveRight = CurrentMoveRight;
+	LastSentMoveForward = ServerMoveY;
+	LastSentMoveRight = ServerMoveX;
 	LastSentAimX = AimX;
 	LastSentAimY = AimY;
 	bHasLastSentInput = true;
