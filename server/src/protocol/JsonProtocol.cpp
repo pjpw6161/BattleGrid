@@ -93,6 +93,9 @@ std::string JsonProtocol::RoomState(const nlohmann::json& roomState)
     response["scoreboard"] = roomState.contains("scoreboard")
         ? roomState.at("scoreboard")
         : nlohmann::json::array();
+    response["events"] = roomState.contains("events")
+        ? roomState.at("events")
+        : nlohmann::json::array();
     response["players"] = roomState.contains("players")
         ? roomState.at("players")
         : nlohmann::json::array();

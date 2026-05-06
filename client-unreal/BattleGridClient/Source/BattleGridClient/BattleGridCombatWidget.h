@@ -32,7 +32,9 @@ public:
 		const FString& NetworkStatusText,
 		float ServerPositionError,
 		bool bHasServerPositionError,
-		bool bUseServerCorrection
+		bool bUseServerCorrection,
+		bool bShowScoreboard,
+		const FString& ScoreboardText
 	);
 
 private:

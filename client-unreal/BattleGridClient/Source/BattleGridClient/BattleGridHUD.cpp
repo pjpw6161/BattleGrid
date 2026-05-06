@@ -88,7 +88,9 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		BattleGridController->GetLastServerPositionError(),
 		BattleGridController->bShowServerPositionError
 			&& BattleGridController->HasOwnServerWorldLocation(),
-		BattleGridController->IsUsingServerPositionCorrection()
+		BattleGridController->IsUsingServerPositionCorrection(),
+		BattleGridController->ShouldShowScoreboard(),
+		BattleGridController->GetServerScoreboardText()
 	);
 }
 
@@ -189,7 +191,7 @@ void ABattleGridHUD::DrawHUD()
 	DrawText(
 		BattleGridController->HasWon()
 			? FString(TEXT("Victory! Press F5/Enter to Restart"))
-			: FString(TEXT("WASD Move | Mouse Look | LMB Fire | RMB ADS | Shift Sprint | Space Jump | R Reload | F5/Enter Restart")),
+			: FString(TEXT("WASD Move | Mouse Look | LMB Fire | RMB ADS | Shift Sprint | Space Jump | R Reload | F5/Enter Restart | Tab Scoreboard")),
 		FLinearColor(0.8f, 0.9f, 1.0f, 1.0f),
 		HudX + 20.0f,
 		HudY + 15.0f + LineHeight * 5.0f,
@@ -197,7 +199,18 @@ void ABattleGridHUD::DrawHUD()
 		0.9f
 	);
 
-	if (BattleGridController->HasActiveCombatMessage() || BattleGridController->HasWon())
+	if (BattleGridController->ShouldShowScoreboard())
+	{
+		DrawText(
+			BattleGridController->GetServerScoreboardText(),
+			FLinearColor(0.9f, 1.0f, 0.75f, 1.0f),
+			HudX + 20.0f,
+			HudY + 15.0f + LineHeight * 6.0f,
+			nullptr,
+			0.85f
+		);
+	}
+	else if (BattleGridController->HasActiveCombatMessage() || BattleGridController->HasWon())
 	{
 		const FString CombatDisplayMessage = BattleGridController->HasWon()
 			? FString(TEXT("Victory! Press F5/Enter to Restart"))

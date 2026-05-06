@@ -3,6 +3,7 @@
 #include "game/PlayerInput.h"
 #include "game/PlayerState.h"
 #include "game/BotState.h"
+#include "game/CombatEvent.h"
 #include "game/HealthPackState.h"
 #include "game/MatchState.h"
 #include "game/ProjectileState.h"
@@ -12,6 +13,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -49,6 +51,9 @@ private:
     void UpdateHealthPacks(double deltaSeconds);
     void CheckHealthPackPickups();
     std::pair<double, double> ChooseHealthPackSpawnPoint(std::uint64_t healthPackId) const;
+    void AddCombatEvent(const std::string& type, const std::string& message);
+    void AddCombatEvent(const CombatEvent& event);
+    nlohmann::json BuildEventsJson() const;
     void ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input);
     void CheckMatchEndCondition();
     std::uint64_t DetermineWinnerPlayerId() const;
@@ -67,6 +72,10 @@ private:
     mutable std::vector<std::pair<double, double>> healthPackSpawnPoints;
     std::uint64_t nextProjectileId;
     std::uint64_t healthPackRespawnCounter;
+    std::deque<CombatEvent> recentEvents;
+    std::uint64_t nextEventId;
+    std::size_t MaxRecentEvents;
+    double serverTimeSeconds;
     mutable bool targetsInitialized;
     mutable bool botsInitialized;
     mutable bool healthPacksInitialized;

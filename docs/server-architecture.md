@@ -15,6 +15,7 @@ The BattleGrid server is a C++20 CMake application that accepts WebSocket JSON c
 - `RoomManager`: owns the fixed default Room 1.
 - `GameRoom`: thread-safe state container and simulation for Room 1.
 - `MatchState`: current match timer, target score, game-over flag, winner, and match ID.
+- `CombatEvent`: compact recent server event for kill feed and demo feedback.
 - `PlayerState`: player identity, nickname, connected flag, latest input, position, speed, HP, score, and processed fire sequence.
 - `PlayerInput`: latest input packet fields.
 - `BotState`: server-controlled PvE combatant state, movement target, HP, respawn, invincibility, and simple attack timers.
@@ -51,15 +52,33 @@ The server currently has one fixed room:
 room_id = 1
 ```
 
-Default targets:
+Arena bounds:
 
-1. `(600, 0)`
-2. `(900, 300)`
-3. `(900, -300)`
-4. `(1200, 0)`
-5. `(1500, 400)`
+```text
+x = -1800..1800
+y = -1200..1200
+```
 
-Each target starts with:
+These bounds are used by player movement, bot movement, bot wander target generation, and projectile expiry.
+
+Player spawn points:
+
+1. P1 `(-1200, 0)`
+2. P2 `(1200, 0)`
+3. P3 `(0, 900)`
+4. P4 `(0, -900)`
+
+Players spawn from this list by player ID on join, respawn, and debug match restart.
+
+Default target/core positions:
+
+1. CORE-1 `(0, 0)`
+2. CORE-2 `(700, 500)`
+3. CORE-3 `(700, -500)`
+4. CORE-4 `(-700, 500)`
+5. CORE-5 `(-700, -500)`
+
+The C++ model remains `TargetState`, but gameplay logs and docs call these CORE targets. Each core starts with:
 
 - `hp = 100`
 - `maxHp = 100`
@@ -68,14 +87,14 @@ Each target starts with:
 
 Default bots:
 
-1. `(300, 300)`
-2. `(300, -300)`
-3. `(700, 500)`
-4. `(700, -500)`
-5. `(1100, 500)`
-6. `(1100, -500)`
-7. `(1500, 200)`
-8. `(1500, -200)`
+1. BOT-1 `(-300, 300)`
+2. BOT-2 `(-300, -300)`
+3. BOT-3 `(300, 300)`
+4. BOT-4 `(300, -300)`
+5. BOT-5 `(1000, 0)`
+6. BOT-6 `(-1000, 0)`
+7. BOT-7 `(0, 700)`
+8. BOT-8 `(0, -700)`
 
 Each bot starts with:
 
@@ -87,14 +106,12 @@ Each bot starts with:
 
 Health pack spawn points:
 
-1. `(-600, 0)`
-2. `(-300, 500)`
-3. `(-300, -500)`
-4. `(300, 700)`
-5. `(300, -700)`
-6. `(800, 700)`
-7. `(800, -700)`
-8. `(1300, 0)`
+1. `(-1300, 700)`
+2. `(1300, 700)`
+3. `(0, -1100)`
+4. `(-1300, -700)`
+5. `(1300, -700)`
+6. `(0, 1100)`
 
 The room starts with three active health packs at spawn points 1, 3, and 5.
 
@@ -151,7 +168,8 @@ Movement is intentionally simple:
 
 - Normalize move vector if length is greater than 1.
 - Apply `speed * deltaSeconds`.
-- Clamp x/y to `-2000..2000`.
+- Clamp x to `-1800..1800`.
+- Clamp y to `-1200..1200`.
 
 ## Projectile, Hitscan, Target, And Bot Simulation
 
@@ -208,6 +226,36 @@ Snapshots include a `match` object and a sorted `scoreboard` array. The scoreboa
 
 `debug_restart_match` is available for browser and demo testing. It resets match state, player scores and combat counters, projectiles, targets, bots, and health packs, then increments `matchId`. It is not a production rematch/lobby system.
 
+## Combat Events
+
+`GameRoom` keeps a bounded `recentEvents` queue of the last 20 `CombatEvent` records.
+
+Each event stores:
+
+- event ID
+- event type
+- display message
+- server room time
+- actor player ID
+- target player ID
+- bot ID
+- target ID
+- health pack ID
+- headshot flag
+
+Events are generated when:
+
+- a player destroys a server target
+- a player kills a bot
+- a player kills another player
+- a bot kills a player
+- a player respawns
+- a player picks up a health pack
+- a match ends
+- a match restarts
+
+Snapshots and `debug_room` include the recent `events` array. Unreal deduplicates by `event_id` and displays the last few messages in the existing HUD as a simple kill feed.
+
 ## Bot AI
 
 `GameRoom::InitializeDefaultBots` creates eight fixed bots in Room 1.
@@ -244,8 +292,10 @@ Bots ignore health packs in this step.
 
 Snapshots include:
 
+- arena bounds and fixed layout spawn lists
 - match
 - scoreboard
+- events
 - players
 - bots
 - health_packs
@@ -266,6 +316,7 @@ This avoids overlapping writes when protocol responses and server snapshot broad
 
 - match state
 - scoreboard
+- recent combat events
 - player count
 - projectile count
 - target count
@@ -279,6 +330,8 @@ This avoids overlapping writes when protocol responses and server snapshot broad
 - targets and HP
 
 This is for browser testing.
+
+`GameRoom::ToDebugJson` also includes the full fixed arena layout for internal/debug consumers. The current snapshot includes the same fixed layout so browser and Unreal tests can confirm the active limited arena without relying on map assets.
 
 ## Current Limitations
 

@@ -240,6 +240,42 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerScoreboardEntry
 	bool bAlive = false;
 };
 
+USTRUCT(BlueprintType)
+struct BATTLEGRIDCLIENT_API FBattleGridServerCombatEvent
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	int32 EventId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	FString Type;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	FString Message;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	float Time = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	int32 ActorPlayerId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	int32 TargetPlayerId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	int32 BotId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	int32 TargetId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	int32 HealthPackId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	bool bHeadshot = false;
+};
+
 UCLASS()
 class BATTLEGRIDCLIENT_API UBattleGridNetworkSubsystem : public UGameInstanceSubsystem
 {
@@ -307,6 +343,11 @@ public:
 	FBattleGridServerMatchSnapshot GetLatestMatchSnapshot() const;
 	void GetLatestScoreboard(TArray<FBattleGridServerScoreboardEntry>& OutScoreboard) const;
 	FString GetServerScoreboardSummaryText() const;
+	FString GetScoreboardTableText() const;
+	FString GetMatchHeaderText() const;
+	FString GetFullScoreboardText() const;
+	void GetRecentCombatEvents(TArray<FBattleGridServerCombatEvent>& OutEvents) const;
+	FString GetCombatEventFeedText() const;
 	bool GetOwnPlayerSnapshot(FBattleGridServerPlayerSnapshot& OutSnapshot) const;
 	int32 GetOwnServerScore() const;
 	int32 GetOwnServerHP() const;
@@ -339,6 +380,9 @@ private:
 	TMap<int32, FBattleGridServerHealthPackSnapshot> LatestHealthPackSnapshots;
 	FBattleGridServerMatchSnapshot LatestMatchSnapshot;
 	TArray<FBattleGridServerScoreboardEntry> LatestScoreboard;
+	TArray<FBattleGridServerCombatEvent> RecentCombatEvents;
+	TSet<int32> SeenCombatEventIds;
+	int32 MaxRecentCombatEvents = 5;
 	bool bHasMatchSnapshot = false;
 	bool bHasLoggedServerSummary = false;
 	bool bVerboseNetworkLogs = false;

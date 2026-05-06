@@ -43,6 +43,9 @@ public:
 	FString GetServerProfileText() const;
 	FString GetNetworkStatusText() const;
 	FString GetDetailedNetworkStatusText() const;
+	FString GetServerCombatEventFeedText() const;
+	FString GetServerScoreboardText() const;
+	bool ShouldShowScoreboard() const;
 	bool IsServerConnected() const;
 	bool HasJoinedServer() const;
 	int32 GetServerPlayerId() const;
@@ -88,6 +91,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputAction> RestartAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
+	TObjectPtr<UInputAction> ScoreboardAction;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Game", meta = (ClampMin = "1"))
 	int32 TargetScore;
@@ -154,6 +160,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo", meta = (ClampMin = "1"))
 	int32 InputAckLogInterval;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
+	bool bScoreboardToggleMode;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|Combat")
 	TSubclassOf<ABattleGridProjectile> ProjectileClass;
@@ -254,6 +263,8 @@ private:
 	void JumpStarted(const FInputActionValue& Value);
 	void JumpEnded(const FInputActionValue& Value);
 	void ReloadStarted(const FInputActionValue& Value);
+	void ScoreboardStarted(const FInputActionValue& Value);
+	void ScoreboardEnded(const FInputActionValue& Value);
 
 	FString ResolveServerProfileLabel() const;
 	void UpdateAimRotation();
@@ -290,6 +301,8 @@ private:
 	bool bFireHeld;
 	bool bPendingFireInput;
 	bool bPendingReloadInput;
+	bool bScoreboardHeld;
+	bool bScoreboardVisible;
 	int32 ShotSequence;
 	FVector2D LastShotDirectionServer;
 	float LastShotDirectionServerZ;

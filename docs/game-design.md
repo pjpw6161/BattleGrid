@@ -20,6 +20,18 @@ Players can score by farming bots, but fighting other players matters because it
 6. Respawn after death and re-enter the fight.
 7. Win by reaching the target score or leading when the timer ends.
 
+## Arena Layout
+
+The current server arena is a bounded rectangular PvPvE space:
+
+- Bounds: `x=-1800..1800`, `y=-1200..1200`.
+- Player spawns: P1 `(-1200, 0)`, P2 `(1200, 0)`, P3 `(0, 900)`, P4 `(0, -900)`.
+- Core targets: center CORE-1 plus four diagonal mid-lane cores at `(700, 500)`, `(700, -500)`, `(-700, 500)`, and `(-700, -500)`.
+- Bot spawns: eight fixed spawns around the central lanes and side lanes.
+- Health pack candidates: six perimeter spawn points, with three active packs by default.
+
+The full coordinate table is maintained in [arena-layout.md](arena-layout.md). The Unreal map is aligned manually through server ghost visualization for now.
+
 ## Controls
 
 - WASD: move.
@@ -114,7 +126,7 @@ Health packs create rotation decisions and reduce the chance that the best strat
 
 Implemented v1 server health pack behavior:
 
-- Room 1 has eight predefined health pack spawn points.
+- Room 1 has six predefined health pack spawn points.
 - Three health packs are active at a time by default.
 - Only alive players can pick up health packs.
 - Full-health players do not consume health packs.
@@ -190,8 +202,24 @@ The third-person PvPvE HUD should show:
 - Crosshair with spread feedback.
 - ADS state through camera/crosshair changes.
 - Scoreboard showing player names, score, kills, deaths, and ping if available.
+- Current v1: holding Tab shows a text scoreboard overlay using server snapshot `scoreboard` data and the active match state. It also appears automatically after server game over.
 
 The current debug-style server snapshot summary should move behind a developer/demo toggle once the PvPvE HUD becomes the primary presentation.
+
+## Kill Feed And Combat Events
+
+The server now emits a compact combat event feed for important authoritative events:
+
+- target destroyed
+- bot killed
+- player killed
+- bot killed player
+- player respawned
+- health pack picked
+- match ended
+- match restarted
+
+Snapshots include recent events so clients can show a short kill feed without needing a separate event stream. The current Unreal HUD displays the latest few server event messages in the existing server summary area. A future polished HUD should move this into a dedicated kill feed panel with timing, color, and animation.
 
 ## Server-Authoritative Rules
 

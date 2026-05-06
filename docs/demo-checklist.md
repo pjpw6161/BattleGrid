@@ -14,7 +14,7 @@ Use this checklist to run the current portfolio demo.
 2. Open `tools/websocket-test.html`.
 3. Connect to `ws://<GCP_EXTERNAL_IP>:7777`.
 4. Click `Send Join`, then `Send Debug Room`.
-5. Confirm the browser output shows Room 1 and `targets=5`.
+5. Confirm the browser output shows Room 1, `targets=5`, `bots=8`, and `health_packs=3`.
 6. Open Unreal Editor.
 7. In the PlayerController Blueprint defaults, use the remote profile and confirm the HUD shows `Profile: Remote` and `Server: Connected`.
 8. Move with WASD.
@@ -23,9 +23,10 @@ Use this checklist to run the current portfolio demo.
 11. Show server target ghosts with HP labels.
 12. Hit a local target and show local score increasing.
 13. Hit a server target and show server score / target HP changing in the HUD and browser snapshots.
-14. Walk into the hazard and show local HP decrease, death, and respawn.
-15. Toggle optional server position correction on/off if useful for the recording.
-16. Stop the server or switch back to the Local profile and show that offline gameplay still runs.
+14. Validate the arena layout: P1/P2/P3/P4 spawns sit on the four sides, CORE-1 is centered, bots are around center/lanes, and health packs are near the perimeter.
+15. Walk into the hazard and show local HP decrease, death, and respawn.
+16. Toggle optional server position correction on/off if useful for the recording.
+17. Stop the server or switch back to the Local profile and show that offline gameplay still runs.
 
 ## Server Smoke Test
 
@@ -54,6 +55,12 @@ Use this checklist to run the current portfolio demo.
 6. Click `Send Ping` and verify `pong`.
 7. Click `Send Join` and verify `join_ok`.
 8. Click `Send Debug Room` and verify Room 1, player state, and targets.
+9. Verify the arena layout values from the first snapshot output:
+   - bounds `x=-1800..1800`, `y=-1200..1200`
+   - player spawns at `(-1200,0)`, `(1200,0)`, `(0,900)`, `(0,-900)`
+   - cores at center and four diagonal mid-lane positions
+   - bots count `8`
+   - health packs count `3`
 
 ### Option B: Native Windows Build
 
@@ -74,6 +81,7 @@ Use this checklist to run the current portfolio demo.
 5. Click `Send Ping` and verify `pong`.
 6. Click `Send Join` and verify `join_ok`.
 7. Click `Send Debug Room` and verify Room 1, player state, and targets.
+8. Verify the arena bounds and server entity positions from snapshots match `docs/arena-layout.md`.
 
 ### Shared Server Test Steps
 
@@ -104,6 +112,7 @@ Use this checklist to run the current portfolio demo.
 
 5. Click `Send Ping`, `Send Join`, and `Send Debug Room`.
 6. Verify snapshots include players, projectiles, and targets from the remote server.
+7. Verify snapshots include arena bounds and the same core, bot, and health pack layout.
 
 ## Unreal Demo
 
@@ -136,10 +145,15 @@ Use this checklist to run the current portfolio demo.
 13. Show server projectile ghost movement.
 14. Show server target ghost labels and HP.
 15. Show server score increasing when server targets are destroyed.
-16. Switch from local mode to remote mode and show the HUD profile label changing.
-17. Show server ghosts driven by the remote GCP server.
-18. Toggle optional server position correction in the PlayerController Blueprint defaults if needed, then compare error behavior.
-19. Stop the server and verify local offline gameplay still works.
+16. Validate the server layout against the Unreal map:
+   - player ghosts remain inside the intended arena bounds
+   - CORE ghosts appear in the center and diagonal mid-lanes
+   - bot ghosts start near center/side lanes
+   - health pack ghosts appear near outer lanes
+17. Switch from local mode to remote mode and show the HUD profile label changing.
+18. Show server ghosts driven by the remote GCP server.
+19. Toggle optional server position correction in the PlayerController Blueprint defaults if needed, then compare error behavior.
+20. Stop the server and verify local offline gameplay still works.
 
 ## Victory And Restart
 

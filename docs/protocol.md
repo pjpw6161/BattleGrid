@@ -129,6 +129,7 @@ Expected response:
   "active_health_pack_count": 3,
   "match": {},
   "scoreboard": [],
+  "events": [],
   "players": [],
   "bots": [],
   "health_packs": [],
@@ -223,6 +224,20 @@ Rules:
       "target_kills": 0,
       "hp": 80,
       "alive": true
+    }
+  ],
+  "events": [
+    {
+      "event_id": 1,
+      "type": "bot_killed",
+      "message": "player1 killed BOT-3",
+      "time": 123.4,
+      "actor_player_id": 1,
+      "target_player_id": 0,
+      "bot_id": 3,
+      "target_id": 0,
+      "health_pack_id": 0,
+      "headshot": false
     }
   ],
   "players": [
@@ -348,6 +363,20 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
       "alive": true
     }
   ],
+  "events": [
+    {
+      "event_id": 1,
+      "type": "bot_killed",
+      "message": "player1 killed BOT-3",
+      "time": 123.4,
+      "actor_player_id": 1,
+      "target_player_id": 0,
+      "bot_id": 3,
+      "target_id": 0,
+      "health_pack_id": 0,
+      "headshot": false
+    }
+  ],
   "players": [
     {
       "player_id": 1,
@@ -438,6 +467,30 @@ Scoreboard fields:
 - `target_kills`: destroyed server targets worth +1 score.
 - `hp`: current server player HP.
 - `alive`: whether the player is alive.
+
+Combat event fields:
+
+- `event_id`: monotonically increasing room-local event ID for deduplication.
+- `type`: event type.
+- `message`: human-readable short kill-feed message.
+- `time`: server room time in seconds.
+- `actor_player_id`: player that caused the event, if any.
+- `target_player_id`: player affected by the event, if any.
+- `bot_id`: bot involved in the event, if any.
+- `target_id`: server target involved in the event, if any.
+- `health_pack_id`: health pack involved in the event, if any.
+- `headshot`: true for headshot kill events.
+
+Current event types:
+
+- `target_destroyed`
+- `bot_killed`
+- `player_killed`
+- `bot_killed_player`
+- `player_respawned`
+- `health_pack_picked`
+- `match_ended`
+- `match_restarted`
 
 Player fields:
 

@@ -61,6 +61,7 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bVerboseInputLogs = false;
 	SnapshotLogInterval = 60;
 	InputAckLogInterval = 60;
+	bScoreboardToggleMode = false;
 	CombatMessageExpireTime = 0.0f;
 	bPlayerDead = false;
 	bHasWon = false;
@@ -72,6 +73,8 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bFireHeld = false;
 	bPendingFireInput = false;
 	bPendingReloadInput = false;
+	bScoreboardHeld = false;
+	bScoreboardVisible = false;
 	ShotSequence = 0;
 	LastShotDirectionServer = FVector2D::ZeroVector;
 	LastShotDirectionServerZ = 0.0f;
@@ -293,6 +296,54 @@ FString ABattleGridClientPlayerController::GetNetworkStatusText() const
 	return GetDetailedNetworkStatusText();
 }
 
+FString ABattleGridClientPlayerController::GetServerCombatEventFeedText() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetCombatEventFeedText();
+		}
+	}
+
+	return FString();
+}
+
+FString ABattleGridClientPlayerController::GetServerScoreboardText() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetFullScoreboardText();
+		}
+	}
+
+	return TEXT("Match: Offline\nRank | Player | Score | K | D | Bot | PvP | Target\n- | No server scoreboard | - | - | - | - | - | -\nTab: Scoreboard");
+}
+
+bool ABattleGridClientPlayerController::ShouldShowScoreboard() const
+{
+	if (bScoreboardHeld || bScoreboardVisible)
+	{
+		return true;
+	}
+
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->HasMatchSnapshot()
+				&& NetworkSubsystem->GetLatestMatchSnapshot().bGameOver;
+		}
+	}
+
+	return false;
+}
+
 FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 {
 	const FString ProfileLabel = ResolveServerProfileLabel();
@@ -317,6 +368,10 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 					NetworkSubsystem->GetOwnPlayerSnapshot(OwnSnapshot);
 				const FString MatchSummaryText =
 					NetworkSubsystem->GetServerScoreboardSummaryText();
+				const FString EventFeedText = NetworkSubsystem->GetCombatEventFeedText();
+				const FString EventDisplayText = EventFeedText.IsEmpty()
+					? FString(TEXT("Events: -"))
+					: FString::Printf(TEXT("Events:\n%s"), *EventFeedText);
 				const FString ServerAliveText = !bHasOwnSnapshot
 					? FString(TEXT("-"))
 					: (OwnSnapshot.bAlive ? FString(TEXT("Alive")) : FString(TEXT("Dead")));
@@ -326,7 +381,7 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 						: FString(TEXT("Vulnerable"));
 
 				return FString::Printf(
-					TEXT("Profile: %s | Server: Connected | Player=%d Room=%d Snapshot=%d\n%s\nServer HP: %d/%d %s/%s | Server Score: %d | K/D: %d/%d | TargetKills: %d | BotKills: %d\nTargets: %d/%d | Bots: %d/%d | HealthPacks: %d/%d | Projectiles: %d | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
+					TEXT("Profile: %s | Server: Connected | Player=%d Room=%d Snapshot=%d\n%s\nServer HP: %d/%d %s/%s | Server Score: %d | K/D: %d/%d | TargetKills: %d | BotKills: %d\nTargets: %d/%d | Bots: %d/%d | HealthPacks: %d/%d | Projectiles: %d | Error: %s | Correction: %s | ADS: %s | Sprint: %s\n%s"),
 					*ProfileLabel,
 					NetworkSubsystem->GetPlayerId(),
 					NetworkSubsystem->GetRoomId(),
@@ -351,7 +406,8 @@ FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
 					*ErrorText,
 					*CorrectionText,
 					*ADSStatusText,
-					*SprintStatusText
+					*SprintStatusText,
+					*EventDisplayText
 				);
 			}
 
@@ -830,6 +886,32 @@ void ABattleGridClientPlayerController::SetupInputComponent()
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] RestartAction is not assigned."));
 	}
+
+	if (ScoreboardAction)
+	{
+		EnhancedInputComponent->BindAction(
+			ScoreboardAction,
+			ETriggerEvent::Started,
+			this,
+			&ABattleGridClientPlayerController::ScoreboardStarted
+		);
+		EnhancedInputComponent->BindAction(
+			ScoreboardAction,
+			ETriggerEvent::Completed,
+			this,
+			&ABattleGridClientPlayerController::ScoreboardEnded
+		);
+		EnhancedInputComponent->BindAction(
+			ScoreboardAction,
+			ETriggerEvent::Canceled,
+			this,
+			&ABattleGridClientPlayerController::ScoreboardEnded
+		);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] ScoreboardAction is not assigned."));
+	}
 }
 
 void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
@@ -1048,6 +1130,31 @@ void ABattleGridClientPlayerController::ReloadStarted(const FInputActionValue& V
 	WeaponComponent->StartReload();
 	bPendingReloadInput = true;
 	SendInputToServer(true);
+}
+
+void ABattleGridClientPlayerController::ScoreboardStarted(const FInputActionValue& Value)
+{
+	static_cast<void>(Value);
+
+	if (bScoreboardToggleMode)
+	{
+		bScoreboardVisible = !bScoreboardVisible;
+		return;
+	}
+
+	bScoreboardHeld = true;
+}
+
+void ABattleGridClientPlayerController::ScoreboardEnded(const FInputActionValue& Value)
+{
+	static_cast<void>(Value);
+
+	if (bScoreboardToggleMode)
+	{
+		return;
+	}
+
+	bScoreboardHeld = false;
 }
 
 void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Value)

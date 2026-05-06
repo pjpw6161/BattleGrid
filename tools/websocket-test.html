@@ -62,6 +62,8 @@
     let inputSeq = 0;
     let moveTimer = null;
     let fireTimer = null;
+    const seenEventIds = new Set();
+    let arenaLogged = false;
 
     function log(message) {
       const timestamp = new Date().toLocaleTimeString();
@@ -131,12 +133,44 @@
       }
     }
 
+    function logEvents(message) {
+      const events = Array.isArray(message.events) ? message.events : [];
+      for (const event of events) {
+        if (!event.event_id || seenEventIds.has(event.event_id)) {
+          continue;
+        }
+
+        seenEventIds.add(event.event_id);
+        log(`event #${event.event_id} ${event.type}: ${event.message}`);
+      }
+    }
+
+    function logArenaLayout(message) {
+      if (arenaLogged || !message.arena || !message.arena.bounds) {
+        return;
+      }
+
+      arenaLogged = true;
+      const arena = message.arena;
+      const bounds = arena.bounds;
+      const playerSpawns = Array.isArray(arena.player_spawns) ? arena.player_spawns.length : 0;
+      const cores = Array.isArray(arena.target_cores) ? arena.target_cores.length : 0;
+      const botSpawns = Array.isArray(arena.bot_spawns) ? arena.bot_spawns.length : 0;
+      const healthPackSpawns = Array.isArray(arena.health_pack_spawns) ? arena.health_pack_spawns.length : 0;
+      log(
+        `arena x=${bounds.min_x}..${bounds.max_x} y=${bounds.min_y}..${bounds.max_y} ` +
+        `player_spawns=${playerSpawns} cores=${cores} bot_spawns=${botSpawns} health_pack_spawns=${healthPackSpawns}`
+      );
+    }
+
     document.getElementById("connect").addEventListener("click", () => {
       if (socket && socket.readyState === WebSocket.OPEN) {
         log("Already connected.");
         return;
       }
 
+      seenEventIds.clear();
+      arenaLogged = false;
       socket = new WebSocket(serverUrl);
       socket.addEventListener("open", () => log("connected"));
       socket.addEventListener("message", (event) => {
@@ -148,6 +182,7 @@
             joinedPlayerId = message.player_id;
             log(`joined player_id=${joinedPlayerId}`);
           } else if (message.type === "match_restarted") {
+            seenEventIds.clear();
             log(`match_restarted match_id=${message.match_id}`);
           } else if (message.type === "room_state") {
             log(
@@ -156,14 +191,18 @@
               `health_packs=${message.active_health_pack_count ?? 0}/${message.health_pack_count ?? 0} ` +
               `projectiles=${message.projectile_count ?? 0}`
             );
+            logArenaLayout(message);
             logMatchAndScoreboard(message);
+            logEvents(message);
           } else if (message.type === "snapshot") {
             const projectiles = Array.isArray(message.projectiles) ? message.projectiles : [];
             const targets = Array.isArray(message.targets) ? message.targets : [];
             const bots = Array.isArray(message.bots) ? message.bots : [];
             const healthPacks = Array.isArray(message.health_packs) ? message.health_packs : [];
             const players = Array.isArray(message.players) ? message.players : [];
+            logArenaLayout(message);
             logMatchAndScoreboard(message);
+            logEvents(message);
             const ownPlayer = players.find((player) => player.player_id === joinedPlayerId);
             if (ownPlayer) {
               log(
@@ -258,10 +297,10 @@
     });
 
     document.getElementById("sendFireAtBot1").addEventListener("click", () => {
-      // Player 1 starts near (100, 0). Bot 1 starts near (300, 300).
+      // Player 1 starts at (-1200, 0). Bot 1 starts at (-300, 300).
       sendInput(0, 0, true, {
-        shotDirX: 0.55,
-        shotDirY: 0.83,
+        shotDirX: 0.95,
+        shotDirY: 0.32,
         shotDirZ: 0,
         spreadDeg: 0,
         ads: true
@@ -269,10 +308,10 @@
     });
 
     document.getElementById("sendFireAtNearestBot").addEventListener("click", () => {
-      // Useful after joining: this aims toward the common early bot cluster.
+      // Useful after joining: this aims from P1 toward the central bot cluster.
       sendInput(0, 0, true, {
-        shotDirX: 0.7,
-        shotDirY: 0.7,
+        shotDirX: 0.95,
+        shotDirY: 0.32,
         shotDirZ: 0,
         spreadDeg: 0,
         ads: true
@@ -314,9 +353,9 @@
         return;
       }
 
-      log("Moving toward HPack 1 at approximately (-600, 0). Pickup only consumes it if player HP is below max.");
-      sendInput(-1, 0, false);
-      moveTimer = setInterval(() => sendInput(-1, 0, false), 100);
+      log("Moving toward HPack 1 at approximately (-1300, 700). Pickup only consumes it if player HP is below max.");
+      sendInput(-0.15, 1, false);
+      moveTimer = setInterval(() => sendInput(-0.15, 1, false), 100);
     });
 
     document.getElementById("stopMoving").addEventListener("click", () => {

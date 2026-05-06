@@ -21,7 +21,9 @@ void UBattleGridCombatWidget::UpdateHud(
 	const FString& NetworkStatusText,
 	float ServerPositionError,
 	bool bHasServerPositionError,
-	bool bUseServerCorrection
+	bool bUseServerCorrection,
+	bool bShowScoreboard,
+	const FString& ScoreboardText
 )
 {
 	static_cast<void>(ServerPositionError);
@@ -63,13 +65,17 @@ void UBattleGridCombatWidget::UpdateHud(
 
 	if (CombatMessageText)
 	{
-		const FString DisplayMessage = bHasWon
+		const FString DisplayMessage = bShowScoreboard
+			? ScoreboardText
+			: (bHasWon
 			? FString(TEXT("Victory! Press F5/Enter to Restart"))
-			: CombatMessage;
+			: CombatMessage);
 
 		CombatMessageText->SetText(FText::FromString(DisplayMessage));
 		CombatMessageText->SetVisibility(
-			(bShowCombatMessage || bHasWon) ? ESlateVisibility::Visible : ESlateVisibility::Collapsed
+			(bShowScoreboard || bShowCombatMessage || bHasWon)
+				? ESlateVisibility::Visible
+				: ESlateVisibility::Collapsed
 		);
 	}
 
@@ -77,7 +83,7 @@ void UBattleGridCombatWidget::UpdateHud(
 	{
 		const FString BaseControlsMessage = bHasWon
 			? FString(TEXT("Victory! Press F5/Enter to Restart"))
-			: FString(TEXT("WASD Move | Mouse Look | LMB Fire | RMB ADS | Shift Sprint | Space Jump | R Reload | F5/Enter Restart"));
+			: FString(TEXT("WASD Move | Mouse Look | LMB Fire | RMB ADS | Shift Sprint | Space Jump | R Reload | F5/Enter Restart | Tab Scoreboard"));
 		const FString FullControlsMessage = NetworkStatusText.IsEmpty()
 			? BaseControlsMessage
 			: FString::Printf(TEXT("%s\n%s"), *NetworkStatusText, *BaseControlsMessage);

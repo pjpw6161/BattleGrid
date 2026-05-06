@@ -157,7 +157,7 @@ Validation:
 
 Goal: turn the PvPvE loop into a complete match.
 
-Current status: v1 implemented on the custom server. Room 1 tracks match timer, target score, game-over state, winner, and sorted scoreboard. Snapshots include `match` and `scoreboard`, and Unreal displays a concise server scoreboard summary in the existing HUD.
+Current status: v1 implemented on the custom server and client. Room 1 tracks match timer, target score, game-over state, winner, and sorted scoreboard. Snapshots include `match` and `scoreboard`, Unreal displays a concise server scoreboard summary in the existing HUD, and holding Tab opens a text scoreboard overlay from the same server data.
 
 Work:
 
@@ -178,8 +178,8 @@ Work:
 Remaining polish:
 
 - Replace the test-only `debug_restart_match` with a real rematch/lobby flow.
-- Build a dedicated UMG scoreboard table.
-- Add kill feed and match-end presentation.
+- Build a dedicated UMG scoreboard table to replace the current text overlay.
+- Replace the current text event feed with a dedicated UMG kill feed and match-end presentation.
 - Add server-authoritative ammo/reload validation before using match results for real PvP.
 
 Validation:
@@ -207,6 +207,12 @@ Validation:
 - The main HUD communicates gameplay first.
 - Debug networking information is available but not visually dominant.
 - The demo recording can explain both gameplay and server authority.
+
+Current support:
+
+- Server snapshots include recent combat events.
+- Unreal deduplicates event IDs and displays a short text feed in the existing HUD.
+- A full animated kill feed remains future polish.
 
 ## Risks And Simplifications
 

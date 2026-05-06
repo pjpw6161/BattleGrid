@@ -3,6 +3,7 @@
 #include "core/Logger.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <sstream>
@@ -13,10 +14,12 @@ namespace battlegrid
 {
 namespace
 {
-constexpr double ArenaMin = -2000.0;
-constexpr double ArenaMax = 2000.0;
-constexpr double ProjectileArenaMin = -2500.0;
-constexpr double ProjectileArenaMax = 2500.0;
+constexpr double ArenaMinX = -1800.0;
+constexpr double ArenaMaxX = 1800.0;
+constexpr double ArenaMinY = -1200.0;
+constexpr double ArenaMaxY = 1200.0;
+constexpr double ArenaWidth = ArenaMaxX - ArenaMinX;
+constexpr double ArenaHeight = ArenaMaxY - ArenaMinY;
 constexpr double ProjectileSpawnForwardOffset = 50.0;
 constexpr int BodyDamage = 20;
 constexpr int HeadshotDamage = 40;
@@ -31,12 +34,68 @@ constexpr double BotDetectRange = 1500.0;
 constexpr double BotAttackRange = 900.0;
 constexpr double BotAttackDamage = 20.0;
 
+struct ArenaPoint
+{
+    std::uint64_t id = 0;
+    const char* label = "";
+    double x = 0.0;
+    double y = 0.0;
+    double z = 0.0;
+};
+
+struct HealthPackInitialSpawn
+{
+    std::uint64_t healthPackId = 0;
+    std::size_t spawnPointIndex = 0;
+};
+
 struct Vec3
 {
     double x = 0.0;
     double y = 0.0;
     double z = 0.0;
 };
+
+constexpr std::array<ArenaPoint, 4> PlayerSpawnPoints = {{
+    {1, "P1", -1200.0, 0.0, 0.0},
+    {2, "P2", 1200.0, 0.0, 0.0},
+    {3, "P3", 0.0, 900.0, 0.0},
+    {4, "P4", 0.0, -900.0, 0.0},
+}};
+
+constexpr std::array<ArenaPoint, 5> TargetCorePositions = {{
+    {1, "CORE-1", 0.0, 0.0, 0.0},
+    {2, "CORE-2", 700.0, 500.0, 0.0},
+    {3, "CORE-3", 700.0, -500.0, 0.0},
+    {4, "CORE-4", -700.0, 500.0, 0.0},
+    {5, "CORE-5", -700.0, -500.0, 0.0},
+}};
+
+constexpr std::array<ArenaPoint, 8> BotSpawnPoints = {{
+    {1, "BOT-1", -300.0, 300.0, 0.0},
+    {2, "BOT-2", -300.0, -300.0, 0.0},
+    {3, "BOT-3", 300.0, 300.0, 0.0},
+    {4, "BOT-4", 300.0, -300.0, 0.0},
+    {5, "BOT-5", 1000.0, 0.0, 0.0},
+    {6, "BOT-6", -1000.0, 0.0, 0.0},
+    {7, "BOT-7", 0.0, 700.0, 0.0},
+    {8, "BOT-8", 0.0, -700.0, 0.0},
+}};
+
+constexpr std::array<ArenaPoint, 6> HealthPackSpawnPoints = {{
+    {1, "HPACK-SPAWN-1", -1300.0, 700.0, 0.0},
+    {2, "HPACK-SPAWN-2", 1300.0, 700.0, 0.0},
+    {3, "HPACK-SPAWN-3", 0.0, -1100.0, 0.0},
+    {4, "HPACK-SPAWN-4", -1300.0, -700.0, 0.0},
+    {5, "HPACK-SPAWN-5", 1300.0, -700.0, 0.0},
+    {6, "HPACK-SPAWN-6", 0.0, 1100.0, 0.0},
+}};
+
+constexpr std::array<HealthPackInitialSpawn, 3> InitialHealthPackSpawns = {{
+    {1, 0},
+    {2, 2},
+    {3, 4},
+}};
 
 struct HitscanHit
 {
@@ -56,6 +115,69 @@ struct HitscanHit
     bool headshot = false;
     int damage = 0;
 };
+
+double ClampX(double x)
+{
+    return std::clamp(x, ArenaMinX, ArenaMaxX);
+}
+
+double ClampY(double y)
+{
+    return std::clamp(y, ArenaMinY, ArenaMaxY);
+}
+
+bool IsInsideArena(double x, double y)
+{
+    return x >= ArenaMinX && x <= ArenaMaxX && y >= ArenaMinY && y <= ArenaMaxY;
+}
+
+template <std::size_t Count>
+nlohmann::json BuildArenaPointsJson(
+    const std::array<ArenaPoint, Count>& points,
+    const char* idFieldName
+)
+{
+    nlohmann::json pointsJson = nlohmann::json::array();
+    for (const ArenaPoint& point : points)
+    {
+        nlohmann::json pointJson;
+        pointJson[idFieldName] = point.id;
+        pointJson["label"] = point.label;
+        pointJson["x"] = point.x;
+        pointJson["y"] = point.y;
+        pointJson["z"] = point.z;
+        pointsJson.push_back(std::move(pointJson));
+    }
+
+    return pointsJson;
+}
+
+nlohmann::json BuildArenaBoundsJson()
+{
+    nlohmann::json boundsJson;
+    boundsJson["min_x"] = ArenaMinX;
+    boundsJson["max_x"] = ArenaMaxX;
+    boundsJson["min_y"] = ArenaMinY;
+    boundsJson["max_y"] = ArenaMaxY;
+    return boundsJson;
+}
+
+nlohmann::json BuildArenaLayoutJson(bool bIncludeSpawnLists)
+{
+    nlohmann::json arenaJson;
+    arenaJson["name"] = "BattleGrid PvPvE Arena v1";
+    arenaJson["bounds"] = BuildArenaBoundsJson();
+
+    if (bIncludeSpawnLists)
+    {
+        arenaJson["player_spawns"] = BuildArenaPointsJson(PlayerSpawnPoints, "spawn_id");
+        arenaJson["target_cores"] = BuildArenaPointsJson(TargetCorePositions, "target_id");
+        arenaJson["bot_spawns"] = BuildArenaPointsJson(BotSpawnPoints, "bot_id");
+        arenaJson["health_pack_spawns"] = BuildArenaPointsJson(HealthPackSpawnPoints, "spawn_id");
+    }
+
+    return arenaJson;
+}
 
 double Dot(const Vec3& lhs, const Vec3& rhs)
 {
@@ -132,17 +254,21 @@ Vec3 BuildShotDirection(const PlayerInput& input)
 
 void AssignRespawnPosition(PlayerState& player)
 {
-    const int spawnIndex = static_cast<int>((player.playerId - 1) % 4);
-    const Vec3 spawnPoints[] = {
-        {-600.0, -600.0, 0.0},
-        {600.0, -600.0, 0.0},
-        {-600.0, 600.0, 0.0},
-        {600.0, 600.0, 0.0},
-    };
+    const std::size_t spawnIndex = static_cast<std::size_t>(
+        (player.playerId - 1) % PlayerSpawnPoints.size()
+    );
+    const ArenaPoint& spawnPoint = PlayerSpawnPoints[spawnIndex];
 
-    player.x = spawnPoints[spawnIndex].x;
-    player.y = spawnPoints[spawnIndex].y;
-    player.z = spawnPoints[spawnIndex].z;
+    player.x = spawnPoint.x;
+    player.y = spawnPoint.y;
+    player.z = spawnPoint.z;
+
+    std::ostringstream logMessage;
+    logMessage
+        << "Player spawn player_id=" << player.playerId
+        << " x=" << player.x
+        << " y=" << player.y;
+    Logger::Info(logMessage.str());
 }
 
 nlohmann::json BuildPlayerSnapshotJson(const PlayerState& player)
@@ -232,6 +358,10 @@ GameRoom::GameRoom(std::uint64_t inRoomId)
       healthPackSpawnPoints(),
       nextProjectileId(1),
       healthPackRespawnCounter(0),
+      recentEvents(),
+      nextEventId(1),
+      MaxRecentEvents(20),
+      serverTimeSeconds(0.0),
       targetsInitialized(false),
       botsInitialized(false),
       healthPacksInitialized(false),
@@ -259,9 +389,18 @@ bool GameRoom::AddPlayer(std::uint64_t playerId, const std::string& nickname)
     {
         iterator->second.nickname = nickname;
         iterator->second.connected = true;
+        return false;
     }
 
-    return inserted;
+    PlayerState& player = iterator->second;
+    player.hp = player.maxHp;
+    player.alive = true;
+    player.invincible = false;
+    player.respawnTimerSeconds = 0.0;
+    player.invincibleTimerSeconds = 0.0;
+    AssignRespawnPosition(player);
+
+    return true;
 }
 
 bool GameRoom::RemovePlayer(std::uint64_t playerId)
@@ -302,6 +441,8 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
     InitializeDefaultBots();
     InitializeDefaultHealthPacks();
 
+    serverTimeSeconds += std::max(0.0, deltaSeconds);
+
     if (matchState.IsGameOver())
     {
         return;
@@ -330,8 +471,8 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
 
         player.x += moveX * player.speed * deltaSeconds;
         player.y += moveY * player.speed * deltaSeconds;
-        player.x = std::clamp(player.x, ArenaMin, ArenaMax);
-        player.y = std::clamp(player.y, ArenaMin, ArenaMax);
+        player.x = ClampX(player.x);
+        player.y = ClampY(player.y);
 
         if (
             player.latestInput.fire
@@ -396,8 +537,10 @@ nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
     json["type"] = "snapshot";
     json["tick"] = tickNumber;
     json["room_id"] = roomId;
+    json["arena"] = BuildArenaLayoutJson(true);
     json["match"] = matchState.ToJson();
     json["scoreboard"] = BuildScoreboardJson();
+    json["events"] = BuildEventsJson();
     json["players"] = nlohmann::json::array();
     json["bots"] = nlohmann::json::array();
     json["health_packs"] = nlohmann::json::array();
@@ -458,8 +601,10 @@ nlohmann::json GameRoom::ToDebugJson() const
 
     nlohmann::json json;
     json["room_id"] = roomId;
+    json["arena"] = BuildArenaLayoutJson(true);
     json["match"] = matchState.ToJson();
     json["scoreboard"] = BuildScoreboardJson();
+    json["events"] = BuildEventsJson();
     json["player_count"] = players.size();
     json["projectile_count"] = projectiles.size();
     json["target_count"] = targets.size();
@@ -564,6 +709,9 @@ std::uint64_t GameRoom::ResetMatch()
     const std::uint64_t nextMatchId = matchState.matchId + 1;
     matchState.Reset();
     matchState.matchId = nextMatchId;
+    serverTimeSeconds = 0.0;
+    recentEvents.clear();
+    nextEventId = 1;
 
     projectiles.clear();
     nextProjectileId = 1;
@@ -600,6 +748,7 @@ std::uint64_t GameRoom::ResetMatch()
         AssignRespawnPosition(player);
     }
 
+    AddCombatEvent("match_restarted", "Match restarted");
     Logger::Info("Match restarted match_id=" + std::to_string(matchState.matchId));
     return matchState.matchId;
 }
@@ -613,27 +762,12 @@ void GameRoom::InitializeDefaultTargets() const
 
     targets.clear();
 
-    struct TargetSpawn
-    {
-        std::uint64_t id;
-        double x;
-        double y;
-    };
-
-    const TargetSpawn targetSpawns[] = {
-        {1, 600.0, 0.0},
-        {2, 900.0, 300.0},
-        {3, 900.0, -300.0},
-        {4, 1200.0, 0.0},
-        {5, 1500.0, 400.0},
-    };
-
-    for (const TargetSpawn& spawn : targetSpawns)
+    for (const ArenaPoint& corePosition : TargetCorePositions)
     {
         TargetState target;
-        target.targetId = spawn.id;
-        target.x = spawn.x;
-        target.y = spawn.y;
+        target.targetId = corePosition.id;
+        target.x = corePosition.x;
+        target.y = corePosition.y;
         target.hp = 100;
         target.maxHp = 100;
         target.radius = 80.0;
@@ -642,7 +776,7 @@ void GameRoom::InitializeDefaultTargets() const
     }
 
     targetsInitialized = true;
-    Logger::Info("Initialized default server targets count=" + std::to_string(targets.size()));
+    Logger::Info("Initialized default server cores count=" + std::to_string(targets.size()));
 }
 
 void GameRoom::InitializeDefaultBots() const
@@ -654,32 +788,14 @@ void GameRoom::InitializeDefaultBots() const
 
     bots.clear();
 
-    struct BotSpawn
-    {
-        std::uint64_t id;
-        double x;
-        double y;
-    };
-
-    const BotSpawn botSpawns[] = {
-        {1, 300.0, 300.0},
-        {2, 300.0, -300.0},
-        {3, 700.0, 500.0},
-        {4, 700.0, -500.0},
-        {5, 1100.0, 500.0},
-        {6, 1100.0, -500.0},
-        {7, 1500.0, 200.0},
-        {8, 1500.0, -200.0},
-    };
-
-    for (const BotSpawn& spawn : botSpawns)
+    for (const ArenaPoint& spawn : BotSpawnPoints)
     {
         BotState bot;
         bot.botId = spawn.id;
-        bot.name = "BOT-" + std::to_string(spawn.id);
+        bot.name = spawn.label;
         bot.x = spawn.x;
         bot.y = spawn.y;
-        bot.z = 0.0;
+        bot.z = spawn.z;
         bot.yaw = 0.0;
         bot.hp = 100;
         bot.maxHp = 100;
@@ -705,16 +821,11 @@ void GameRoom::InitializeHealthPackSpawnPoints() const
         return;
     }
 
-    healthPackSpawnPoints = {
-        {-600.0, 0.0},
-        {-300.0, 500.0},
-        {-300.0, -500.0},
-        {300.0, 700.0},
-        {300.0, -700.0},
-        {800.0, 700.0},
-        {800.0, -700.0},
-        {1300.0, 0.0},
-    };
+    healthPackSpawnPoints.reserve(HealthPackSpawnPoints.size());
+    for (const ArenaPoint& spawnPoint : HealthPackSpawnPoints)
+    {
+        healthPackSpawnPoints.emplace_back(spawnPoint.x, spawnPoint.y);
+    }
 }
 
 void GameRoom::InitializeDefaultHealthPacks() const
@@ -727,19 +838,7 @@ void GameRoom::InitializeDefaultHealthPacks() const
     InitializeHealthPackSpawnPoints();
     healthPacks.clear();
 
-    struct HealthPackSpawn
-    {
-        std::uint64_t id;
-        std::size_t spawnIndex;
-    };
-
-    const HealthPackSpawn healthPackSpawns[] = {
-        {1, 0},
-        {2, 2},
-        {3, 4},
-    };
-
-    for (const HealthPackSpawn& spawn : healthPackSpawns)
+    for (const HealthPackInitialSpawn& spawn : InitialHealthPackSpawns)
     {
         if (healthPackSpawnPoints.empty())
         {
@@ -750,7 +849,7 @@ void GameRoom::InitializeDefaultHealthPacks() const
             healthPackSpawnPoints[spawn.spawnIndex % healthPackSpawnPoints.size()];
 
         HealthPackState healthPack;
-        healthPack.healthPackId = spawn.id;
+        healthPack.healthPackId = spawn.healthPackId;
         healthPack.x = spawnPoint.first;
         healthPack.y = spawnPoint.second;
         healthPack.z = 0.0;
@@ -830,6 +929,11 @@ void GameRoom::ProcessPlayerRespawns(double deltaSeconds)
             AssignRespawnPosition(player);
 
             Logger::Info("Player respawned player_id=" + std::to_string(player.playerId));
+            CombatEvent event;
+            event.type = "player_respawned";
+            event.message = player.nickname + " respawned";
+            event.actorPlayerId = player.playerId;
+            AddCombatEvent(event);
             continue;
         }
 
@@ -864,13 +968,11 @@ void GameRoom::UpdateBotRespawns(double deltaSeconds)
                 continue;
             }
 
-            const double respawnX = std::clamp(
-                300.0 + (static_cast<double>((bot.botId - 1) % 4) * 400.0),
-                ArenaMin,
-                ArenaMax
+            const std::size_t spawnIndex = static_cast<std::size_t>(
+                (bot.botId - 1) % BotSpawnPoints.size()
             );
-            const double respawnY = ((bot.botId % 2) == 0) ? -300.0 : 300.0;
-            bot.Respawn(respawnX, respawnY);
+            const ArenaPoint& spawnPoint = BotSpawnPoints[spawnIndex];
+            bot.Respawn(spawnPoint.x, spawnPoint.y);
 
             Logger::Info("Bot respawned bot_id=" + std::to_string(bot.botId));
             continue;
@@ -979,6 +1081,13 @@ void GameRoom::UpdateBotAI(double deltaSeconds)
                             << "Bot killed player bot_id=" << bot.botId
                             << " player_id=" << targetPlayer->playerId;
                         Logger::Info(killLogMessage.str());
+
+                        CombatEvent event;
+                        event.type = "bot_killed_player";
+                        event.message = bot.name + " killed " + targetPlayer->nickname;
+                        event.botId = bot.botId;
+                        event.targetPlayerId = targetPlayer->playerId;
+                        AddCombatEvent(event);
                     }
                 }
 
@@ -1001,15 +1110,17 @@ void GameRoom::UpdateBotAI(double deltaSeconds)
             if (distance < 80.0 || bot.decisionTimerSeconds <= 0.0)
             {
                 const double botFactor = static_cast<double>(bot.botId);
-                bot.wanderTargetX = std::clamp(
-                    std::fmod((botFactor * 733.0) + (bot.x * 0.37) + 2000.0, 4000.0) - 2000.0,
-                    ArenaMin,
-                    ArenaMax
+                bot.wanderTargetX = ClampX(
+                    std::fmod(
+                        (botFactor * 733.0) + (bot.x * 0.37) + ArenaWidth,
+                        ArenaWidth
+                    ) + ArenaMinX
                 );
-                bot.wanderTargetY = std::clamp(
-                    std::fmod((botFactor * 419.0) + (bot.y * 0.53) + 2000.0, 4000.0) - 2000.0,
-                    ArenaMin,
-                    ArenaMax
+                bot.wanderTargetY = ClampY(
+                    std::fmod(
+                        (botFactor * 419.0) + (bot.y * 0.53) + ArenaHeight,
+                        ArenaHeight
+                    ) + ArenaMinY
                 );
                 bot.decisionTimerSeconds = 2.0 + static_cast<double>(bot.botId % 3);
             }
@@ -1025,8 +1136,8 @@ void GameRoom::UpdateBotAI(double deltaSeconds)
             }
         }
 
-        bot.x = std::clamp(bot.x + (moveX * bot.speed * deltaSeconds), ArenaMin, ArenaMax);
-        bot.y = std::clamp(bot.y + (moveY * bot.speed * deltaSeconds), ArenaMin, ArenaMax);
+        bot.x = ClampX(bot.x + (moveX * bot.speed * deltaSeconds));
+        bot.y = ClampY(bot.y + (moveY * bot.speed * deltaSeconds));
     }
 }
 
@@ -1101,6 +1212,13 @@ void GameRoom::CheckHealthPackPickups()
                 << " hp=" << player.hp
                 << "/" << player.maxHp;
             Logger::Info(logMessage.str());
+
+            CombatEvent event;
+            event.type = "health_pack_picked";
+            event.message = player.nickname + " picked up HealthPack +" + std::to_string(healthPack.healAmount);
+            event.actorPlayerId = player.playerId;
+            event.healthPackId = healthPack.healthPackId;
+            AddCombatEvent(event);
             break;
         }
     }
@@ -1120,6 +1238,43 @@ std::pair<double, double> GameRoom::ChooseHealthPackSpawnPoint(
         (healthPackId + healthPackRespawnCounter) % healthPackSpawnPoints.size()
     );
     return healthPackSpawnPoints[spawnIndex];
+}
+
+void GameRoom::AddCombatEvent(const std::string& type, const std::string& message)
+{
+    CombatEvent event;
+    event.type = type;
+    event.message = message;
+    AddCombatEvent(event);
+}
+
+void GameRoom::AddCombatEvent(const CombatEvent& event)
+{
+    CombatEvent storedEvent = event;
+    storedEvent.eventId = nextEventId++;
+    if (storedEvent.serverTimeSeconds <= 0.0)
+    {
+        storedEvent.serverTimeSeconds = serverTimeSeconds;
+    }
+
+    recentEvents.push_back(storedEvent);
+    while (recentEvents.size() > MaxRecentEvents)
+    {
+        recentEvents.pop_front();
+    }
+
+    Logger::Info("Event: " + storedEvent.message);
+}
+
+nlohmann::json GameRoom::BuildEventsJson() const
+{
+    nlohmann::json eventsJson = nlohmann::json::array();
+    for (const CombatEvent& event : recentEvents)
+    {
+        eventsJson.push_back(event.ToJson());
+    }
+
+    return eventsJson;
 }
 
 void GameRoom::CheckMatchEndCondition()
@@ -1164,6 +1319,13 @@ void GameRoom::CheckMatchEndCondition()
         << " nickname=" << winnerNickname
         << " score=" << winnerScore;
     Logger::Info(logMessage.str());
+
+    CombatEvent event;
+    event.type = "match_ended";
+    event.message = "Match ended. Winner: "
+        + (winnerNickname.empty() ? std::string("P") + std::to_string(winnerPlayerId) : winnerNickname);
+    event.actorPlayerId = winnerPlayerId;
+    AddCombatEvent(event);
 }
 
 std::uint64_t GameRoom::DetermineWinnerPlayerId() const
@@ -1462,6 +1624,13 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
                 << " shooter=" << shooter.playerId
                 << " score=" << shooter.score;
             Logger::Info(destroyLogMessage.str());
+
+            CombatEvent event;
+            event.type = "target_destroyed";
+            event.message = shooter.nickname + " destroyed CORE-" + std::to_string(bestHit.targetId);
+            event.actorPlayerId = shooter.playerId;
+            event.targetId = bestHit.targetId;
+            AddCombatEvent(event);
         }
 
         return;
@@ -1501,6 +1670,16 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
                 << " shooter=" << shooter.playerId
                 << " score=" << shooter.score;
             Logger::Info(killLogMessage.str());
+
+            CombatEvent event;
+            event.type = "bot_killed";
+            event.message = shooter.nickname
+                + (bestHit.headshot ? " headshot " : " killed ")
+                + hitBot.name;
+            event.actorPlayerId = shooter.playerId;
+            event.botId = hitBot.botId;
+            event.headshot = bestHit.headshot;
+            AddCombatEvent(event);
         }
 
         return;
@@ -1549,6 +1728,16 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
                 << " headshot=" << (bestHit.headshot ? "true" : "false")
                 << " killer_score=" << shooter.score;
             Logger::Info(killLogMessage.str());
+
+            CombatEvent event;
+            event.type = "player_killed";
+            event.message = shooter.nickname
+                + (bestHit.headshot ? " headshot " : " killed ")
+                + victimPlayer.nickname;
+            event.actorPlayerId = shooter.playerId;
+            event.targetPlayerId = victimPlayer.playerId;
+            event.headshot = bestHit.headshot;
+            AddCombatEvent(event);
         }
     }
 }
@@ -1570,10 +1759,7 @@ void GameRoom::UpdateProjectiles(double deltaSeconds)
 
         if (
             projectile.ageSeconds > projectile.maxLifetimeSeconds
-            || projectile.x < ProjectileArenaMin
-            || projectile.x > ProjectileArenaMax
-            || projectile.y < ProjectileArenaMin
-            || projectile.y > ProjectileArenaMax
+            || !IsInsideArena(projectile.x, projectile.y)
         )
         {
             projectile.active = false;
@@ -1626,6 +1812,12 @@ void GameRoom::UpdateProjectileTargetCollisions()
                 {
                     owner->second.score += 1;
                     owner->second.targetKills += 1;
+                    CombatEvent event;
+                    event.type = "target_destroyed";
+                    event.message = owner->second.nickname + " destroyed CORE-" + std::to_string(targetId);
+                    event.actorPlayerId = owner->second.playerId;
+                    event.targetId = targetId;
+                    AddCombatEvent(event);
                     score = owner->second.score;
                 }
 
