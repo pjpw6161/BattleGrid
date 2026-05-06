@@ -80,6 +80,7 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		CurrentAmmo,
 		MagazineSize,
 		bIsReloading,
+		BattleGridController->GetLastShotSpreadDegrees(),
 		BattleGridController->GetCombatMessage(),
 		BattleGridController->HasActiveCombatMessage(),
 		BattleGridController->HasWon(),
@@ -162,11 +163,12 @@ void ABattleGridHUD::DrawHUD()
 
 	DrawText(
 		FString::Printf(
-			TEXT("Local Score: %d / %d | Server Score: %d | Ammo: %s"),
+			TEXT("Local Score: %d / %d | Server Score: %d | Ammo: %s | Spread: %.1f"),
 			BattleGridController->GetScore(),
 			BattleGridController->GetTargetScore(),
 			BattleGridController->GetOwnServerScore(),
-			*AmmoText
+			*AmmoText,
+			BattleGridController->GetLastShotSpreadDegrees()
 		),
 		FLinearColor::White,
 		HudX + 20.0f,

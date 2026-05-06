@@ -25,6 +25,7 @@ public:
 		int32 CurrentAmmo,
 		int32 MagazineSize,
 		bool bIsReloading,
+		float LastShotSpreadDegrees,
 		const FString& CombatMessage,
 		bool bShowCombatMessage,
 		bool bHasWon,

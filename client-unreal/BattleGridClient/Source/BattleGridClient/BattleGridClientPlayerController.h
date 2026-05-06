@@ -55,6 +55,7 @@ public:
 	bool IsUsingServerPositionCorrection() const;
 	bool IsAimingDownSights() const;
 	bool IsSprinting() const;
+	float GetLastShotSpreadDegrees() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputMappingContext> BattleGridMappingContext;
@@ -224,6 +225,8 @@ private:
 	void MoveRightReleased(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void FireStarted(const FInputActionValue& Value);
+	void FireEnded(const FInputActionValue& Value);
+	void TryFireWeapon();
 	void AdsStarted(const FInputActionValue& Value);
 	void AdsEnded(const FInputActionValue& Value);
 	void SprintStarted(const FInputActionValue& Value);
@@ -237,6 +240,7 @@ private:
 	void ApplyMovementAndADSState();
 	bool IsControlledPawnFalling() const;
 	FVector GetCameraRelativeMovementDirection(float ForwardAxis, float RightAxis) const;
+	FVector CalculateShotDirectionWithSpread(float SpreadDegrees) const;
 	void SendInputToServerIfNeeded();
 	void SendInputToServer(bool bForceSend);
 	void UpdateServerGhostsFromSnapshot();
@@ -261,7 +265,12 @@ private:
 	bool bADSInputHeld;
 	bool bIsADSActive;
 	bool bIsSprinting;
+	bool bFireHeld;
 	bool bPendingFireInput;
+	bool bPendingReloadInput;
+	int32 ShotSequence;
+	FVector2D LastShotDirectionServer;
+	float LastShotSpreadDegrees;
 	int32 InputSequence;
 	float LastInputSendTime;
 	float LastSentMoveForward;

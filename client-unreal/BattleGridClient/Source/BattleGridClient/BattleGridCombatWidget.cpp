@@ -14,6 +14,7 @@ void UBattleGridCombatWidget::UpdateHud(
 	int32 CurrentAmmo,
 	int32 MagazineSize,
 	bool bIsReloading,
+	float LastShotSpreadDegrees,
 	const FString& CombatMessage,
 	bool bShowCombatMessage,
 	bool bHasWon,
@@ -51,11 +52,12 @@ void UBattleGridCombatWidget::UpdateHud(
 			? FString(TEXT("Reloading..."))
 			: FString::Printf(TEXT("%d/%d"), CurrentAmmo, MagazineSize);
 		ScoreText->SetText(FText::FromString(FString::Printf(
-			TEXT("Local Score: %d / %d | Server Score: %d | Ammo: %s"),
+			TEXT("Local Score: %d / %d | Server Score: %d | Ammo: %s | Spread: %.1f"),
 			Score,
 			TargetScore,
 			ServerScore,
-			*AmmoText
+			*AmmoText,
+			LastShotSpreadDegrees
 		)));
 	}
 

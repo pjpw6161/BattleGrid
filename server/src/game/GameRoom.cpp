@@ -153,10 +153,20 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
             && player.latestInput.seq != player.lastProcessedFireSeq
         )
         {
+            double projectileDirX = player.latestInput.shotDirX;
+            double projectileDirY = player.latestInput.shotDirY;
+            const double shotDirectionLengthSquared =
+                (projectileDirX * projectileDirX) + (projectileDirY * projectileDirY);
+            if (shotDirectionLengthSquared <= 0.0001)
+            {
+                projectileDirX = player.latestInput.aimX;
+                projectileDirY = player.latestInput.aimY;
+            }
+
             SpawnProjectile(
                 player.playerId,
-                player.latestInput.aimX,
-                player.latestInput.aimY
+                projectileDirX,
+                projectileDirY
             );
             player.lastProcessedFireSeq = player.latestInput.seq;
         }
@@ -250,6 +260,14 @@ nlohmann::json GameRoom::ToDebugJson() const
         inputJson["aim_x"] = input.aimX;
         inputJson["aim_y"] = input.aimY;
         inputJson["fire"] = input.fire;
+        inputJson["reload"] = input.reload;
+        inputJson["ads"] = input.ads;
+        inputJson["sprint"] = input.sprint;
+        inputJson["jump"] = input.jump;
+        inputJson["ammo"] = input.ammo;
+        inputJson["spread_deg"] = input.spreadDegrees;
+        inputJson["shot_dir_x"] = input.shotDirX;
+        inputJson["shot_dir_y"] = input.shotDirY;
 
         nlohmann::json playerJson;
         playerJson["player_id"] = playerId;

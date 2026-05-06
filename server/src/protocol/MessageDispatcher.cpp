@@ -79,6 +79,21 @@ bool ReadBool(
 
     return value->get<bool>();
 }
+
+int ReadInt(
+    const nlohmann::json& message,
+    const char* fieldName,
+    int defaultValue
+)
+{
+    const auto value = message.find(fieldName);
+    if (value == message.end() || !value->is_number())
+    {
+        return defaultValue;
+    }
+
+    return static_cast<int>(value->get<double>());
+}
 }
 
 MessageDispatcher::MessageDispatcher(
@@ -190,6 +205,14 @@ std::string MessageDispatcher::HandleInput(const nlohmann::json& message)
     const double aimX = ReadDouble(message, "aim_x", 0.0);
     const double aimY = ReadDouble(message, "aim_y", 0.0);
     const bool fire = ReadBool(message, "fire", false);
+    const bool reload = ReadBool(message, "reload", false);
+    const bool ads = ReadBool(message, "ads", false);
+    const bool sprint = ReadBool(message, "sprint", false);
+    const bool jump = ReadBool(message, "jump", false);
+    const int ammo = ReadInt(message, "ammo", 0);
+    const double spreadDegrees = ReadDouble(message, "spread_deg", 0.0);
+    const double shotDirX = ReadDouble(message, "shot_dir_x", aimX);
+    const double shotDirY = ReadDouble(message, "shot_dir_y", aimY);
 
     if (messagePlayerId != sessionState.playerId)
     {
@@ -207,32 +230,43 @@ std::string MessageDispatcher::HandleInput(const nlohmann::json& message)
         return JsonProtocol::Error("room unavailable");
     }
 
-    const PlayerInput input{
-        sequence,
-        moveX,
-        moveY,
-        aimX,
-        aimY,
-        fire
-    };
+    PlayerInput input;
+    input.seq = sequence;
+    input.moveX = moveX;
+    input.moveY = moveY;
+    input.aimX = aimX;
+    input.aimY = aimY;
+    input.fire = fire;
+    input.reload = reload;
+    input.ads = ads;
+    input.sprint = sprint;
+    input.jump = jump;
+    input.ammo = ammo;
+    input.spreadDegrees = spreadDegrees;
+    input.shotDirX = shotDirX;
+    input.shotDirY = shotDirY;
 
     if (!room->UpdateInput(sessionState.playerId, input))
     {
         return JsonProtocol::Error("player not in room");
     }
 
-    std::ostringstream logMessage;
-    logMessage
-        << "Stored input room_id=" << sessionState.roomId
-        << " player_id=" << sessionState.playerId
-        << " seq=" << sequence
-        << " move_x=" << moveX
-        << " move_y=" << moveY
-        << " aim_x=" << aimX
-        << " aim_y=" << aimY
-        << " fire=" << (fire ? "true" : "false");
+    if (fire || reload || sequence <= 3 || sequence % 60 == 0)
+    {
+        std::ostringstream logMessage;
+        logMessage
+            << "Stored input player_id=" << sessionState.playerId
+            << " seq=" << sequence
+            << " fire=" << (fire ? "true" : "false")
+            << " reload=" << (reload ? "true" : "false")
+            << " ads=" << (ads ? "true" : "false")
+            << " sprint=" << (sprint ? "true" : "false")
+            << " jump=" << (jump ? "true" : "false")
+            << " ammo=" << ammo
+            << " spread=" << spreadDegrees;
 
-    Logger::Info(logMessage.str());
+        Logger::Info(logMessage.str());
+    }
 
     return JsonProtocol::InputAck(sequence, sessionState.playerId);
 }

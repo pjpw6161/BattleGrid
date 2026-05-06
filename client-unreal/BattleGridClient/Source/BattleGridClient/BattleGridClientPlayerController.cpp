@@ -67,7 +67,12 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bADSInputHeld = false;
 	bIsADSActive = false;
 	bIsSprinting = false;
+	bFireHeld = false;
 	bPendingFireInput = false;
+	bPendingReloadInput = false;
+	ShotSequence = 0;
+	LastShotDirectionServer = FVector2D::ZeroVector;
+	LastShotSpreadDegrees = 0.0f;
 	InputSequence = 0;
 	LastInputSendTime = 0.0f;
 	LastSentMoveForward = 0.0f;
@@ -477,6 +482,11 @@ bool ABattleGridClientPlayerController::IsSprinting() const
 	return bIsSprinting;
 }
 
+float ABattleGridClientPlayerController::GetLastShotSpreadDegrees() const
+{
+	return LastShotSpreadDegrees;
+}
+
 void ABattleGridClientPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
@@ -644,6 +654,18 @@ void ABattleGridClientPlayerController::SetupInputComponent()
 			this,
 			&ABattleGridClientPlayerController::FireStarted
 		);
+		EnhancedInputComponent->BindAction(
+			FireAction,
+			ETriggerEvent::Completed,
+			this,
+			&ABattleGridClientPlayerController::FireEnded
+		);
+		EnhancedInputComponent->BindAction(
+			FireAction,
+			ETriggerEvent::Canceled,
+			this,
+			&ABattleGridClientPlayerController::FireEnded
+		);
 	}
 	else
 	{
@@ -763,6 +785,10 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 
 	ApplyMovementAndADSState();
 	UpdateAimRotation();
+	if (bFireHeld)
+	{
+		TryFireWeapon();
+	}
 	SendInputToServerIfNeeded();
 	UpdateServerGhostsFromSnapshot();
 	UpdateServerProjectileGhostsFromSnapshot();
@@ -965,14 +991,30 @@ void ABattleGridClientPlayerController::ReloadStarted(const FInputActionValue& V
 
 	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Reload input."));
 	WeaponComponent->StartReload();
+	bPendingReloadInput = true;
+	SendInputToServer(true);
 }
 
 void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Value)
 {
 	static_cast<void>(Value);
 
+	bFireHeld = true;
+	TryFireWeapon();
+}
+
+void ABattleGridClientPlayerController::FireEnded(const FInputActionValue& Value)
+{
+	static_cast<void>(Value);
+
+	bFireHeld = false;
+}
+
+void ABattleGridClientPlayerController::TryFireWeapon()
+{
 	if (IsPlayerDead() || HasWon())
 	{
+		bFireHeld = false;
 		return;
 	}
 
@@ -999,15 +1041,20 @@ void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Val
 
 	if (!WeaponComponent->TryConsumeAmmoForShot())
 	{
-		UE_LOG(
-			LogTemp,
-			Log,
-			TEXT("[BattleGrid] Cannot fire. Ammo=%d Reloading=%s"),
-			WeaponComponent->GetCurrentAmmo(),
-			WeaponComponent->IsReloading() ? TEXT("true") : TEXT("false")
-		);
+		const bool bOutOfAmmo = WeaponComponent->GetCurrentAmmo() <= 0;
+		const bool bIsReloading = WeaponComponent->IsReloading();
+		if (bVerboseInputLogs || !bDemoMode || (bOutOfAmmo && !bIsReloading))
+		{
+			UE_LOG(
+				LogTemp,
+				Log,
+				TEXT("[BattleGrid] Cannot fire. Ammo=%d Reloading=%s"),
+				WeaponComponent->GetCurrentAmmo(),
+				bIsReloading ? TEXT("true") : TEXT("false")
+			);
+		}
 
-		if (WeaponComponent->GetCurrentAmmo() <= 0 && !WeaponComponent->IsReloading())
+		if (bOutOfAmmo && !bIsReloading)
 		{
 			WeaponComponent->StartReload();
 		}
@@ -1019,20 +1066,10 @@ void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Val
 		bIsSprinting,
 		IsControlledPawnFalling()
 	);
-	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Shot spread=%.2f"), ShotSpread);
+	LastShotSpreadDegrees = ShotSpread;
 
-	bPendingFireInput = true;
-	SendInputToServer(true);
-
-	const FRotator FireYawRotation(0.0f, GetControlRotation().Yaw, 0.0f);
-	FVector FireDirection = FireYawRotation.Vector();
-	FireDirection.Z = 0.0f;
-	FireDirection.Normalize();
-
-	if (FireDirection.IsNearlyZero())
-	{
-		FireDirection = ControlledPawn->GetActorRotation().Vector();
-	}
+	const FVector FireDirection = CalculateShotDirectionWithSpread(ShotSpread);
+	LastShotDirectionServer = ConvertUnrealDirectionToServerDirection(FireDirection);
 
 	const FVector ProjectileSpawnLocation =
 		ControlledPawn->GetActorLocation()
@@ -1060,13 +1097,22 @@ void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Val
 	))
 	{
 		LastFireTime = World->GetTimeSeconds();
-		UE_LOG(
-			LogTemp,
-			Log,
-			TEXT("[BattleGrid] Weapon fired. Ammo=%d/%d"),
-			WeaponComponent->GetCurrentAmmo(),
-			WeaponComponent->GetMagazineSize()
-		);
+		++ShotSequence;
+		bPendingFireInput = true;
+		SendInputToServer(true);
+
+		const int32 InputLogInterval = FMath::Max(1, InputAckLogInterval);
+		if (bVerboseInputLogs || !bDemoMode || ShotSequence <= 3 || ShotSequence % InputLogInterval == 0)
+		{
+			UE_LOG(
+				LogTemp,
+				Log,
+				TEXT("[BattleGrid] Weapon fired. Ammo=%d/%d Spread=%.2f"),
+				WeaponComponent->GetCurrentAmmo(),
+				WeaponComponent->GetMagazineSize(),
+				ShotSpread
+			);
+		}
 	}
 }
 
@@ -1172,6 +1218,38 @@ FVector ABattleGridClientPlayerController::GetCameraRelativeMovementDirection(
 	return MovementDirection;
 }
 
+FVector ABattleGridClientPlayerController::CalculateShotDirectionWithSpread(
+	float SpreadDegrees
+) const
+{
+	const FRotator ShotYawRotation(0.0f, GetControlRotation().Yaw, 0.0f);
+	FVector ShotDirection = ShotYawRotation.Vector();
+	ShotDirection.Z = 0.0f;
+	if (!ShotDirection.Normalize())
+	{
+		ShotDirection = FVector::ForwardVector;
+	}
+
+	const float ClampedSpreadDegrees = FMath::Max(0.0f, SpreadDegrees);
+	if (ClampedSpreadDegrees <= KINDA_SMALL_NUMBER)
+	{
+		return ShotDirection;
+	}
+
+	const float SpreadYawOffsetDegrees = FMath::RandRange(
+		-ClampedSpreadDegrees,
+		ClampedSpreadDegrees
+	);
+	ShotDirection = ShotDirection.RotateAngleAxis(SpreadYawOffsetDegrees, FVector::UpVector);
+	ShotDirection.Z = 0.0f;
+	if (!ShotDirection.Normalize())
+	{
+		ShotDirection = FVector::ForwardVector;
+	}
+
+	return ShotDirection;
+}
+
 void ABattleGridClientPlayerController::SendInputToServerIfNeeded()
 {
 	SendInputToServer(false);
@@ -1184,6 +1262,7 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 		CurrentMoveForward = 0.0f;
 		CurrentMoveRight = 0.0f;
 		bPendingFireInput = false;
+		bPendingReloadInput = false;
 		return;
 	}
 
@@ -1211,6 +1290,7 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 	if (!NetworkSubsystem || !NetworkSubsystem->IsConnected() || !NetworkSubsystem->HasJoined())
 	{
 		bPendingFireInput = false;
+		bPendingReloadInput = false;
 		return;
 	}
 
@@ -1252,6 +1332,23 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 	AimX = ServerAimDirection.X;
 	AimY = ServerAimDirection.Y;
 
+	FVector2D ServerShotDirection = ServerAimDirection;
+	if (bPendingFireInput && LastShotDirectionServer.SizeSquared() > KINDA_SMALL_NUMBER)
+	{
+		ServerShotDirection = LastShotDirectionServer;
+	}
+
+	int32 CurrentAmmo = 0;
+	if (const ABattleGridClientCharacter* BattleGridCharacter =
+		Cast<ABattleGridClientCharacter>(GetPawn()))
+	{
+		if (const UBattleGridWeaponComponent* WeaponComponent =
+			BattleGridCharacter->GetWeaponComponent())
+		{
+			CurrentAmmo = WeaponComponent->GetCurrentAmmo();
+		}
+	}
+
 	constexpr float InputChangeThreshold = 0.01f;
 	const bool bMovementChanged =
 		!bHasLastSentInput
@@ -1265,6 +1362,7 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 		!bForceSend
 		&& !bHasMovementInput
 		&& !bPendingFireInput
+		&& !bPendingReloadInput
 		&& !bMovementChanged
 		&& !bAimChanged
 	)
@@ -1273,20 +1371,24 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 	}
 
 	const bool bFire = bPendingFireInput;
+	const bool bReload = bPendingReloadInput;
+	const bool bJump = IsControlledPawnFalling();
 	++InputSequence;
 	LastInputSendTime = CurrentTime;
 
 	const int32 InputLogInterval = FMath::Max(1, InputAckLogInterval);
-	if ((bVerboseInputLogs || !bDemoMode) && (bFire || InputSequence % InputLogInterval == 0))
+	if ((bVerboseInputLogs || !bDemoMode) && (bFire || bReload || InputSequence % InputLogInterval == 0))
 	{
 		UE_LOG(
 			LogTemp,
 			Log,
-			TEXT("[BattleGrid] Aim convert unreal=(%.2f,%.2f) server=(%.2f,%.2f)"),
+			TEXT("[BattleGrid] Aim convert unreal=(%.2f,%.2f) server=(%.2f,%.2f) shot=(%.2f,%.2f)"),
 			UnrealAimDirection.X,
 			UnrealAimDirection.Y,
 			AimX,
-			AimY
+			AimY,
+			ServerShotDirection.X,
+			ServerShotDirection.Y
 		);
 	}
 
@@ -1296,7 +1398,15 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 		ServerMoveY,
 		AimX,
 		AimY,
-		bFire
+		ServerShotDirection.X,
+		ServerShotDirection.Y,
+		bFire,
+		bReload,
+		bIsADSActive,
+		bIsSprinting,
+		bJump,
+		CurrentAmmo,
+		LastShotSpreadDegrees
 	);
 
 	LastSentMoveForward = ServerMoveY;
@@ -1308,6 +1418,10 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 	if (bFire)
 	{
 		bPendingFireInput = false;
+	}
+	if (bReload)
+	{
+		bPendingReloadInput = false;
 	}
 }
 

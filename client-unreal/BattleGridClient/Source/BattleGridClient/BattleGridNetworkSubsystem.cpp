@@ -104,7 +104,15 @@ void UBattleGridNetworkSubsystem::SendInput(
 	float MoveY,
 	float AimX,
 	float AimY,
-	bool bFire
+	float ShotDirX,
+	float ShotDirY,
+	bool bFire,
+	bool bReload,
+	bool bADS,
+	bool bSprint,
+	bool bJump,
+	int32 Ammo,
+	float SpreadDegrees
 )
 {
 	if (!Socket.IsValid() || !Socket->IsConnected() || !bHasJoined)
@@ -120,7 +128,15 @@ void UBattleGridNetworkSubsystem::SendInput(
 	JsonObject->SetNumberField(TEXT("move_y"), MoveY);
 	JsonObject->SetNumberField(TEXT("aim_x"), AimX);
 	JsonObject->SetNumberField(TEXT("aim_y"), AimY);
+	JsonObject->SetNumberField(TEXT("shot_dir_x"), ShotDirX);
+	JsonObject->SetNumberField(TEXT("shot_dir_y"), ShotDirY);
 	JsonObject->SetBoolField(TEXT("fire"), bFire);
+	JsonObject->SetBoolField(TEXT("reload"), bReload);
+	JsonObject->SetBoolField(TEXT("ads"), bADS);
+	JsonObject->SetBoolField(TEXT("sprint"), bSprint);
+	JsonObject->SetBoolField(TEXT("jump"), bJump);
+	JsonObject->SetNumberField(TEXT("ammo"), Ammo);
+	JsonObject->SetNumberField(TEXT("spread_deg"), SpreadDegrees);
 
 	if (SendJsonObject(JsonObject, nullptr))
 	{
@@ -132,7 +148,16 @@ void UBattleGridNetworkSubsystem::SendInput(
 			|| InputSendLogCounter % EffectiveInputLogInterval == 0
 		)
 		{
-			UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Sent input seq=%d"), Seq);
+			UE_LOG(
+				LogTemp,
+				Log,
+				TEXT("[BattleGrid] Sent input seq=%d fire=%s reload=%s ammo=%d spread=%.2f"),
+				Seq,
+				bFire ? TEXT("true") : TEXT("false"),
+				bReload ? TEXT("true") : TEXT("false"),
+				Ammo,
+				SpreadDegrees
+			);
 		}
 	}
 }

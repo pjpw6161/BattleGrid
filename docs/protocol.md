@@ -57,7 +57,15 @@ Rules:
   "move_y": 0.0,
   "aim_x": 1.0,
   "aim_y": 0.0,
-  "fire": false
+  "shot_dir_x": 1.0,
+  "shot_dir_y": 0.0,
+  "fire": false,
+  "reload": false,
+  "ads": false,
+  "sprint": false,
+  "jump": false,
+  "ammo": 30,
+  "spread_deg": 0.8
 }
 ```
 
@@ -69,7 +77,17 @@ Fields:
 - `move_y`: server logical Y movement axis.
 - `aim_x`: server logical X aim direction.
 - `aim_y`: server logical Y aim direction.
+- `shot_dir_x`: server logical X shot direction after local spread is applied.
+- `shot_dir_y`: server logical Y shot direction after local spread is applied.
 - `fire`: true when a fire input occurred on this packet.
+- `reload`: true when a reload input occurred on this packet.
+- `ads`: true while the client is aiming down sights.
+- `sprint`: true while the client is sprinting.
+- `jump`: true while the client is jumping or falling.
+- `ammo`: client-side magazine ammo count after local weapon processing.
+- `spread_deg`: client-side spread value used for this shot/input.
+
+`aim_x` / `aim_y` represent the intentional camera aim direction. `shot_dir_x` / `shot_dir_y` represent the actual shot direction after spread. If `shot_dir_x` and `shot_dir_y` are missing, the server falls back to `aim_x` and `aim_y`.
 
 Expected response:
 
@@ -87,6 +105,7 @@ Rules:
 - Message `player_id` must match the joined session.
 - Accepted input replaces the player's latest stored `PlayerInput`.
 - Fire input spawns one projectile during the server tick when the sequence has not already been processed.
+- Server projectiles use `shot_dir_x` / `shot_dir_y` when present, otherwise `aim_x` / `aim_y`.
 
 ### `debug_room`
 
@@ -166,7 +185,15 @@ Expected response:
         "move_y": 0.0,
         "aim_x": 1.0,
         "aim_y": 0.0,
-        "fire": false
+        "shot_dir_x": 1.0,
+        "shot_dir_y": 0.0,
+        "fire": false,
+        "reload": false,
+        "ads": false,
+        "sprint": false,
+        "jump": false,
+        "ammo": 30,
+        "spread_deg": 0.8
       }
     }
   ],
@@ -291,6 +318,7 @@ Mismatched player ID:
 - Player IDs are process-local and reset when the server restarts.
 - Movement integrates latest input at a fixed speed and clamps to the arena.
 - Fire input creates server projectiles.
+- Server projectiles use the spread-adjusted `shot_dir_x` / `shot_dir_y` fields when available.
 - Server projectiles move, expire, and collide with fixed server targets.
 - Server target HP decreases on projectile hit.
 - The projectile owner gains server score when a server target dies.
@@ -301,6 +329,7 @@ Mismatched player ID:
 - No authentication.
 - No real multiple-room support.
 - No server-side player damage.
+- No authoritative server hitscan combat yet.
 - No target respawn.
 - No authoritative synchronization with Unreal-placed local targets.
 - No persistence or database.

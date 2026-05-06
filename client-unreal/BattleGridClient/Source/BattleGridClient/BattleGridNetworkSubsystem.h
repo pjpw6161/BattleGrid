@@ -96,7 +96,22 @@ public:
 	void Disconnect();
 	void SendPing();
 	void SendJoin();
-	void SendInput(int32 Seq, float MoveX, float MoveY, float AimX, float AimY, bool bFire);
+	void SendInput(
+		int32 Seq,
+		float MoveX,
+		float MoveY,
+		float AimX,
+		float AimY,
+		float ShotDirX,
+		float ShotDirY,
+		bool bFire,
+		bool bReload,
+		bool bADS,
+		bool bSprint,
+		bool bJump,
+		int32 Ammo,
+		float SpreadDegrees
+	);
 	void ConfigureDemoLogging(
 		bool bInVerboseNetworkLogs,
 		bool bInVerboseSnapshotLogs,
