@@ -20,6 +20,10 @@ struct CombatEvent
     std::uint64_t targetId = 0;
     std::uint64_t healthPackId = 0;
     bool headshot = false;
+    bool victimIsPlayer = false;
+    bool victimIsBot = false;
+    bool killerIsBot = false;
+    bool killerIsPlayer = false;
     int damage = 0;
     std::string hitGroup;
     double hitX = 0.0;

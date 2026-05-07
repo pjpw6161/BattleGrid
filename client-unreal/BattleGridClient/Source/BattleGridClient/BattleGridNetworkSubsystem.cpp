@@ -13,14 +13,35 @@
 
 namespace
 {
-FString BuildShotResultDisplayText(const FBattleGridServerCombatEvent& Event)
+FString BuildShotResultDisplayText(
+	const FBattleGridServerCombatEvent& Event,
+	int32 LocalPlayerId
+)
 {
+	if (Event.Type == TEXT("bot_shot_hit_player") && Event.TargetPlayerId == LocalPlayerId)
+	{
+		const FString DamageText = Event.Damage > 0
+			? FString::Printf(TEXT(" -%d"), Event.Damage)
+			: FString();
+		return Event.bHeadshot
+			? FString::Printf(TEXT("BOT HEADSHOT YOU%s"), *DamageText)
+			: FString::Printf(TEXT("BOT HIT YOU%s"), *DamageText);
+	}
+
+	if (Event.Type == TEXT("bot_killed_player") && Event.TargetPlayerId == LocalPlayerId)
+	{
+		const FString BotLabel = Event.BotId > 0
+			? FString::Printf(TEXT("BOT-%d"), Event.BotId)
+			: FString(TEXT("BOT"));
+		return FString::Printf(TEXT("KILLED BY %s"), *BotLabel);
+	}
+
 	if (!Event.ShortMessage.IsEmpty())
 	{
 		return Event.ShortMessage;
 	}
 
-	if (Event.Type == TEXT("shot_miss"))
+	if (Event.Type == TEXT("shot_miss") || Event.Type == TEXT("bot_shot_miss"))
 	{
 		return TEXT("SERVER MISS");
 	}
@@ -54,6 +75,43 @@ FString BuildShotResultDisplayText(const FBattleGridServerCombatEvent& Event)
 bool ShouldShowInPersistentCombatFeed(const FBattleGridServerCombatEvent& Event)
 {
 	return !Event.Type.StartsWith(TEXT("shot_"));
+}
+
+bool IsKillFeedEvent(const FBattleGridServerCombatEvent& Event)
+{
+	return Event.Type == TEXT("bot_killed")
+		|| Event.Type == TEXT("player_killed")
+		|| Event.Type == TEXT("bot_killed_player");
+}
+
+TArray<FBattleGridServerScoreboardEntry> BuildSortedKillRaceScoreboard(
+	const TArray<FBattleGridServerScoreboardEntry>& Scoreboard
+)
+{
+	TArray<FBattleGridServerScoreboardEntry> SortedScoreboard = Scoreboard;
+	SortedScoreboard.Sort(
+		[](const FBattleGridServerScoreboardEntry& Left, const FBattleGridServerScoreboardEntry& Right)
+		{
+			if (Left.Score != Right.Score)
+			{
+				return Left.Score > Right.Score;
+			}
+			if (Left.PlayerKills != Right.PlayerKills)
+			{
+				return Left.PlayerKills > Right.PlayerKills;
+			}
+			if (Left.BotKills != Right.BotKills)
+			{
+				return Left.BotKills > Right.BotKills;
+			}
+			if (Left.Deaths != Right.Deaths)
+			{
+				return Left.Deaths < Right.Deaths;
+			}
+			return Left.PlayerId < Right.PlayerId;
+		}
+	);
+	return SortedScoreboard;
 }
 }
 
@@ -466,29 +524,8 @@ FString UBattleGridNetworkSubsystem::GetServerScoreboardCompactText() const
 		return TEXT("Ranking: - | You: -");
 	}
 
-	TArray<FBattleGridServerScoreboardEntry> SortedScoreboard = LatestScoreboard;
-	SortedScoreboard.Sort(
-		[](const FBattleGridServerScoreboardEntry& Left, const FBattleGridServerScoreboardEntry& Right)
-		{
-			if (Left.Score != Right.Score)
-			{
-				return Left.Score > Right.Score;
-			}
-			if (Left.PlayerKills != Right.PlayerKills)
-			{
-				return Left.PlayerKills > Right.PlayerKills;
-			}
-			if (Left.BotKills != Right.BotKills)
-			{
-				return Left.BotKills > Right.BotKills;
-			}
-			if (Left.Deaths != Right.Deaths)
-			{
-				return Left.Deaths < Right.Deaths;
-			}
-			return Left.PlayerId < Right.PlayerId;
-		}
-	);
+	TArray<FBattleGridServerScoreboardEntry> SortedScoreboard =
+		BuildSortedKillRaceScoreboard(LatestScoreboard);
 
 	TArray<FString> TopEntries;
 	const int32 TopCount = FMath::Min(5, SortedScoreboard.Num());
@@ -747,29 +784,8 @@ FString UBattleGridNetworkSubsystem::GetMatchHeaderText() const
 
 FString UBattleGridNetworkSubsystem::GetScoreboardTableText() const
 {
-	TArray<FBattleGridServerScoreboardEntry> SortedScoreboard = LatestScoreboard;
-	SortedScoreboard.Sort(
-		[](const FBattleGridServerScoreboardEntry& Left, const FBattleGridServerScoreboardEntry& Right)
-		{
-			if (Left.Score != Right.Score)
-			{
-				return Left.Score > Right.Score;
-			}
-			if (Left.PlayerKills != Right.PlayerKills)
-			{
-				return Left.PlayerKills > Right.PlayerKills;
-			}
-			if (Left.BotKills != Right.BotKills)
-			{
-				return Left.BotKills > Right.BotKills;
-			}
-			if (Left.Deaths != Right.Deaths)
-			{
-				return Left.Deaths < Right.Deaths;
-			}
-			return Left.PlayerId < Right.PlayerId;
-		}
-	);
+	TArray<FBattleGridServerScoreboardEntry> SortedScoreboard =
+		BuildSortedKillRaceScoreboard(LatestScoreboard);
 
 	TArray<FString> Lines;
 	Lines.Add(TEXT("Rank | Player | Kills | D | Bot | PvP"));
@@ -796,6 +812,45 @@ FString UBattleGridNetworkSubsystem::GetScoreboardTableText() const
 	if (SortedScoreboard.Num() == 0)
 	{
 		Lines.Add(TEXT("- | No server ranking yet | - | - | - | -"));
+	}
+
+	return FString::Join(Lines, TEXT("\n"));
+}
+
+FString UBattleGridNetworkSubsystem::GetTopFiveRankingText() const
+{
+	if (!bIsConnected || !bHasJoined)
+	{
+		return TEXT("TOP 5\nWaiting...");
+	}
+
+	TArray<FBattleGridServerScoreboardEntry> SortedScoreboard =
+		BuildSortedKillRaceScoreboard(LatestScoreboard);
+	if (SortedScoreboard.Num() == 0)
+	{
+		return TEXT("TOP 5\nWaiting...");
+	}
+
+	TArray<FString> Lines;
+	Lines.Add(TEXT("TOP 5"));
+
+	const int32 TopCount = FMath::Min(5, SortedScoreboard.Num());
+	for (int32 Index = 0; Index < TopCount; ++Index)
+	{
+		const FBattleGridServerScoreboardEntry& Entry = SortedScoreboard[Index];
+		const FString Name = Entry.Nickname.IsEmpty()
+			? FString::Printf(TEXT("P%d"), Entry.PlayerId)
+			: Entry.Nickname;
+		const FString OwnPrefix = Entry.PlayerId == PlayerId
+			? FString(TEXT("YOU "))
+			: FString();
+		Lines.Add(FString::Printf(
+			TEXT("%d. %s%s  %d K"),
+			Index + 1,
+			*OwnPrefix,
+			*Name,
+			Entry.Score
+		));
 	}
 
 	return FString::Join(Lines, TEXT("\n"));
@@ -835,6 +890,111 @@ FString UBattleGridNetworkSubsystem::GetCombatEventFeedText() const
 	return FString::Join(EventLines, TEXT("\n"));
 }
 
+void UBattleGridNetworkSubsystem::GetKillFeedLines(TArray<FBattleGridKillFeedLine>& OutLines) const
+{
+	OutLines.Reset();
+
+	auto GetPlayerDisplayName = [this](int32 InPlayerId) -> FString
+	{
+		if (const FBattleGridServerPlayerSnapshot* PlayerSnapshot =
+			LatestPlayerSnapshots.Find(InPlayerId))
+		{
+			if (!PlayerSnapshot->Nickname.IsEmpty())
+			{
+				return PlayerSnapshot->Nickname;
+			}
+		}
+
+		if (InPlayerId == PlayerId && !Nickname.IsEmpty())
+		{
+			return Nickname;
+		}
+
+		return InPlayerId > 0
+			? FString::Printf(TEXT("P%d"), InPlayerId)
+			: FString(TEXT("unknown"));
+	};
+
+	auto GetBotDisplayName = [this](int32 InBotId) -> FString
+	{
+		if (const FBattleGridServerBotSnapshot* BotSnapshot =
+			LatestBotSnapshots.Find(InBotId))
+		{
+			if (!BotSnapshot->Name.IsEmpty())
+			{
+				return BotSnapshot->Name;
+			}
+		}
+
+		return InBotId > 0
+			? FString::Printf(TEXT("BOT-%d"), InBotId)
+			: FString(TEXT("BOT"));
+	};
+
+	for (int32 Index = RecentCombatEvents.Num() - 1; Index >= 0 && OutLines.Num() < 5; --Index)
+	{
+		const FBattleGridServerCombatEvent& Event = RecentCombatEvents[Index];
+		if (!IsKillFeedEvent(Event))
+		{
+			continue;
+		}
+
+		FBattleGridKillFeedLine Line;
+		Line.EventId = Event.EventId;
+		Line.Color = FLinearColor(0.82f, 0.84f, 0.86f, 1.0f);
+
+		if (Event.Type == TEXT("bot_killed"))
+		{
+			const FString BotName = GetBotDisplayName(Event.BotId);
+			if (Event.ActorPlayerId == PlayerId)
+			{
+				Line.Text = FString::Printf(TEXT("You killed %s"), *BotName);
+				Line.Color = FLinearColor(0.1f, 1.0f, 0.25f, 1.0f);
+			}
+			else
+			{
+				Line.Text = FString::Printf(
+					TEXT("%s killed %s"),
+					*GetPlayerDisplayName(Event.ActorPlayerId),
+					*BotName
+				);
+			}
+		}
+		else if (Event.Type == TEXT("player_killed"))
+		{
+			const FString VictimName = GetPlayerDisplayName(Event.TargetPlayerId);
+			if (Event.ActorPlayerId == PlayerId)
+			{
+				Line.Text = FString::Printf(TEXT("You killed %s"), *VictimName);
+				Line.Color = FLinearColor(0.1f, 1.0f, 0.25f, 1.0f);
+			}
+			else
+			{
+				Line.Text = FString::Printf(
+					TEXT("%s killed %s"),
+					*GetPlayerDisplayName(Event.ActorPlayerId),
+					*VictimName
+				);
+				Line.Color = FLinearColor(1.0f, 0.16f, 0.12f, 1.0f);
+			}
+		}
+		else if (Event.Type == TEXT("bot_killed_player"))
+		{
+			Line.Text = FString::Printf(
+				TEXT("%s killed %s"),
+				*GetBotDisplayName(Event.BotId),
+				*GetPlayerDisplayName(Event.TargetPlayerId)
+			);
+			Line.Color = FLinearColor(1.0f, 0.16f, 0.12f, 1.0f);
+		}
+
+		if (!Line.Text.IsEmpty())
+		{
+			OutLines.Add(Line);
+		}
+	}
+}
+
 FString UBattleGridNetworkSubsystem::GetLastShotResultMessage() const
 {
 	return HasRecentShotResult() ? LastShotResultMessage : FString();
@@ -865,11 +1025,13 @@ FString UBattleGridNetworkSubsystem::GetServerScoreboardSummaryText() const
 	const int32 Minutes = TotalSeconds / 60;
 	const int32 Seconds = TotalSeconds % 60;
 
+	const TArray<FBattleGridServerScoreboardEntry> SortedScoreboard =
+		BuildSortedKillRaceScoreboard(LatestScoreboard);
 	TArray<FString> TopEntries;
-	const int32 TopCount = FMath::Min(5, LatestScoreboard.Num());
+	const int32 TopCount = FMath::Min(5, SortedScoreboard.Num());
 	for (int32 Index = 0; Index < TopCount; ++Index)
 	{
-		const FBattleGridServerScoreboardEntry& Entry = LatestScoreboard[Index];
+		const FBattleGridServerScoreboardEntry& Entry = SortedScoreboard[Index];
 		const FString Name = Entry.Nickname.IsEmpty()
 			? FString::Printf(TEXT("P%d"), Entry.PlayerId)
 			: Entry.Nickname;
@@ -877,7 +1039,7 @@ FString UBattleGridNetworkSubsystem::GetServerScoreboardSummaryText() const
 	}
 
 	int32 OwnScore = 0;
-	for (const FBattleGridServerScoreboardEntry& Entry : LatestScoreboard)
+	for (const FBattleGridServerScoreboardEntry& Entry : SortedScoreboard)
 	{
 		if (Entry.PlayerId == PlayerId)
 		{
@@ -1247,6 +1409,10 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			double HitYValue = 0.0;
 			double HitZValue = 0.0;
 			bool bHeadshotValue = false;
+			bool bVictimIsPlayerValue = false;
+			bool bVictimIsBotValue = false;
+			bool bKillerIsBotValue = false;
+			bool bKillerIsPlayerValue = false;
 
 			EventObject->TryGetNumberField(TEXT("event_id"), EventIdValue);
 			EventObject->TryGetStringField(TEXT("type"), Event.Type);
@@ -1259,6 +1425,10 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			EventObject->TryGetNumberField(TEXT("target_id"), TargetIdValue);
 			EventObject->TryGetNumberField(TEXT("health_pack_id"), HealthPackIdValue);
 			EventObject->TryGetBoolField(TEXT("headshot"), bHeadshotValue);
+			EventObject->TryGetBoolField(TEXT("victim_is_player"), bVictimIsPlayerValue);
+			EventObject->TryGetBoolField(TEXT("victim_is_bot"), bVictimIsBotValue);
+			EventObject->TryGetBoolField(TEXT("killer_is_bot"), bKillerIsBotValue);
+			EventObject->TryGetBoolField(TEXT("killer_is_player"), bKillerIsPlayerValue);
 			EventObject->TryGetNumberField(TEXT("damage"), DamageValue);
 			EventObject->TryGetStringField(TEXT("hit_group"), Event.HitGroup);
 			EventObject->TryGetNumberField(TEXT("hit_x"), HitXValue);
@@ -1273,6 +1443,10 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			Event.TargetId = static_cast<int32>(TargetIdValue);
 			Event.HealthPackId = static_cast<int32>(HealthPackIdValue);
 			Event.bHeadshot = bHeadshotValue;
+			Event.bVictimIsPlayer = bVictimIsPlayerValue;
+			Event.bVictimIsBot = bVictimIsBotValue;
+			Event.bKillerIsBot = bKillerIsBotValue;
+			Event.bKillerIsPlayer = bKillerIsPlayerValue;
 			Event.Damage = static_cast<int32>(DamageValue);
 			Event.HitX = static_cast<float>(HitXValue);
 			Event.HitY = static_cast<float>(HitYValue);
@@ -1291,9 +1465,16 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			}
 
 			UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Combat event: %s"), *Event.Message);
-			if (Event.Type.StartsWith(TEXT("shot_")))
+			const bool bIsServerShotResult =
+				Event.Type.StartsWith(TEXT("shot_"))
+				|| Event.Type.StartsWith(TEXT("bot_shot_"))
+				|| (
+					Event.Type == TEXT("bot_killed_player")
+					&& Event.TargetPlayerId == PlayerId
+				);
+			if (bIsServerShotResult)
 			{
-				LastShotResultMessage = BuildShotResultDisplayText(Event);
+				LastShotResultMessage = BuildShotResultDisplayText(Event, PlayerId);
 				LastShotResultTimestampSeconds = FPlatformTime::Seconds();
 				UE_LOG(
 					LogTemp,
@@ -1400,24 +1581,31 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			FBattleGridServerProjectileSnapshot ProjectileSnapshot;
 			double ProjectileIdValue = 0.0;
 			double OwnerPlayerIdValue = 0.0;
+			double OwnerBotIdValue = 0.0;
 			double XValue = 0.0;
 			double YValue = 0.0;
 			double DirXValue = 1.0;
 			double DirYValue = 0.0;
+			bool bVisualOnlyValue = false;
 
 			ProjectileObject->TryGetNumberField(TEXT("projectile_id"), ProjectileIdValue);
 			ProjectileObject->TryGetNumberField(TEXT("owner_player_id"), OwnerPlayerIdValue);
+			ProjectileObject->TryGetStringField(TEXT("owner_type"), ProjectileSnapshot.OwnerType);
+			ProjectileObject->TryGetNumberField(TEXT("owner_bot_id"), OwnerBotIdValue);
 			ProjectileObject->TryGetNumberField(TEXT("x"), XValue);
 			ProjectileObject->TryGetNumberField(TEXT("y"), YValue);
 			ProjectileObject->TryGetNumberField(TEXT("dir_x"), DirXValue);
 			ProjectileObject->TryGetNumberField(TEXT("dir_y"), DirYValue);
+			ProjectileObject->TryGetBoolField(TEXT("visual_only"), bVisualOnlyValue);
 
 			ProjectileSnapshot.ProjectileId = static_cast<int32>(ProjectileIdValue);
 			ProjectileSnapshot.OwnerPlayerId = static_cast<int32>(OwnerPlayerIdValue);
+			ProjectileSnapshot.OwnerBotId = static_cast<int32>(OwnerBotIdValue);
 			ProjectileSnapshot.X = static_cast<float>(XValue);
 			ProjectileSnapshot.Y = static_cast<float>(YValue);
 			ProjectileSnapshot.DirX = static_cast<float>(DirXValue);
 			ProjectileSnapshot.DirY = static_cast<float>(DirYValue);
+			ProjectileSnapshot.bVisualOnly = bVisualOnlyValue;
 
 			if (ProjectileSnapshot.ProjectileId > 0)
 			{

@@ -3,11 +3,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "BattleGridNetworkSubsystem.h"
 #include "Blueprint/UserWidget.h"
 #include "BattleGridCombatWidget.generated.h"
 
 class UProgressBar;
 class UTextBlock;
+class UBorder;
 
 UCLASS(Blueprintable)
 class BATTLEGRIDCLIENT_API UBattleGridCombatWidget : public UUserWidget
@@ -50,12 +52,38 @@ public:
 		bool bUseServerCorrection,
 		bool bShowScoreboard,
 		const FString& ScoreboardText,
+		const FString& TopFiveRankingText,
+		bool bShowRanking,
 		const FString& ServerCombatEventFeedText,
 		const FString& ServerShotResultText,
+		const TArray<FBattleGridKillFeedLine>& KillFeedLines,
+		bool bShowKillFeed,
+		float CurrentSpreadDegrees,
+		bool bCrosshairADS,
+		bool bCrosshairSprinting,
+		bool bCrosshairJumping,
+		bool bCrosshairReloading,
+		bool bCrosshairServerDead,
+		bool bShowCrosshair,
 		const FString& LocalDebugHudText
 	);
 
+protected:
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
 private:
+	void UpdateKillFeed(const TArray<FBattleGridKillFeedLine>& Lines, bool bShowKillFeed);
+	void UpdateCrosshair(
+		float DeltaTime,
+		float SpreadDegrees,
+		bool bADS,
+		bool bSprinting,
+		bool bJumping,
+		bool bReloading,
+		bool bServerDead,
+		bool bShowCrosshair
+	);
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	UProgressBar* HealthBar;
 
@@ -73,4 +101,67 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	UTextBlock* CrosshairText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> RankingText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> KillFeedLine1;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> KillFeedLine2;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> KillFeedLine3;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> KillFeedLine4;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> KillFeedLine5;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> CrosshairTop;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> CrosshairBottom;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> CrosshairLeft;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> CrosshairRight;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> CrosshairCenter;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Crosshair", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+	float CrosshairMinGap = 8.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Crosshair", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+	float CrosshairMaxGap = 46.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Crosshair", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+	float CrosshairInterpSpeed = 18.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Crosshair", meta = (AllowPrivateAccess = "true"))
+	FLinearColor CrosshairNormalColor = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Crosshair", meta = (AllowPrivateAccess = "true"))
+	FLinearColor CrosshairAdsColor = FLinearColor(0.6f, 1.0f, 0.6f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Crosshair", meta = (AllowPrivateAccess = "true"))
+	FLinearColor CrosshairBadAccuracyColor = FLinearColor(1.0f, 0.75f, 0.25f, 1.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Crosshair", meta = (AllowPrivateAccess = "true"))
+	FLinearColor CrosshairUnavailableColor = FLinearColor(1.0f, 1.0f, 1.0f, 0.35f);
+
+	float CurrentCrosshairGap = 20.0f;
+	float LatestCrosshairSpreadDegrees = 3.5f;
+	bool bLatestCrosshairADS = false;
+	bool bLatestCrosshairSprinting = false;
+	bool bLatestCrosshairJumping = false;
+	bool bLatestCrosshairReloading = false;
+	bool bLatestCrosshairServerDead = false;
+	bool bLatestShowCrosshair = true;
 };

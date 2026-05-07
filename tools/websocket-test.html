@@ -87,6 +87,7 @@
   <p>Target: <code>ws://127.0.0.1:7777</code></p>
   <p class="note">
     Snapshots are received continuously after join. Raw snapshot logging is disabled by default to avoid browser slowdown.
+    Bot Attacks Off means bots will move but will not shoot players.
   </p>
 
   <div class="controls">
@@ -138,7 +139,7 @@
   <section class="summary" aria-label="Latest server state summary">
     <div class="summary-card"><strong>Connection</strong><span id="connectionSummary">Disconnected</span></div>
     <div class="summary-card"><strong>Match</strong><span id="matchSummary">No snapshot yet</span></div>
-    <div class="summary-card"><strong>Scoreboard</strong><span id="scoreboardSummary">-</span></div>
+    <div class="summary-card"><strong>Top 5 Ranking</strong><span id="scoreboardSummary">-</span></div>
     <div class="summary-card"><strong>Players</strong><span id="playersSummary">-</span></div>
     <div class="summary-card"><strong>Bots</strong><span id="botsSummary">-</span></div>
     <div class="summary-card"><strong>Targets Debug</strong><span id="targetsSummary">disabled</span></div>
@@ -146,7 +147,7 @@
     <div class="summary-card"><strong>Projectiles</strong><span id="projectilesSummary">-</span></div>
     <div class="summary-card"><strong>Shot Result</strong><span id="shotResultSummary">-</span></div>
     <div class="summary-card"><strong>Combat Tuning</strong><span id="combatTuningSummary">Click Send Debug Room</span></div>
-    <div class="summary-card"><strong>Recent Events</strong><span id="eventsSummary">-</span></div>
+    <div class="summary-card"><strong>Recent Kill Events</strong><span id="eventsSummary">-</span></div>
   </section>
 
   <pre id="log"></pre>
@@ -357,7 +358,14 @@
     }
 
     function isShotResultEvent(event) {
-      return typeof event.type === "string" && event.type.startsWith("shot_");
+      return typeof event.type === "string" &&
+        (event.type.startsWith("shot_") || event.type.startsWith("bot_shot_"));
+    }
+
+    function isKillFeedEvent(event) {
+      return event.type === "bot_killed" ||
+        event.type === "player_killed" ||
+        event.type === "bot_killed_player";
     }
 
     function getShotTargetLabel(event) {
@@ -381,6 +389,9 @@
       if (event.type === "shot_miss") {
         return "SERVER MISS";
       }
+      if (event.type === "bot_shot_miss") {
+        return event.short_message || "BOT MISS";
+      }
 
       const targetLabel = getShotTargetLabel(event) || "TARGET";
       const damage = Number(event.damage ?? 0);
@@ -396,6 +407,12 @@
       if (event.type === "shot_miss") {
         return "SERVER MISS";
       }
+      if (event.type === "bot_shot_miss") {
+        return "BOT MISS";
+      }
+      if (event.type === "bot_shot_hit_player") {
+        return event.headshot ? "BOT HEADSHOT" : "BOT HIT";
+      }
       return event.headshot ? "SERVER HEADSHOT" : "SERVER HIT";
     }
 
@@ -406,7 +423,9 @@
 
       return (
         `Damage body/head=${latestDebugRoom.body_damage ?? 20}/${latestDebugRoom.headshot_damage ?? 40}\n` +
+        `Bot shots body/head=${latestDebugRoom.bot_body_damage ?? latestDebugRoom.bot_attack_damage ?? 10}/${latestDebugRoom.bot_headshot_damage ?? 20}\n` +
         `Difficulty=${latestDebugRoom.bot_difficulty ?? "normal"} attacks=${latestDebugRoom.bot_attacks_enabled ?? true}\n` +
+        `Bot fire=${latestDebugRoom.bot_fire_interval ?? latestDebugRoom.bot_attack_cooldown ?? 0.5}s spread=${latestDebugRoom.bot_aim_spread ?? 12}deg\n` +
         `Timer auto-end=${latestDebugRoom.auto_end_match_by_timer ?? true}\n` +
         `Kill score bot/player=${latestDebugRoom.bot_kill_score ?? 1}/${latestDebugRoom.player_kill_score ?? 1}`
       );
@@ -566,9 +585,11 @@
           log(`${getShotResultLogPrefix(event)}: ${event.message || latestShotResultMessage}`);
           continue;
         }
-        recentEventMessages.push(event.message || eventMessage);
-        if (recentEventMessages.length > 5) {
-          recentEventMessages.splice(0, recentEventMessages.length - 5);
+        if (isKillFeedEvent(event)) {
+          recentEventMessages.push(event.message || eventMessage);
+          if (recentEventMessages.length > 5) {
+            recentEventMessages.splice(0, recentEventMessages.length - 5);
+          }
         }
         if (!isShotResultEvent(event)) {
           log(eventMessage);
@@ -666,10 +687,13 @@
           );
           log(
             `bot_config damage=${message.bot_attack_damage ?? 20} ` +
+            `head=${message.bot_headshot_damage ?? 20} ` +
             `cooldown=${message.bot_attack_cooldown ?? 1} ` +
             `detect=${message.bot_detect_range ?? 1500} ` +
             `attack_range=${message.bot_attack_range ?? 900} ` +
-            `speed=${message.bot_move_speed ?? 500}`
+            `speed=${message.bot_move_speed ?? 500} ` +
+            `fire=${message.bot_fire_interval ?? 0.5} ` +
+            `spread=${message.bot_aim_spread ?? 12}`
           );
           log(
             `combat_tuning body=${message.body_damage ?? 20} ` +

@@ -18,9 +18,9 @@ The BattleGrid server is a C++20 CMake application that accepts WebSocket JSON c
 - `CombatEvent`: compact recent server event for kill feed and demo feedback.
 - `PlayerState`: player identity, nickname, connected flag, latest input, position, speed, HP, score, and processed fire sequence.
 - `PlayerInput`: latest input packet fields.
-- `BotState`: server-controlled PvE combatant state, movement target, HP, respawn, invincibility, and simple attack timers.
+- `BotState`: server-controlled PvE combatant state, movement target, HP, respawn, invincibility, ammo, reload, fire cooldown, attack range, and accuracy.
 - `HealthPackState`: server pickup state, position, active flag, heal amount, pickup radius, and respawn timer.
-- `ProjectileState`: projectile ID, owner, position, direction, speed, age, lifetime, damage, radius, and active flag.
+- `ProjectileState`: projectile ID, owner type, owner player/bot ID, position, direction, speed, age, lifetime, damage, radius, active flag, and visual-only tracer flag.
 - `TargetState`: legacy/debug target state kept for compatibility; disabled by default in the main kill race flow.
 
 ## Startup Flow
@@ -156,7 +156,7 @@ Each tick:
 5. Active projectiles move.
 6. Legacy projectile-target collision is skipped by default and only used when target debug gameplay is enabled.
 7. Inactive projectiles are removed.
-8. Bot respawns and simple bot AI are updated.
+8. Bot respawns, weapon timers, movement, and shooter AI are updated.
 9. Health pack respawns and player pickups are processed.
 10. Match time is decremented and the win condition is checked.
 11. The default room snapshot is built.
@@ -173,7 +173,7 @@ Movement is intentionally simple:
 
 ## Projectile, Hitscan, And Bot Simulation
 
-Server projectiles spawn from the owning player's current position, offset slightly forward along the aim direction. With hitscan combat enabled, these projectiles are visual tracers and do not apply gameplay damage.
+Server projectiles spawn from the owning player or bot current position, offset slightly forward along the aim direction. With hitscan combat enabled, these projectiles are visual tracers and do not apply gameplay damage.
 
 Projectiles:
 
@@ -203,6 +203,7 @@ The current combat tuning values are centralized in `GameRoom.cpp` for demo read
 - body damage: `20`
 - headshot damage: `40`
 - hitscan range: `3000`
+- bot body/head damage: `10/20`
 - bot max HP: `100`
 - bot respawn: `8s`
 - bot invincibility after respawn: `1.5s`
@@ -277,7 +278,7 @@ Events are generated when:
 
 Snapshots and `debug_room` include the recent `events` array. Unreal deduplicates by `event_id` and displays the last few messages in the existing HUD as a simple kill feed.
 
-Shot result events use compact text such as `SERVER HIT BOT-3 -20`, `SERVER HEADSHOT BOT-3 -40`, `SERVER HIT PLAYER -20`, or `SERVER MISS`. Unreal displays these separately from the persistent event feed so automatic fire does not bury kill, death, pickup, and match events.
+Shot result events use compact text such as `SERVER HIT BOT-3 -20`, `SERVER HEADSHOT BOT-3 -40`, `SERVER HIT PLAYER -20`, `SERVER MISS`, `BOT HIT YOU -10`, or `KILLED BY BOT-3`. Unreal displays these separately from the persistent event feed so automatic fire does not bury kill, death, pickup, and match events.
 
 ## Bot AI
 
@@ -288,25 +289,27 @@ Each tick, bot logic is intentionally simple:
 1. Dead bots count down an 8 second respawn timer.
 2. Respawned bots return with full HP and 1.5 seconds of invincibility.
 3. Alive bots find the nearest alive non-invincible player within the configured detect range.
-4. If a player is found, the bot moves toward that player until it is within the configured attack range.
-5. In attack range, the bot applies configured direct body damage on its attack cooldown when bot attacks are enabled.
-6. If no player is found, the bot wanders toward deterministic arena points.
+4. If a player is found, the bot faces that player and moves toward the preferred combat range.
+5. In attack range, the bot fires low-accuracy hitscan shots when bot attacks are enabled and its weapon can fire.
+6. Bot weapons have 30-round magazines, infinite reserve ammo, 2.5 second reloads, and difficulty-controlled fire interval/spread.
+7. Bot body hits deal 10 damage and bot headshots deal 20 damage.
+8. If no player is found, the bot wanders toward deterministic arena points.
 
 `GameRoom::ApplyBotDifficulty` supports the current debug/demo profiles:
 
-| Difficulty | Damage | Cooldown | Detect Range | Attack Range | Speed |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Easy | 10 | 1.8s | 1000 | 650 | 400 |
-| Normal | 20 | 1.0s | 1500 | 900 | 500 |
-| Hard | 25 | 0.7s | 1800 | 1100 | 600 |
+| Difficulty | Body / Head | Fire Interval | Spread | Detect Range | Attack Range | Speed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Easy | 10 / 20 | 0.75s | 18 deg | 1000 | 1200 | 400 |
+| Normal | 10 / 20 | 0.5s | 12 deg | 1500 | 1400 | 500 |
+| Hard | 10 / 20 | 0.35s | 7 deg | 1800 | 1600 | 600 |
 
-`debug_set_bot_attacks` can disable bot damage while leaving bot movement, chasing, respawn, snapshots, and ghost visualization active.
+`debug_set_bot_attacks` can disable bot shooting while leaving bot movement, chasing, respawn, snapshots, and ghost visualization active.
 
 Safe demo mode applies the easy profile, disables bot attacks, disables timer-based match ending, resets players/bots/health packs, clears projectiles, resets legacy targets internally if present, and restarts the match in `in_progress`. This is the recommended startup state for portfolio recording and local combat tests.
 
-There is no navmesh, pathfinding, projectile attack, animation, or bot score yet.
+There is no navmesh, cover, humanoid animation, weapon socket, or advanced target selection yet.
 
-Bot attacks can kill players. Player death starts the same 8 second server respawn timer used by player-vs-player hitscan kills.
+Bot hitscan shots can kill players. Player death starts the same 8 second server respawn timer used by player-vs-player hitscan kills.
 
 ## Health Packs
 
@@ -376,7 +379,7 @@ This is for browser testing.
 - No database.
 - No real matchmaking.
 - No binary protocol.
-- Bot AI is direct and deterministic for debugging, with no pathfinding or projectile attacks.
+- Bot AI is direct and deterministic for debugging, with hitscan shooting but no pathfinding, cover, or animation state.
 - Health packs are server snapshot entities only; no pickup effects, sounds, or production meshes yet.
 - Legacy targets/cores are disabled by default.
 - No deployment automation yet.

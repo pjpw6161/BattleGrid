@@ -132,6 +132,41 @@ SERVER MISS
 
 Use the browser `Fire 5 Shots At Nearest Bot` button or the Unreal HUD hit marker text to verify server damage.
 
+## Humanoid Mesh Or Weapon Does Not Appear
+
+Check:
+
+- The asset was imported manually in Unreal Editor under `Content/BattleGrid/Art/...`.
+- `BP_BattleGridCharacter` has a Skeletal Mesh assigned on the inherited `Mesh` component.
+- `WeaponMeshComponent` has a Static Mesh assigned.
+- `WeaponSocketName` or `BotWeaponSocketName` matches a real socket on the active skeleton.
+- For bot ghosts, `bUseSkeletalMeshVisual=true` and `SkeletalMeshComponent` has a Skeletal Mesh assigned.
+- If no Skeletal Mesh is assigned to the bot ghost, the static placeholder is expected to remain visible.
+- If no weapon Static Mesh is assigned, the weapon component stays harmless and hidden.
+
+If the Output Log says the socket was not found, create or rename the socket in the Skeleton editor, or adjust the socket name in the Blueprint Class Defaults. The C++ fallback attaches the weapon to the mesh root so the game can continue running during setup.
+
+## Character Or Bot Is In T-Pose
+
+The Skeletal Mesh is visible but has no compatible animation setup.
+
+Fix:
+
+- Assign a compatible Animation Blueprint in the Mesh or bot `SkeletalMeshComponent` details.
+- Retarget animations if the imported asset uses a different skeleton.
+- Verify the Anim Class is saved on the active Blueprint used by the level.
+- For a demo, avoid enabling humanoid bot visuals until animation and scale are acceptable.
+
+## Bot Label Is Inside The Humanoid Mesh
+
+When bot ghost skeletal visuals are enabled, tune:
+
+- `HumanoidLabelHeight`
+- `HumanoidAliveScale`
+- `HumanoidDeadScale`
+
+These settings live on `BP_BattleGridServerBotGhostActor` under `BattleGrid|Visual`. They only affect visualization and do not change server hit volumes.
+
 ## GCP Firewall TCP 7777 Not Open
 
 If the server works on the VM but cannot be reached from your local machine, check the GCP firewall rule:
@@ -285,7 +320,7 @@ Expected response:
 {"type":"debug_ok","message":"bot attacks disabled"}
 ```
 
-Then click `Send Debug Restart Match` or wait for respawn. With `bot_attacks_enabled=false`, bots still move, chase, and appear in snapshots, but they do not damage players.
+Then click `Send Debug Restart Match` or wait for respawn. With `bot_attacks_enabled=false`, bots still move, chase, and appear in snapshots, but they do not shoot or damage players.
 
 ## Bots Kill Player Too Quickly
 
@@ -298,7 +333,9 @@ Use the debug/demo controls from `tools/websocket-test.html`:
    - `bot_attacks_enabled=false` if attacks are disabled
    - `bot_difficulty=easy`
    - `bot_attack_damage=10`
-   - `bot_attack_cooldown=1.8`
+   - `bot_headshot_damage=20`
+   - `bot_fire_interval=0.75`
+   - `bot_aim_spread=18`
 
 The equivalent JSON commands are:
 
@@ -389,8 +426,8 @@ For Unreal-only recording, enable `bApplySafeDemoModeOnJoin` in the active Playe
 Open `tools/websocket-test.html`, connect to the same server Unreal uses, then send debug commands before starting the Unreal demo or immediately after joining:
 
 - `Apply Safe Demo Mode`: resets the match, respawns players, resets bots/health packs, sets bot difficulty to easy, disables bot attacks, and disables timer-based game over.
-- `Bot Difficulty Easy`: lowers bot damage, range, speed, and attack cadence.
-- `Disable Bot Attacks`: keeps bot movement/ghosts active but prevents player damage.
+- `Bot Difficulty Easy`: lowers bot shot cadence, range, speed, and accuracy.
+- `Disable Bot Attacks`: keeps bot movement/ghosts active but prevents bot shooting and player damage.
 - `Disable Match Timer`: prevents timer-based `game_over` during long recordings.
 - `Send Debug Restart Match`: clears game-over state while preserving the current demo/debug settings.
 
@@ -423,6 +460,53 @@ The browser page now also shows a `Shot Result` summary. A valid server hit shou
 For prototype aiming, bot hitscan uses 3D head/body spheres and a forgiving 2D body fallback. The fallback is only for bot hit testing; disabling bot attacks does not make bots invulnerable.
 
 `Fire 5 Shots At Nearest Bot` sends five spread-free server fire inputs toward the nearest alive bot using the latest snapshot position. It does not rely on local projectile collision, and it keeps small delays between inputs so the browser stays responsive.
+
+## Bot Shots Do Not Appear
+
+Safe demo mode intentionally sets `bot_attacks_enabled=false`. Bots still move, but they will not fire. To test Bot Shooter AI v2:
+
+1. Click `Apply Safe Demo Mode`.
+2. Click `Enable Bot Attacks`.
+3. Click `Bot Difficulty Easy`.
+4. Stand within a bot attack range and watch for `BOT-* hit player* -10`, `BOT-* headshot player* -20`, or `BOT-* killed player*` events.
+
+If no bot shots appear, click `Send Debug Room` and confirm `bot_attacks_enabled=true`, `bot_fire_interval` is nonzero, and at least one player is alive and not invincible.
+
+## Kill Log Not Visible
+
+The kill log uses optional UMG text bindings. If it does not appear:
+
+- Add `KillFeedLine1`, `KillFeedLine2`, `KillFeedLine3`, `KillFeedLine4`, and `KillFeedLine5` TextBlocks to the active combat HUD widget.
+- Make sure each TextBlock has `Is Variable` enabled.
+- Place them on the left side of the screen.
+- Check the active PlayerController Blueprint has `BattleGrid|HUD > Show Kill Feed` enabled.
+- Confirm the server is sending kill events such as `bot_killed`, `player_killed`, or `bot_killed_player`.
+
+Shot events such as `shot_hit_bot` and `shot_miss` are intentionally not shown in the kill log. They are shown as temporary server hit marker text.
+
+## Dynamic Crosshair Not Visible
+
+The spread crosshair uses optional UMG Border bindings. If the dynamic crosshair does not appear:
+
+- Add `CrosshairTop`, `CrosshairBottom`, `CrosshairLeft`, `CrosshairRight`, and `CrosshairCenter` Border widgets to the active combat HUD widget.
+- Make sure each Border has `Is Variable` enabled.
+- Place all five widgets centered on the screen. The C++ code moves top/bottom/left/right with render translation.
+- Give the line widgets small fixed sizes, for example horizontal lines `18x3`, vertical lines `3x18`, and center `4x4`.
+- Check that `ShouldShowCrosshair()` is true by confirming the PlayerController still possesses the player pawn.
+
+If the Border widgets are missing, the old `CrosshairText` `+` fallback is used. That fallback does not show spread expansion.
+
+## Crosshair Does Not Expand Or Contract
+
+The crosshair gap comes from the current weapon spread:
+
+- ADS uses `AdsSpreadDegrees` and should be tight.
+- Hip fire uses `HipSpreadDegrees` and should be medium.
+- Sprint uses `SprintSpreadDegrees` and should be wider.
+- Jumping/falling uses `JumpSpreadDegrees` and should be widest.
+- Reloading or server-dead state dims the crosshair color.
+
+If the gap does not change, verify the PlayerController input bindings for ADS, Sprint, and Jump are assigned and that the pawn has `BattleGridWeaponComponent`.
 
 ## Local Projectile Hit Logs Do Not Mean Server Bot Damage
 

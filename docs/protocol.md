@@ -581,6 +581,8 @@ Scoreboard fields:
 - `hp`: current server player HP.
 - `alive`: whether the player is alive.
 
+The `scoreboard` array is the source for the PvPvE player ranking. It contains connected players only; bots do not appear as ranking entries. The Unreal HUD displays the top 5 entries by `score`, then `player_kills`, `bot_kills`, fewer `deaths`, and lower `player_id`.
+
 Combat event fields:
 
 - `event_id`: monotonically increasing room-local event ID for deduplication.
@@ -594,9 +596,15 @@ Combat event fields:
 - `target_id`: server target involved in the event, if any.
 - `health_pack_id`: health pack involved in the event, if any.
 - `headshot`: true for headshot kill events.
+- `victim_is_player`: true when the event victim is a player.
+- `victim_is_bot`: true when the event victim is a bot.
+- `killer_is_bot`: true when the event actor is a bot.
+- `killer_is_player`: true when the event actor is a player.
 - `damage`: damage amount for shot result events, or `0` when not applicable.
 - `hit_group`: shot result hit group such as `head`, `body`, `legacy_target`, or `miss`.
 - `hit_x`, `hit_y`, `hit_z`: approximate server-space hit position for shot result/debug display.
+
+The Unreal kill log filters combat events to `bot_killed`, `player_killed`, and `bot_killed_player`. Own kills are displayed green, player death events are displayed red, and other bot kills are displayed neutral white/gray.
 
 Current event types:
 
@@ -604,6 +612,8 @@ Current event types:
 - `shot_hit_player`
 - `shot_hit_target` legacy/debug only while targets are disabled
 - `shot_miss`
+- `bot_shot_hit_player`
+- `bot_shot_miss` optional/verbose; suppressed by default to avoid miss-event spam
 - `target_destroyed`
 - `bot_killed`
 - `player_killed`
@@ -613,7 +623,9 @@ Current event types:
 - `match_ended`
 - `match_restarted`
 
-Shot result events are emitted once per processed `fire=true` input sequence while the match is not `game_over`. They are intended for browser/Unreal hit confirmation and do not replace the scoreboard or kill events. A bot headshot can produce both a `shot_hit_bot` event and, if HP reaches zero, a later `bot_killed` event in the same snapshot event feed.
+Shot result events are emitted once per processed player `fire=true` input sequence while the match is not `game_over`. They are intended for browser/Unreal hit confirmation and do not replace the scoreboard or kill events. A bot headshot can produce both a `shot_hit_bot` event and, if HP reaches zero, a later `bot_killed` event in the same snapshot event feed.
+
+Bot shooter events are emitted when bot hitscan fire damages or kills a player. Bot miss events are intentionally quiet by default because several bots can fire at once.
 
 Example shot result event:
 
@@ -675,9 +687,12 @@ Health pack fields:
 Projectile fields:
 
 - `projectile_id`: server projectile ID.
-- `owner_player_id`: player that fired the projectile.
+- `owner_player_id`: player that fired the projectile, or `0` for non-player tracers.
+- `owner_type`: `"player"` or `"bot"`.
+- `owner_bot_id`: bot that fired the projectile when `owner_type` is `"bot"`.
 - `x`, `y`: server logical 2D projectile position.
 - `dir_x`, `dir_y`: normalized server logical movement direction.
+- `visual_only`: true for tracer projectiles that do not apply collision damage.
 
 Target fields:
 
@@ -729,11 +744,12 @@ Mismatched player ID:
 - Dead players respawn after 8 seconds and are invincible for 1.5 seconds.
 - Dead bots respawn after 8 seconds and are invincible for 1.5 seconds.
 - Bots use simple server AI: move toward the nearest alive non-invincible player inside detect range, otherwise wander.
-- Bot attack v1 applies direct body damage when in range; bot projectiles are not implemented yet.
-- Debug bot difficulty can tune bot direct-damage AI:
-  - `easy`: damage 10, cooldown 1.8s, detect range 1000, attack range 650, speed 400.
-  - `normal`: damage 20, cooldown 1.0s, detect range 1500, attack range 900, speed 500.
-  - `hard`: damage 25, cooldown 0.7s, detect range 1800, attack range 1100, speed 600.
+- Bot attacks are server hitscan gun shots with ammo, reload, low accuracy, and visual tracer projectiles.
+- Bot body damage is 10 and bot headshot damage is 20.
+- Debug bot difficulty tunes bot shooter AI:
+  - `easy`: body/head 10/20, fire interval 0.75s, spread 18 degrees, detect range 1000, attack range 1200, speed 400.
+  - `normal`: body/head 10/20, fire interval 0.5s, spread 12 degrees, detect range 1500, attack range 1400, speed 500.
+  - `hard`: body/head 10/20, fire interval 0.35s, spread 7 degrees, detect range 1800, attack range 1600, speed 600.
 - Three server health packs spawn from predefined points.
 - Alive players below max HP pick up active health packs by overlapping their pickup radius.
 - Health packs heal +35 HP, do not overheal above max HP, disappear on pickup, and respawn after 15 seconds.
@@ -749,7 +765,7 @@ Mismatched player ID:
 - No binary protocol.
 - No authentication.
 - No real multiple-room support.
-- Bot behavior is simple direct-damage AI with no pathfinding, animations, or projectile visualization.
+- Bot behavior is simple hitscan shooter AI with no pathfinding, animations, or advanced target selection.
 - Health packs are server-side snapshot entities only; there are no local pickup effects, sounds, or imported models yet.
 - No lag compensation or advanced hit validation yet.
 - Legacy targets/cores are disabled by default and kept only as debug compatibility data.

@@ -14,6 +14,11 @@ bool BotState::CanBeDamaged() const
     return IsAlive() && !invincible;
 }
 
+bool BotState::CanFire() const
+{
+    return IsAlive() && !reloading && ammo > 0 && fireCooldownSeconds <= 0.0;
+}
+
 void BotState::ApplyDamage(int damage)
 {
     if (!CanBeDamaged())
@@ -47,5 +52,58 @@ void BotState::Respawn(double newX, double newY)
     respawnTimerSeconds = 0.0;
     targetPlayerId = 0;
     attackTimerSeconds = 0.0;
+    ammo = magazineSize;
+    reloading = false;
+    reloadTimerSeconds = 0.0;
+    fireCooldownSeconds = 0.0;
+}
+
+void BotState::StartReload()
+{
+    if (reloading || ammo >= magazineSize)
+    {
+        return;
+    }
+
+    reloading = true;
+    reloadTimerSeconds = reloadTimeSeconds;
+}
+
+void BotState::FinishReload()
+{
+    ammo = magazineSize;
+    reloading = false;
+    reloadTimerSeconds = 0.0;
+}
+
+void BotState::ConsumeAmmo()
+{
+    if (!CanFire())
+    {
+        return;
+    }
+
+    --ammo;
+    fireCooldownSeconds = fireIntervalSeconds;
+}
+
+void BotState::TickWeapon(double deltaSeconds)
+{
+    fireCooldownSeconds = std::max(0.0, fireCooldownSeconds - deltaSeconds);
+
+    if (reloading)
+    {
+        reloadTimerSeconds -= deltaSeconds;
+        if (reloadTimerSeconds <= 0.0)
+        {
+            FinishReload();
+        }
+        return;
+    }
+
+    if (ammo <= 0)
+    {
+        StartReload();
+    }
 }
 }

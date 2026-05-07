@@ -24,6 +24,10 @@ public:
 	int32 GetMagazineSize() const;
 	float GetReloadRemainingSeconds() const;
 	float CalculateCurrentSpread(bool bIsADS, bool bIsSprinting, bool bIsJumping) const;
+	float GetHipSpreadDegrees() const;
+	float GetAdsSpreadDegrees() const;
+	float GetSprintSpreadDegrees() const;
+	float GetJumpSpreadDegrees() const;
 
 private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon|Ammo", meta = (AllowPrivateAccess = "true", ClampMin = "1"))

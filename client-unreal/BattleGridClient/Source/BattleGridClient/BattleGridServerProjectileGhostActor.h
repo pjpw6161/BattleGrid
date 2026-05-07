@@ -45,6 +45,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
 	TObjectPtr<UMaterialInterface> AliveMaterial;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	TObjectPtr<UMaterialInterface> PlayerProjectileMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	TObjectPtr<UMaterialInterface> BotProjectileMaterial;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.01"))
 	float ProjectileScale;
 
@@ -59,6 +65,7 @@ public:
 
 private:
 	int32 ProjectileId;
+	FString OwnerType;
 	FVector TargetLocation;
 
 	UPROPERTY(Transient)

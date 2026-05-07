@@ -91,6 +91,7 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 	bool bHasServerOwnPlayerSnapshot = false;
 	bool bServerInvincible = false;
 	bool bServerGameOver = false;
+	bool bHasServerRankingData = false;
 	FString ServerCombatEventFeedText;
 
 	if (const UGameInstance* GameInstance = BattleGridController->GetGameInstance())
@@ -119,9 +120,21 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 				bServerGameOver = MatchSnapshot.bGameOver;
 			}
 
+			TArray<FBattleGridServerScoreboardEntry> ScoreboardEntries;
+			NetworkSubsystem->GetLatestScoreboard(ScoreboardEntries);
+			bHasServerRankingData = ScoreboardEntries.Num() > 0;
 			ServerCombatEventFeedText = NetworkSubsystem->GetServerCombatEventFeedText();
 		}
 	}
+
+	const bool bShowTopFiveRanking =
+		BattleGridController->bShowTopFiveRanking
+		&& (
+			(BattleGridController->IsServerConnected() && BattleGridController->HasJoinedServer())
+			|| bHasServerRankingData
+		);
+	TArray<FBattleGridKillFeedLine> KillFeedLines;
+	BattleGridController->GetKillFeedLines(KillFeedLines);
 
 	CombatWidget->UpdateHud(
 		BattleGridController->GetCurrentPlayerHealth(),
@@ -158,8 +171,19 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		BattleGridController->IsUsingServerPositionCorrection(),
 		BattleGridController->ShouldShowScoreboard(),
 		BattleGridController->GetServerScoreboardText(),
+		BattleGridController->GetTopFiveRankingText(),
+		bShowTopFiveRanking,
 		ServerCombatEventFeedText,
 		BattleGridController->GetRecentServerShotResultText(),
+		KillFeedLines,
+		BattleGridController->bShowKillFeed,
+		BattleGridController->GetCurrentWeaponSpreadDegrees(),
+		BattleGridController->IsCrosshairAds(),
+		BattleGridController->IsCrosshairSprinting(),
+		BattleGridController->IsCrosshairJumping(),
+		BattleGridController->IsCrosshairReloading(),
+		BattleGridController->IsServerDead(),
+		BattleGridController->ShouldShowCrosshair(),
 		BattleGridController->GetLocalDebugHudText()
 	);
 }

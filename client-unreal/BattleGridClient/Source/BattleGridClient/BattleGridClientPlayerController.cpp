@@ -75,6 +75,8 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bShowLocalDebugHud = false;
 	bShowServerDebugDetails = true;
 	bShowCombatEventFeed = true;
+	bShowTopFiveRanking = true;
+	bShowKillFeed = true;
 	ShotResultDisplayDurationSeconds = 1.25f;
 	CombatMessageExpireTime = 0.0f;
 	bPlayerDead = false;
@@ -366,6 +368,34 @@ FString ABattleGridClientPlayerController::GetServerScoreboardText() const
 	return TEXT("Match: Offline\nRank | Player | Kills | D | Bot | PvP\n- | No server ranking | - | - | - | -\nTab: Scoreboard");
 }
 
+FString ABattleGridClientPlayerController::GetTopFiveRankingText() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetTopFiveRankingText();
+		}
+	}
+
+	return TEXT("TOP 5\nWaiting...");
+}
+
+void ABattleGridClientPlayerController::GetKillFeedLines(TArray<FBattleGridKillFeedLine>& OutLines) const
+{
+	OutLines.Reset();
+
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			NetworkSubsystem->GetKillFeedLines(OutLines);
+		}
+	}
+}
+
 bool ABattleGridClientPlayerController::ShouldShowScoreboard() const
 {
 	if (bScoreboardHeld || bScoreboardVisible)
@@ -655,6 +685,63 @@ bool ABattleGridClientPlayerController::IsSprinting() const
 float ABattleGridClientPlayerController::GetLastShotSpreadDegrees() const
 {
 	return LastShotSpreadDegrees;
+}
+
+float ABattleGridClientPlayerController::GetCurrentWeaponSpreadDegrees() const
+{
+	const ABattleGridClientCharacter* BattleGridCharacter =
+		Cast<ABattleGridClientCharacter>(GetPawn());
+	if (!BattleGridCharacter)
+	{
+		return LastShotSpreadDegrees;
+	}
+
+	const UBattleGridWeaponComponent* WeaponComponent =
+		BattleGridCharacter->GetWeaponComponent();
+	if (!WeaponComponent)
+	{
+		return LastShotSpreadDegrees;
+	}
+
+	return WeaponComponent->CalculateCurrentSpread(
+		IsCrosshairAds(),
+		IsCrosshairSprinting(),
+		IsCrosshairJumping()
+	);
+}
+
+bool ABattleGridClientPlayerController::IsCrosshairAds() const
+{
+	return bIsADSActive;
+}
+
+bool ABattleGridClientPlayerController::IsCrosshairSprinting() const
+{
+	return bIsSprinting;
+}
+
+bool ABattleGridClientPlayerController::IsCrosshairJumping() const
+{
+	return IsControlledPawnFalling();
+}
+
+bool ABattleGridClientPlayerController::IsCrosshairReloading() const
+{
+	const ABattleGridClientCharacter* BattleGridCharacter =
+		Cast<ABattleGridClientCharacter>(GetPawn());
+	if (!BattleGridCharacter)
+	{
+		return false;
+	}
+
+	const UBattleGridWeaponComponent* WeaponComponent =
+		BattleGridCharacter->GetWeaponComponent();
+	return WeaponComponent && WeaponComponent->IsReloading();
+}
+
+bool ABattleGridClientPlayerController::ShouldShowCrosshair() const
+{
+	return GetPawn() != nullptr;
 }
 
 bool ABattleGridClientPlayerController::IsServerDead() const

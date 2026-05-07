@@ -162,3 +162,23 @@ float UBattleGridWeaponComponent::CalculateCurrentSpread(
 
 	return HipSpreadDegrees;
 }
+
+float UBattleGridWeaponComponent::GetHipSpreadDegrees() const
+{
+	return HipSpreadDegrees;
+}
+
+float UBattleGridWeaponComponent::GetAdsSpreadDegrees() const
+{
+	return AdsSpreadDegrees;
+}
+
+float UBattleGridWeaponComponent::GetSprintSpreadDegrees() const
+{
+	return SprintSpreadDegrees;
+}
+
+float UBattleGridWeaponComponent::GetJumpSpreadDegrees() const
+{
+	return JumpSpreadDegrees;
+}

@@ -16,6 +16,10 @@ nlohmann::json CombatEvent::ToJson() const
     json["target_id"] = targetId;
     json["health_pack_id"] = healthPackId;
     json["headshot"] = headshot;
+    json["victim_is_player"] = victimIsPlayer;
+    json["victim_is_bot"] = victimIsBot;
+    json["killer_is_bot"] = killerIsBot;
+    json["killer_is_player"] = killerIsPlayer;
     json["damage"] = damage;
     json["hit_group"] = hitGroup;
     json["hit_x"] = hitX;

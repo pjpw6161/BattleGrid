@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace battlegrid
 {
@@ -8,6 +9,8 @@ struct ProjectileState
 {
     std::uint64_t projectileId = 0;
     std::uint64_t ownerPlayerId = 0;
+    std::string ownerType = "player";
+    std::uint64_t ownerBotId = 0;
     double x = 0.0;
     double y = 0.0;
     double dirX = 1.0;
@@ -18,6 +21,7 @@ struct ProjectileState
     int damage = 20;
     double radius = 20.0;
     bool active = true;
+    bool visualOnly = false;
 
     void NormalizeDirection();
 };

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "BattleGridNetworkSubsystem.h"
 #include "GameFramework/PlayerController.h"
 #include "Templates/SubclassOf.h"
 #include "BattleGridClientPlayerController.generated.h"
@@ -46,6 +47,8 @@ public:
 	FString GetServerCombatEventFeedText() const;
 	FString GetRecentServerShotResultText() const;
 	FString GetServerScoreboardText() const;
+	FString GetTopFiveRankingText() const;
+	void GetKillFeedLines(TArray<FBattleGridKillFeedLine>& OutLines) const;
 	bool ShouldShowScoreboard() const;
 	bool UseServerAuthoritativeHud() const;
 	bool ShowLocalDebugHud() const;
@@ -68,6 +71,12 @@ public:
 	bool IsAimingDownSights() const;
 	bool IsSprinting() const;
 	float GetLastShotSpreadDegrees() const;
+	float GetCurrentWeaponSpreadDegrees() const;
+	bool IsCrosshairAds() const;
+	bool IsCrosshairSprinting() const;
+	bool IsCrosshairJumping() const;
+	bool IsCrosshairReloading() const;
+	bool ShouldShowCrosshair() const;
 	bool IsServerDead() const;
 	bool IsServerInvincible() const;
 	float GetLastServerRespawnTimer() const;
@@ -214,6 +223,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
 	bool bShowCombatEventFeed;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
+	bool bShowTopFiveRanking;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
+	bool bShowKillFeed;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD", meta = (ClampMin = "0.1"))
 	float ShotResultDisplayDurationSeconds;

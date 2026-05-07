@@ -9,6 +9,8 @@
 #include "Camera/CameraComponent.h"
 #include "Components/DecalComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -22,6 +24,9 @@ ABattleGridClientCharacter::ABattleGridClientCharacter()
 
 	HealthComponent = CreateDefaultSubobject<UBattleGridHealthComponent>(TEXT("HealthComponent"));
 	WeaponComponent = CreateDefaultSubobject<UBattleGridWeaponComponent>(TEXT("WeaponComponent"));
+	WeaponMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMeshComponent"));
+	WeaponMeshComponent->SetupAttachment(GetMesh());
+	WeaponMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	// Don't rotate character to camera direction
 	bUseControllerRotationPitch = false;
@@ -36,6 +41,10 @@ ABattleGridClientCharacter::ABattleGridClientCharacter()
 	CameraLagSpeed = 12.0f;
 	DefaultFOV = 90.0f;
 	AdsFOV = 70.0f;
+	WeaponSocketName = TEXT("hand_rSocket");
+	WeaponRelativeLocation = FVector::ZeroVector;
+	WeaponRelativeRotation = FRotator::ZeroRotator;
+	WeaponRelativeScale = FVector(1.0f, 1.0f, 1.0f);
 	bADSActive = false;
 	bSprinting = false;
 
@@ -71,6 +80,8 @@ ABattleGridClientCharacter::ABattleGridClientCharacter()
 
 	bIsDead = false;
 	RespawnDelaySeconds = 3.0f;
+	bLoggedMissingWeaponSocketWarning = false;
+	bLoggedWeaponAttachment = false;
 }
 
 void ABattleGridClientCharacter::BeginPlay()
@@ -79,6 +90,7 @@ void ABattleGridClientCharacter::BeginPlay()
 
 	RespawnLocation = GetActorLocation();
 	RespawnRotation = GetActorRotation();
+	AttachWeaponToCharacterMesh();
 
 	if (HealthComponent)
 	{
@@ -228,6 +240,57 @@ void ABattleGridClientCharacter::SetAimingDownSights(bool bInADS)
 void ABattleGridClientCharacter::SetSprinting(bool bInSprinting)
 {
 	bSprinting = bInSprinting;
+}
+
+void ABattleGridClientCharacter::AttachWeaponToCharacterMesh()
+{
+	USkeletalMeshComponent* CharacterMesh = GetMesh();
+	if (!CharacterMesh || !WeaponMeshComponent)
+	{
+		return;
+	}
+
+	const bool bHasSocket = WeaponSocketName != NAME_None
+		&& CharacterMesh->DoesSocketExist(WeaponSocketName);
+	const FName AttachSocketName = bHasSocket ? WeaponSocketName : NAME_None;
+
+	if (!bHasSocket && WeaponSocketName != NAME_None && !bLoggedMissingWeaponSocketWarning)
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("[BattleGrid] Weapon socket %s not found. Attaching weapon mesh to character mesh root."),
+			*WeaponSocketName.ToString()
+		);
+		bLoggedMissingWeaponSocketWarning = true;
+	}
+
+	WeaponMeshComponent->AttachToComponent(
+		CharacterMesh,
+		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+		AttachSocketName
+	);
+	WeaponMeshComponent->SetRelativeLocation(WeaponRelativeLocation);
+	WeaponMeshComponent->SetRelativeRotation(WeaponRelativeRotation);
+	WeaponMeshComponent->SetRelativeScale3D(WeaponRelativeScale);
+	WeaponMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	const bool bHasWeaponMesh = WeaponMeshComponent->GetStaticMesh() != nullptr;
+	WeaponMeshComponent->SetHiddenInGame(!bHasWeaponMesh);
+	WeaponMeshComponent->SetVisibility(bHasWeaponMesh);
+
+	if (bHasWeaponMesh && !bLoggedWeaponAttachment)
+	{
+		const FString SocketLogName = bHasSocket
+			? WeaponSocketName.ToString()
+			: FString(TEXT("<mesh-root>"));
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Weapon mesh attached to socket %s"),
+			*SocketLogName
+		);
+		bLoggedWeaponAttachment = true;
+	}
 }
 
 void ABattleGridClientCharacter::ApplyCameraSettings(float DeltaSeconds)

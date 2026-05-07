@@ -49,10 +49,12 @@ private:
     void InitializeHealthPackSpawnPoints() const;
     void InitializeDefaultHealthPacks() const;
     void SpawnProjectile(std::uint64_t ownerPlayerId, double dirX, double dirY);
+    void SpawnBotProjectile(const BotState& bot, double dirX, double dirY);
     void ProcessPlayerRespawns(double deltaSeconds);
     void UpdateBotRespawns(double deltaSeconds);
     void UpdateBots(double deltaSeconds);
     void UpdateBotAI(double deltaSeconds);
+    void ProcessBotShot(BotState& bot, PlayerState& targetPlayer);
     void UpdateHealthPacks(double deltaSeconds);
     void CheckHealthPackPickups();
     std::pair<double, double> ChooseHealthPackSpawnPoint(std::uint64_t healthPackId) const;
@@ -89,8 +91,12 @@ private:
     double botDetectRange;
     double botAttackRange;
     int botAttackDamage;
+    int botHeadshotDamage;
     double botAttackCooldownSeconds;
     double botMoveSpeed;
+    double botFireIntervalSeconds;
+    double botAimSpreadDegrees;
+    bool bVerboseBotShotEvents;
     mutable bool targetsInitialized;
     mutable bool botsInitialized;
     mutable bool healthPacksInitialized;

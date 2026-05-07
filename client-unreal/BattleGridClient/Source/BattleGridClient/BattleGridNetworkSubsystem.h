@@ -81,6 +81,12 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerProjectileSnapshot
 	int32 OwnerPlayerId = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	FString OwnerType = TEXT("player");
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	int32 OwnerBotId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	float X = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
@@ -91,6 +97,9 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerProjectileSnapshot
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	float DirY = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	bool bVisualOnly = false;
 };
 
 USTRUCT(BlueprintType)
@@ -288,6 +297,18 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerCombatEvent
 	bool bHeadshot = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	bool bVictimIsPlayer = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	bool bVictimIsBot = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	bool bKillerIsBot = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	bool bKillerIsPlayer = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
 	int32 Damage = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
@@ -301,6 +322,21 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerCombatEvent
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
 	float HitZ = 0.0f;
+};
+
+USTRUCT(BlueprintType)
+struct BATTLEGRIDCLIENT_API FBattleGridKillFeedLine
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Kill Feed")
+	FString Text;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Kill Feed")
+	FLinearColor Color = FLinearColor::White;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Kill Feed")
+	int32 EventId = 0;
 };
 
 UCLASS()
@@ -376,11 +412,13 @@ public:
 	FBattleGridServerMatchSnapshot GetLatestMatchSnapshot() const;
 	void GetLatestScoreboard(TArray<FBattleGridServerScoreboardEntry>& OutScoreboard) const;
 	FString GetServerScoreboardSummaryText() const;
+	FString GetTopFiveRankingText() const;
 	FString GetScoreboardTableText() const;
 	FString GetMatchHeaderText() const;
 	FString GetFullScoreboardText() const;
 	void GetRecentCombatEvents(TArray<FBattleGridServerCombatEvent>& OutEvents) const;
 	FString GetCombatEventFeedText() const;
+	void GetKillFeedLines(TArray<FBattleGridKillFeedLine>& OutLines) const;
 	FString GetLastShotResultMessage() const;
 	bool HasRecentShotResult() const;
 	bool GetOwnPlayerSnapshot(FBattleGridServerPlayerSnapshot& OutSnapshot) const;
@@ -424,7 +462,7 @@ private:
 	TArray<FBattleGridServerScoreboardEntry> LatestScoreboard;
 	TArray<FBattleGridServerCombatEvent> RecentCombatEvents;
 	TSet<int32> SeenCombatEventIds;
-	int32 MaxRecentCombatEvents = 5;
+	int32 MaxRecentCombatEvents = 20;
 	FString LastShotResultMessage;
 	double LastShotResultTimestampSeconds = -1000.0;
 	float LastShotResultDisplaySeconds = 1.25f;

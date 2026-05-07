@@ -11,7 +11,7 @@ This is a portfolio prototype. The server-authoritative kill race loop is being 
 - Third-person over-the-shoulder arena shooter.
 - Players fight server-controlled humanoid bots and other players.
 - Kills are the score.
-- Ranking shows up to 5 connected players.
+- Ranking shows up to 5 connected players at the top-right of the HUD.
 - Server-authoritative kills, deaths, respawns, health packs, match state, scoreboard, and kill log are central to the demo.
 
 ## Main Objective
@@ -40,10 +40,10 @@ ADS moves the camera slightly to the right, reduces weapon spread, and lowers mo
 - Player HP: 100.
 - Player body damage: 20.
 - Player headshot damage: 40.
-- Bot damage is planned to be half player damage:
+- Bot damage is half player damage:
   - body: 10
   - headshot: 20
-- Bot accuracy should be intentionally low for readable demos.
+- Bot accuracy is intentionally low for readable demos.
 - Death starts an 8 second respawn timer.
 - Respawn grants 1.5 seconds of invincibility.
 - Health packs heal +35 and cannot raise HP above max.
@@ -54,6 +54,8 @@ The current server has hitscan shot result events:
 - `SERVER HEADSHOT BOT-* -40`
 - `SERVER HIT PLAYER -20`
 - `SERVER MISS`
+- `BOT HIT YOU -10`
+- `BOT HEADSHOT YOU -20`
 
 ## Weapon Rules
 
@@ -68,23 +70,45 @@ The current server has hitscan shot result events:
 
 Local projectile visuals are still separate from server hitscan damage. The server shot result event is the authoritative hit confirmation.
 
+## Crosshair Rules
+
+The HUD crosshair should communicate current weapon accuracy:
+
+- ADS: tight crosshair, green-ish color.
+- Hip fire: medium gap.
+- Sprinting: wider gap, warm warning color.
+- Jumping/falling: widest gap, warm warning color.
+- Reloading or server-dead: dimmed/unavailable color.
+
+The current C++ HUD supports optional `CrosshairTop`, `CrosshairBottom`, `CrosshairLeft`, `CrosshairRight`, and `CrosshairCenter` Border widgets. If those are not present, the legacy `CrosshairText` fallback remains safe.
+
 ## Bot Rules
 
 - Recommended default bots: 8.
 - Bots are server-owned and appear in snapshots.
 - Bots are intended to be humanoid shooter enemies.
-- Current v1 bots use simple server movement, respawn, invincibility, and direct body attack for gameplay pressure.
-- Future bot shooter AI should use visible firing, lower accuracy, and readable attack timing.
+- Bots detect nearest alive non-invincible players, face the target, and fire low-accuracy server hitscan shots.
+- Bots have 30-round magazines, infinite reserve ammo, and 2.5 second reloads.
+- Bot shots can spawn visual-only server tracer projectiles for ghost visualization.
+- If bot attacks are disabled for safe demos, bots still move/chase/wander but do not shoot players.
 
 Debug/demo difficulty values:
 
-| Difficulty | Damage | Cooldown | Detect Range | Attack Range | Speed |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Easy | 10 | 1.8s | 1000 | 650 | 400 |
-| Normal | 20 | 1.0s | 1500 | 900 | 500 |
-| Hard | 25 | 0.7s | 1800 | 1100 | 600 |
+| Difficulty | Body / Head | Fire Interval | Spread | Detect Range | Attack Range | Speed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Easy | 10 / 20 | 0.75s | 18 deg | 1000 | 1200 | 400 |
+| Normal | 10 / 20 | 0.5s | 12 deg | 1500 | 1400 | 500 |
+| Hard | 10 / 20 | 0.35s | 7 deg | 1800 | 1600 | 600 |
 
 Safe demo mode applies easy difficulty, disables bot attacks, disables timer-based match end, clears stale game-over state, resets players/bots/health packs, and keeps the match in progress.
+
+## Humanoid Visual Direction
+
+- Player and bots are planned to use humanoid Skeletal Mesh assets.
+- A simple rifle Static Mesh should attach to a right-hand socket, defaulting to `hand_rSocket`.
+- Bot humanoid meshes are visual-only server ghosts; gameplay hit volumes still come from server `BotState`.
+- Fab/Epic/Paragon-style assets may be used later, but BattleGrid remains the project name and brand.
+- Current C++ exposes the player and bot weapon slots, bot skeletal mesh toggle, humanoid scale, and label-height settings. No external assets are imported yet.
 
 ## Health Pack Rules
 
@@ -105,17 +129,18 @@ Safe demo mode applies easy difficulty, disables bot attacks, disables timer-bas
   4. fewer deaths
   5. lower server player ID
 
-The HUD and Tab scoreboard should show the top 5 connected players when available.
+The top-right HUD ranking and Tab scoreboard show up to 5 connected players when available. Bots never appear in the player ranking; bot kills only contribute to the owning player's total kills.
 
 ## Kill Log
 
-The kill log should prioritize server-authoritative events:
+The left-side kill log should prioritize server-authoritative kill/death events:
 
-- My kill: green.
-- Any player or bot killing the local player: red.
-- Other kills and world events: neutral.
+- My kills: green.
+- Any player death caused by another player or bot: red.
+- Other players killing bots: neutral white/gray.
+- Show the most recent 5 kill-related events.
 
-Current implementation uses text events in the existing HUD. Dedicated kill feed styling is future work.
+Current implementation supports optional `KillFeedLine1` through `KillFeedLine5` TextBlocks for color-coded lines, with a fallback text block when those widgets have not been added yet.
 
 ## HUD Requirements
 
@@ -123,11 +148,13 @@ Primary HUD:
 
 - Server HP.
 - Server kills / goal.
+- Top-right Top 5 ranking based on total kills.
 - Ammo and reload state.
 - Match timer.
 - Bot and health pack counts.
 - Recent server shot result.
-- Recent kill log events.
+- Left-side recent kill log events.
+- Dynamic spread-based crosshair.
 
 Optional debug HUD:
 
@@ -138,9 +165,8 @@ Optional debug HUD:
 
 Future HUD:
 
-- Animated crosshair spread.
 - Bottom HP/ammo presentation.
-- Dedicated top-5 ranking panel.
+- More polished top-5 ranking panel.
 - Large-map minimap / radar.
 
 ## Legacy Target/Core System
@@ -158,8 +184,8 @@ When disabled:
 
 - Local projectile visuals and server hitscan damage are separate layers.
 - Local offline targets still exist but are no longer the main PvPvE objective.
-- Bots use simple server AI, not full shooter behavior or navigation.
+- Bots use simple server shooter AI, not full navigation, cover, animations, or advanced target selection.
 - No final humanoid player/bot models yet.
-- No weapon model/socket integration yet.
+- Weapon model/socket integration is prepared in C++ but still needs manual asset assignment and offset tuning.
 - No animated kill feed, minimap, or production scoreboard UI yet.
 - No database, matchmaking, anti-cheat, or advanced lag compensation.

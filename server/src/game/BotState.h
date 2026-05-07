@@ -30,12 +30,27 @@ struct BotState
     double decisionTimerSeconds = 0.0;
     double attackCooldownSeconds = 1.0;
     double attackTimerSeconds = 0.0;
+    int ammo = 30;
+    int magazineSize = 30;
+    bool reloading = false;
+    double reloadTimerSeconds = 0.0;
+    double reloadTimeSeconds = 2.5;
+    double fireCooldownSeconds = 0.0;
+    double fireIntervalSeconds = 0.45;
+    double aimSpreadDegrees = 12.0;
+    double attackRange = 1400.0;
+    double preferredCombatRange = 900.0;
     bool connected = true;
 
     bool IsAlive() const;
     bool CanBeDamaged() const;
+    bool CanFire() const;
     void ApplyDamage(int damage);
     void Kill();
     void Respawn(double newX, double newY);
+    void StartReload();
+    void FinishReload();
+    void ConsumeAmmo();
+    void TickWeapon(double deltaSeconds);
 };
 }

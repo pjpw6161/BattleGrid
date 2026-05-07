@@ -37,6 +37,30 @@ These material names are recommendations only. The C++ classes expose editable m
 
 No external art, audio, animation, model, icon, or marketplace assets are imported yet.
 
+## Paragon / Fab Asset Template
+
+BattleGrid may later use Epic/Fab humanoid character assets for player and bot visuals. If those assets are added, keep the game branded as BattleGrid and do not use the Paragon trademark as the game title, logo, or advertising identity.
+
+Record each imported character, weapon, animation, or material here:
+
+- Asset name:
+- Creator/vendor:
+- Source URL:
+- Marketplace/Fab listing:
+- License or usage terms:
+- Imported path:
+- Used for:
+- Modified locally:
+- Redistribution notes:
+
+Suggested BattleGrid import paths:
+
+- `Content/BattleGrid/Art/Characters`
+- `Content/BattleGrid/Art/Bots`
+- `Content/BattleGrid/Art/Weapons`
+- `Content/BattleGrid/Art/Animations`
+- `Content/BattleGrid/Art/ThirdParty/Paragon`
+
 When external assets are added later, record:
 
 - Asset name:

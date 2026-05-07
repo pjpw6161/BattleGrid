@@ -13,6 +13,7 @@ class AController;
 class UBattleGridHealthComponent;
 class UBattleGridWeaponComponent;
 class USpringArmComponent;
+class UStaticMeshComponent;
 
 /**
  *  A controllable third-person BattleGrid character.
@@ -69,6 +70,7 @@ public:
 	void SetSprinting(bool bInSprinting);
 	bool IsSprinting() const { return bSprinting; }
 	UBattleGridWeaponComponent* GetWeaponComponent() const { return WeaponComponent.Get(); }
+	void AttachWeaponToCharacterMesh();
 
 private:
 	void HandleDeath();
@@ -82,6 +84,21 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Combat", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UBattleGridWeaponComponent> WeaponComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> WeaponMeshComponent;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	FName WeaponSocketName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	FVector WeaponRelativeLocation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	FRotator WeaponRelativeRotation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	FVector WeaponRelativeScale;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Camera", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float DefaultArmLength;
@@ -114,5 +131,7 @@ private:
 	FRotator RespawnRotation;
 	FTimerHandle RespawnTimerHandle;
 	float RespawnDelaySeconds;
+	bool bLoggedMissingWeaponSocketWarning;
+	bool bLoggedWeaponAttachment;
 };
 

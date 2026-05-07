@@ -19,6 +19,7 @@ ABattleGridServerProjectileGhostActor::ABattleGridServerProjectileGhostActor()
 	PointLightIntensity = 350.0f;
 	PointLightRadius = 160.0f;
 	ProjectileId = 0;
+	OwnerType = TEXT("player");
 	TargetLocation = FVector::ZeroVector;
 	DefaultMaterial = nullptr;
 
@@ -76,14 +77,29 @@ void ABattleGridServerProjectileGhostActor::SetSnapshotData(
 )
 {
 	ProjectileId = Snapshot.ProjectileId;
+	OwnerType = Snapshot.OwnerType.IsEmpty() ? FString(TEXT("player")) : Snapshot.OwnerType;
 	TargetLocation = WorldLocation;
 
 	if (MeshComponent)
 	{
 		MeshComponent->SetRelativeScale3D(FVector(ProjectileScale));
-		if (AliveMaterial)
+		UMaterialInterface* MaterialToApply = nullptr;
+		if (OwnerType.Equals(TEXT("bot"), ESearchCase::IgnoreCase) && BotProjectileMaterial)
 		{
-			MeshComponent->SetMaterial(0, AliveMaterial.Get());
+			MaterialToApply = BotProjectileMaterial.Get();
+		}
+		else if (OwnerType.Equals(TEXT("player"), ESearchCase::IgnoreCase) && PlayerProjectileMaterial)
+		{
+			MaterialToApply = PlayerProjectileMaterial.Get();
+		}
+		else if (AliveMaterial)
+		{
+			MaterialToApply = AliveMaterial.Get();
+		}
+
+		if (MaterialToApply)
+		{
+			MeshComponent->SetMaterial(0, MaterialToApply);
 		}
 		else if (DefaultMaterial)
 		{
