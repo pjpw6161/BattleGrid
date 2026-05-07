@@ -1,250 +1,107 @@
 # BattleGrid Implementation Roadmap
 
-This roadmap describes the planned upgrade from the current BattleGrid prototype into a third-person PvPvE kill race arena shooter.
+BattleGrid has pivoted from its legacy target-objective prototype into a third-person PvPvE Kill Race Shooter.
 
-The upgrade is not complete yet. The current project already has useful networking foundations: WebSocket JSON, sessions, room state, player input, fixed-rate server tick, snapshots, server projectiles, server targets, server score, and Unreal ghost visualization. The next work should convert those foundations into a playable third-person PvPvE loop.
+The current codebase already demonstrates Unreal third-person controls, local weapon feedback, WebSocket JSON networking, a custom C++ server, server snapshots, bots, health packs, server hitscan shot result events, safe demo mode, match state, scoreboard, Docker deployment, and GCP deployment documentation.
 
-## Phase 1: Third-Person Camera And Controls
+## Completed Foundation
 
-Goal: replace the current top-down arena shooter presentation with a third-person shoulder camera.
+- Unreal third-person camera and camera-relative movement.
+- ADS, sprint, jump, reload, ammo, automatic fire, and local spread values.
+- Custom C++20 WebSocket JSON server.
+- Join, input, input_ack, snapshots, debug room, safe demo mode.
+- Server-side players, bots, health packs, projectiles/tracers, match state, scoreboard, and combat events.
+- Server hitscan against bots and players.
+- Server death, respawn, and invincibility synchronization to the local player.
+- Text HUD summaries and Tab scoreboard overlay.
+- Browser websocket test page with throttled snapshot summaries.
 
-Work:
+## Legacy Systems
 
-- Add a third-person spring arm and camera setup.
-- Move from mouse world-point aim to camera-forward weapon aim.
-- Add right-click hold ADS / shoulder aim.
-- Shift sprint.
-- Jump input.
-- Make jumping cancel ADS.
-- Add movement speed states:
-  - normal speed: 600
-  - sprint speed: 850
-  - ADS speed: 400
-- Keep the current local/remote server profile system.
-- Keep server ghosts behind a demo/debug toggle during transition.
+- The old `TargetState` objective remains in code as legacy debug content.
+- It is disabled by default for the main kill race path.
+- It should not drive primary score, HUD counts, or demo flow.
 
-Validation:
+## Step 51: Ranking HUD
 
-- Player can move, sprint, jump, ADS, and aim in third person.
-- ADS visibly shifts camera slightly to the right.
-- Jump cancels ADS.
-- Local offline movement still works when the server is unavailable.
-
-## Phase 2: Weapon System
-
-Goal: replace simple local projectile firing with a reusable weapon state model.
+Goal: make the top-5 connected-player ranking readable without relying on the Tab text overlay.
 
 Work:
 
-- Add weapon state to Unreal and server design:
-  - magazine ammo
-  - unlimited reserve ammo
-  - reload state
-  - fire cooldown
-  - ADS state
-  - spread state
-- Implement magazine size 30.
-- Implement reload time 2 seconds.
-- Implement fire rate 8 shots per second.
-- Add spread rules:
-  - normal spread
-  - reduced ADS spread
-  - greatly increased jump spread
-- Add HUD ammo and reload display.
-- Keep local muzzle/tracer visuals cosmetic.
+- Keep server scoreboard as the source of truth.
+- Show rank, nickname, total kills, bot kills, player kills, and deaths.
+- Keep the HUD server-centric.
+- Avoid adding a complex UMG table until the layout is stable.
 
-Validation:
+## Step 52: Kill Log
 
-- Player fires up to 30 shots.
-- Firing is blocked during reload.
-- Reload refills the magazine after 2 seconds.
-- ADS reduces spread.
-- Jumping increases spread and cancels ADS.
-
-## Phase 3: Server Hitscan Combat
-
-Goal: make combat damage and score server-authoritative.
+Goal: make server-authoritative kills clear and visually distinct.
 
 Work:
 
-- Extend input protocol with fire intent, aim origin, aim direction, ADS state, and jump/spread state.
-- Server validates fire rate, ammo, reload, and player alive state.
-- Server performs hitscan traces against players and bots.
-- Add body and head hit regions or simplified hit zones.
-- Apply damage:
-  - body damage: 20
-  - headshot damage: 40
-- Add death, respawn timer, and invincibility state to server player state.
-- Add server-side player score:
-  - bot kill: +1
-  - player kill: +2
-- Broadcast combat events and updated snapshots.
-- Keep client local effects responsive, but treat server result as authoritative.
+- Use server `events` as the only authoritative kill feed source.
+- Color my kills green.
+- Color deaths against the local player red.
+- Keep other events neutral.
+- Keep shot result text separate from persistent kill log spam.
 
-Validation:
+## Step 53: Crosshair
 
-- Server rejects impossible fire rates.
-- Server applies body and headshot damage.
-- Player deaths and respawns are visible in snapshots.
-- Score changes come from server state.
-
-## Phase 4: Bots
-
-Goal: add server-controlled PvE enemies that players can farm or contest.
-
-Current status: v1 implemented for debugging and portfolio demonstration. Bots are server-owned, included in snapshots, visualized in Unreal as ghost actors, can take hitscan damage, award score, attack players with simplified direct body damage, and respawn.
+Goal: communicate weapon spread in the center of the screen.
 
 Work:
 
-- Add `BotState`.
-- Spawn 8 bots by default.
-- Give bots HP, position, yaw, attack cooldown, respawn, and invincibility.
-- Implement simple AI:
-  - choose nearest alive non-invincible player
-  - move toward engagement range
-  - apply direct body damage at a controlled rate
-- Include bots in snapshots.
-- Add Unreal bot ghost visualization.
-- Award +1 score and +1 bot kill to the player who kills a bot.
+- Add crosshair expansion based on hip/ADS/sprint/jump spread.
+- Show recent server hit/miss feedback.
+- Keep the implementation compatible with the existing weapon component.
 
-Remaining polish:
+## Step 54: Bot Shooter AI
 
-- Replace direct-damage bot attack with visible weapon/projectile behavior.
-- Add smarter pathing/perception if the arena layout needs it.
-- Replace ghost visualization with production bot presentation.
-
-Validation:
-
-- Bots spawn and move under server control.
-- Bots can damage players if server player damage is enabled.
-- Players can kill bots and gain score.
-- Multiple players can contest the same bot kills.
-
-## Phase 5: Health Packs
-
-Goal: add map pickups that create rotation decisions and survival options.
-
-Current status: v1 implemented as server-authoritative snapshot pickups. Three health packs spawn from predefined positions, players below max HP can pick them up, and packs respawn after 15 seconds. Unreal displays them as health pack ghost actors.
+Goal: replace simple direct bot damage with readable shooter behavior.
 
 Work:
 
-- Add server-side health pack state:
-  - id
-  - position
-  - active/inactive
-  - respawn timer
-- Spawn health packs randomly or from configured spawn points.
-- Heal amount: +35.
-- Respawn time: 15 seconds.
-- Clamp player HP to 100.
-- Include health packs in snapshots.
-- Add Unreal health pack visuals and pickup feedback.
+- Give bots low-accuracy ranged attacks.
+- Add attack windup/cooldown state.
+- Add simple line-of-sight or range checks.
+- Keep deterministic debug behavior where possible.
 
-Remaining polish:
+## Step 55: Paragon Model Integration
 
-- Replace ghost visualization with production pickup art.
-- Add pickup effects, sound, and combat messages.
-- Consider bot health pack behavior later if it improves PvE pressure.
-
-Validation:
-
-- Health packs appear in the arena.
-- Damaged players can pick them up.
-- HP increases by 35 but never exceeds 100.
-- Picked-up packs disappear and respawn after 15 seconds.
-
-## Phase 6: Match And Scoreboard
-
-Goal: turn the PvPvE loop into a complete match.
-
-Current status: v1 implemented on the custom server and client. Room 1 tracks match timer, target score, game-over state, winner, and sorted scoreboard. Snapshots include `match` and `scoreboard`, Unreal displays a concise server scoreboard summary in the existing HUD, and holding Tab opens a text scoreboard overlay from the same server data.
+Goal: replace placeholder ghost actors with readable humanoid characters.
 
 Work:
 
-- Add match duration: 5 minutes.
-- Add target score: 20.
-- End match when a player reaches target score or timer expires.
-- Add scoreboard fields:
-  - player name
-  - score
-  - player kills
-  - bot kills
-  - deaths
-  - ping if available
-- Add match start, match active, match ended states.
-- Disable combat after match end.
-- Add restart/rematch flow for local demo.
+- Import or reference approved Unreal/Fab assets manually in the Editor.
+- Add player and bot skeletal mesh presentation.
+- Keep source code independent of asset redistribution.
+- Document asset credits and license constraints.
 
-Remaining polish:
+## Step 56: Tracer Visuals
 
-- Replace the test-only `debug_restart_match` with a real rematch/lobby flow.
-- Build a dedicated UMG scoreboard table to replace the current text overlay.
-- Replace the current text event feed with a dedicated UMG kill feed and match-end presentation.
-- Add server-authoritative ammo/reload validation before using match results for real PvP.
-
-Validation:
-
-- Match timer counts down.
-- Reaching target score ends the match.
-- Highest score wins when time expires.
-- Scoreboard clearly shows why a player won.
-
-## Phase 7: Visual Polish
-
-Goal: make the portfolio demo look like a game instead of a networking diagnostic.
+Goal: make shooting readable without confusing local visuals and server authority.
 
 Work:
 
-- Replace debug ghost visuals with polished third-person player, bot, target, projectile/tracer, and pickup visuals.
-- Add muzzle flash, impact effects, hit markers, damage numbers, and kill feed.
-- Add respawn and invincibility visual feedback.
-- Add ADS camera animation and crosshair spread animation.
-- Add audio feedback for fire, hit, kill, reload, pickup, death, and victory.
-- Keep a developer overlay toggle for server snapshot, position error, and correction diagnostics.
+- Add cosmetic muzzle flash/tracer/impact visuals.
+- Make server shot result events remain the authority.
+- Avoid claiming local projectile overlap equals server damage.
 
-Validation:
+## Step 57: Large Map And Minimap
 
-- The main HUD communicates gameplay first.
-- Debug networking information is available but not visually dominant.
-- The demo recording can explain both gameplay and server authority.
+Goal: expand the current bounded arena into a larger kill-race map.
 
-Current support:
+Work:
 
-- Server snapshots include recent combat events.
-- Unreal deduplicates event IDs and displays a short text feed in the existing HUD.
-- A full animated kill feed remains future polish.
-- Server debug/demo controls can set bot difficulty, disable bot damage, and disable timer-based match end for cleaner recording and movement tests.
+- Define larger server arena bounds.
+- Add spawn zones and health pack zones.
+- Add a minimap/radar concept.
+- Keep server layout documented so the Unreal map can be manually aligned.
 
 ## Risks And Simplifications
 
-Risks:
-
-- Full third-person prediction and reconciliation can become large quickly.
-- Server-side hitscan needs a clean coordinate and hitbox model.
-- Bots can become expensive if pathfinding or perception is overbuilt.
-- PvP fairness depends on server authority, lag handling, and clear hit validation.
-- Existing local gameplay and server visualization layers may diverge if not retired carefully.
-
-Recommended simplifications:
-
-- Start with one fixed arena and fixed spawn points.
-- Use capsule/body and simple head hit zones before complex skeletal hitboxes.
-- Use simple bot steering rather than full navigation if the arena supports it.
-- Keep WebSocket JSON while iterating, then consider binary/UDP only after the loop is stable.
-- Keep debug ghost/server overlays available for development but hide them for normal demo mode.
-- Implement one weapon first.
-- Implement health packs with fixed spawn points before random weighted spawns.
-- Accept simple draw handling for first match-end implementation.
-
-## Suggested Milestone Order
-
-1. Third-person camera, movement, ADS, sprint, and jump.
-2. Local weapon state with ammo, reload, fire rate, and spread.
-3. Protocol extensions for weapon and aim input.
-4. Server hitscan damage against simple target/player shapes.
-5. Server death, respawn, invincibility, and score.
-6. Server bots and bot kill scoring.
-7. Health packs.
-8. Match timer, target score, and scoreboard.
-9. Visual/audio polish.
-10. Prediction and reconciliation improvement pass.
+- Full lag compensation is not implemented.
+- Bots do not use navmesh/pathfinding yet.
+- Server ammo/reload validation remains future work.
+- Placeholder visuals are intentionally simple.
+- Local offline gameplay remains separate from server-authoritative PvPvE state.

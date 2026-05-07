@@ -45,7 +45,7 @@ ABattleGridServerTargetGhostActor::ABattleGridServerTargetGhostActor()
 	LabelComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	LabelComponent->SetHorizontalAlignment(EHTA_Center);
 	LabelComponent->SetTextRenderColor(FColor(255, 165, 0));
-	LabelComponent->SetText(FText::FromString(TEXT("CORE")));
+	LabelComponent->SetText(FText::FromString(TEXT("LEGACY TARGET")));
 	LabelComponent->SetRelativeLocation(FVector(0.0f, 0.0f, LabelHeight));
 	LabelComponent->SetWorldSize(30.0f);
 }
@@ -89,8 +89,8 @@ void ABattleGridServerTargetGhostActor::SetSnapshotData(
 	if (LabelComponent)
 	{
 		const FString Label = bAlive
-			? FString::Printf(TEXT("CORE-%d %d/%d"), TargetId, HP, MaxHP)
-			: FString::Printf(TEXT("CORE-%d DESTROYED"), TargetId);
+			? FString::Printf(TEXT("LEGACY TARGET-%d %d/%d"), TargetId, HP, MaxHP)
+			: FString::Printf(TEXT("LEGACY TARGET-%d DISABLED"), TargetId);
 		LabelComponent->SetText(FText::FromString(Label));
 		LabelComponent->SetRelativeLocation(FVector(0.0f, 0.0f, LabelHeight));
 		LabelComponent->SetTextRenderColor(bAlive ? FColor(255, 165, 0) : FColor::Red);

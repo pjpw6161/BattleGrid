@@ -14,14 +14,14 @@ The BattleGrid server is a C++20 CMake application that accepts WebSocket JSON c
 - `MessageDispatcher`: handles parsed JSON messages and mutates session/room state.
 - `RoomManager`: owns the fixed default Room 1.
 - `GameRoom`: thread-safe state container and simulation for Room 1.
-- `MatchState`: current match timer, target score, game-over flag, winner, and match ID.
+- `MatchState`: current match timer, kill goal, game-over flag, winner, and match ID.
 - `CombatEvent`: compact recent server event for kill feed and demo feedback.
 - `PlayerState`: player identity, nickname, connected flag, latest input, position, speed, HP, score, and processed fire sequence.
 - `PlayerInput`: latest input packet fields.
 - `BotState`: server-controlled PvE combatant state, movement target, HP, respawn, invincibility, and simple attack timers.
 - `HealthPackState`: server pickup state, position, active flag, heal amount, pickup radius, and respawn timer.
 - `ProjectileState`: projectile ID, owner, position, direction, speed, age, lifetime, damage, radius, and active flag.
-- `TargetState`: fixed server target ID, position, HP, max HP, collision radius, and alive flag.
+- `TargetState`: legacy/debug target state kept for compatibility; disabled by default in the main kill race flow.
 
 ## Startup Flow
 
@@ -29,7 +29,7 @@ The BattleGrid server is a C++20 CMake application that accepts WebSocket JSON c
 2. `GameServer::Run` logs startup settings.
 3. `WebSocketServer` binds and listens on the configured host/port.
 4. `RoomManager` creates fixed Room 1.
-5. `GameRoom` initializes fixed server targets, fixed server bots, and server health packs.
+5. `GameRoom` initializes fixed server bots and server health packs. Legacy targets are only initialized when `bTargetsEnabled=true`.
 6. The accept loop and tick timer start.
 7. `io_context.run()` keeps the process alive.
 
@@ -70,7 +70,7 @@ Player spawn points:
 
 Players spawn from this list by player ID on join, respawn, and debug match restart.
 
-Default target/core positions:
+Legacy target/core positions:
 
 1. CORE-1 `(0, 0)`
 2. CORE-2 `(700, 500)`
@@ -78,7 +78,7 @@ Default target/core positions:
 4. CORE-4 `(-700, 500)`
 5. CORE-5 `(-700, -500)`
 
-The C++ model remains `TargetState`, but gameplay logs and docs call these CORE targets. Each core starts with:
+The C++ model remains `TargetState`, but the core/target objective is no longer the main game mode. `GameRoom::bTargetsEnabled` defaults to `false`, so these entities are debug-only unless explicitly re-enabled in code. Each legacy target starts with:
 
 - `hp = 100`
 - `maxHp = 100`
@@ -154,7 +154,7 @@ Each tick:
 3. `GameRoom::Tick` updates connected players from latest input.
 4. New fire input spawns server projectiles.
 5. Active projectiles move.
-6. Projectile-target collision is checked only when hitscan damage is disabled.
+6. Legacy projectile-target collision is skipped by default and only used when target debug gameplay is enabled.
 7. Inactive projectiles are removed.
 8. Bot respawns and simple bot AI are updated.
 9. Health pack respawns and player pickups are processed.
@@ -171,9 +171,9 @@ Movement is intentionally simple:
 - Clamp x to `-1800..1800`.
 - Clamp y to `-1200..1200`.
 
-## Projectile, Hitscan, Target, And Bot Simulation
+## Projectile, Hitscan, And Bot Simulation
 
-Server projectiles spawn from the owning player's current position, offset slightly forward along the aim direction. With hitscan combat enabled, these projectiles are visual tracers and do not also apply target damage.
+Server projectiles spawn from the owning player's current position, offset slightly forward along the aim direction. With hitscan combat enabled, these projectiles are visual tracers and do not apply gameplay damage.
 
 Projectiles:
 
@@ -181,21 +181,22 @@ Projectiles:
 - Track age.
 - Expire after lifetime.
 - Deactivate outside the projectile arena.
-- Collide with alive targets using radius overlap only when projectile collision damage is enabled.
+- Collide with alive legacy targets only if target debug gameplay and projectile collision damage are explicitly enabled.
 
 On server hitscan fire:
 
 1. A tracer projectile is spawned for snapshot visualization.
 2. A ray is cast from the shooter's server position.
-3. Alive targets, alive non-invincible bots, and other alive non-invincible players are tested.
+3. Alive non-invincible bots and other alive non-invincible players are tested. Legacy targets are tested only when `bTargetsEnabled=true`.
 4. Head spheres are checked before body spheres for bots and players.
 5. The closest hit receives damage immediately.
 
-Scoring:
+Kill race scoring:
 
-- Server target destroyed: shooter gains +1 score and +1 target kill.
-- Server bot killed: shooter gains +1 score, +1 kill, and +1 bot kill.
-- Server player killed: shooter gains +2 score, +1 kill, and +1 player kill.
+- Server bot killed: shooter gains +1 kill and +1 `bot_kills`.
+- Server player killed: shooter gains +1 kill and +1 `player_kills`.
+- Primary score is `bot_kills + player_kills`.
+- Legacy target kills can still increment `target_kills` in debug mode, but they do not affect primary score while targets are disabled.
 
 The current combat tuning values are centralized in `GameRoom.cpp` for demo readability:
 
@@ -206,8 +207,8 @@ The current combat tuning values are centralized in `GameRoom.cpp` for demo read
 - bot respawn: `8s`
 - bot invincibility after respawn: `1.5s`
 - bot kill score: `+1`
-- player kill score: `+2`
-- core/target kill score: `+1`
+- player kill score: `+1`
+- legacy target/core kill score: `0`
 
 `debug_room` includes these values so the browser test page can show a compact combat tuning summary.
 
@@ -219,16 +220,16 @@ Defaults:
 
 - `matchDurationSeconds = 300`
 - `timeRemainingSeconds = 300`
-- `targetScore = 20`
+- `targetScore = 20` kill goal
 - `state = in_progress`
 - `matchId = 1`
 
 The match ends when:
 
-- any connected player reaches `targetScore`
+- any connected player reaches the kill goal
 - or `timeRemainingSeconds` reaches zero
 
-For demo iteration, `GameRoom` owns `bAutoEndMatchByTimer`. When disabled through `debug_set_match_timer`, `timeRemainingSeconds` may reach zero but the timer alone will not set `game_over`. Target-score wins still end the match.
+For demo iteration, `GameRoom` owns `bAutoEndMatchByTimer`. When disabled through `debug_set_match_timer`, `timeRemainingSeconds` may reach zero but the timer alone will not set `game_over`. Kill-goal wins still end the match.
 
 Winner selection:
 
@@ -240,7 +241,7 @@ Winner selection:
 
 Snapshots include a `match` object and a sorted `scoreboard` array. The scoreboard is sorted by the same tie breaker rules, so clients can show a concise top-player list without recomputing rank order.
 
-`debug_restart_match` is available for browser and demo testing. It resets match state, player scores and combat counters, projectiles, targets, bots, and health packs, then increments `matchId`. It is not a production rematch/lobby system.
+`debug_restart_match` is available for browser and demo testing. It resets match state, player scores and combat counters, projectiles, legacy targets, bots, and health packs, then increments `matchId`. It is not a production rematch/lobby system.
 
 Debug restart preserves current demo settings such as bot difficulty, bot attacks enabled, and timer auto-end.
 
@@ -264,7 +265,7 @@ Each event stores:
 
 Events are generated when:
 
-- a player destroys a server target
+- a player hits or destroys a legacy target only when target debug gameplay is enabled
 - a player kills a bot
 - a player kills another player
 - a bot kills a player
@@ -276,7 +277,7 @@ Events are generated when:
 
 Snapshots and `debug_room` include the recent `events` array. Unreal deduplicates by `event_id` and displays the last few messages in the existing HUD as a simple kill feed.
 
-Shot result events use compact text such as `SERVER HIT BOT-3 -20`, `SERVER HEADSHOT BOT-3 -40`, `SERVER HIT CORE-1 -20`, or `SERVER MISS`. Unreal displays these separately from the persistent event feed so automatic fire does not bury kill, death, pickup, and match events.
+Shot result events use compact text such as `SERVER HIT BOT-3 -20`, `SERVER HEADSHOT BOT-3 -40`, `SERVER HIT PLAYER -20`, or `SERVER MISS`. Unreal displays these separately from the persistent event feed so automatic fire does not bury kill, death, pickup, and match events.
 
 ## Bot AI
 
@@ -301,7 +302,7 @@ Each tick, bot logic is intentionally simple:
 
 `debug_set_bot_attacks` can disable bot damage while leaving bot movement, chasing, respawn, snapshots, and ghost visualization active.
 
-Safe demo mode applies the easy profile, disables bot attacks, disables timer-based match ending, resets players/bots/cores/health packs, clears projectiles, and restarts the match in `in_progress`. This is the recommended startup state for portfolio recording and local combat tests.
+Safe demo mode applies the easy profile, disables bot attacks, disables timer-based match ending, resets players/bots/health packs, clears projectiles, resets legacy targets internally if present, and restarts the match in `in_progress`. This is the recommended startup state for portfolio recording and local combat tests.
 
 There is no navmesh, pathfinding, projectile attack, animation, or bot score yet.
 
@@ -334,7 +335,7 @@ Snapshots include:
 - bots
 - health_packs
 - projectiles
-- targets
+- targets as an empty legacy/debug array by default
 
 Only joined sessions receive snapshots. `WebSocketServer` keeps weak pointers to active sessions, removes expired sessions, and broadcasts the same compact JSON string to each joined session.
 
@@ -353,7 +354,7 @@ This avoids overlapping writes when protocol responses and server snapshot broad
 - recent combat events
 - player count
 - projectile count
-- target count
+- legacy target debug count
 - bot count
 - health pack count
 - active health pack count
@@ -361,7 +362,7 @@ This avoids overlapping writes when protocol responses and server snapshot broad
 - bots and HP/alive state
 - health packs and active/respawn state
 - active projectiles
-- targets and HP
+- legacy target debug state when enabled
 
 This is for browser testing.
 
@@ -377,5 +378,5 @@ This is for browser testing.
 - No binary protocol.
 - Bot AI is direct and deterministic for debugging, with no pathfinding or projectile attacks.
 - Health packs are server snapshot entities only; no pickup effects, sounds, or production meshes yet.
-- No target respawn.
+- Legacy targets/cores are disabled by default.
 - No deployment automation yet.

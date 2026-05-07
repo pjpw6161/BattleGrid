@@ -117,7 +117,7 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	ServerProjectileGhostHeight = 80.0f;
 	ServerAimSignX = 1.0f;
 	ServerAimSignY = 1.0f;
-	bShowServerTargetGhosts = true;
+	bShowServerTargetGhosts = false;
 	ServerTargetGhostHeight = 60.0f;
 	bShowServerBotGhosts = true;
 	ServerBotGhostHeight = 70.0f;
@@ -363,7 +363,7 @@ FString ABattleGridClientPlayerController::GetServerScoreboardText() const
 		}
 	}
 
-	return TEXT("Match: Offline\nRank | Player | Score | K | D | Bot | PvP | Target\n- | No server scoreboard | - | - | - | - | - | -\nTab: Scoreboard");
+	return TEXT("Match: Offline\nRank | Player | Kills | D | Bot | PvP\n- | No server ranking | - | - | - | -\nTab: Scoreboard");
 }
 
 bool ABattleGridClientPlayerController::ShouldShowScoreboard() const

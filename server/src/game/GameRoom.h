@@ -85,6 +85,7 @@ private:
     bool bBotAttacksEnabled;
     std::string botDifficulty;
     bool bAutoEndMatchByTimer;
+    bool bTargetsEnabled;
     double botDetectRange;
     double botAttackRange;
     int botAttackDamage;

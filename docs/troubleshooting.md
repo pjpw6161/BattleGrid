@@ -97,6 +97,41 @@ Check:
 - Browser test uses `ws://127.0.0.1:7777`.
 - Windows firewall is not blocking Docker networking.
 
+## Legacy Target Ghosts No Longer Appear
+
+Step 50 pivoted the main demo to the PvPvE Kill Race Shooter. The old `TargetState` system is now legacy/debug content and is disabled by default on the server.
+
+Expected behavior:
+
+- Normal snapshots contain `targets: []`.
+- `debug_room` reports `targets_enabled=false`.
+- Unreal `bShowServerTargetGhosts` should be false for the active PlayerController Blueprint.
+- Main HUD counts show bots, health packs, and projectiles, not cores.
+
+Re-enable target ghosts only when you specifically need to inspect legacy target/debug behavior.
+
+## Score Equals Kills
+
+The server ranking score now equals:
+
+```text
+score = bot_kills + player_kills
+```
+
+Bot kills and player kills are both worth 1 kill for the kill race. `target_kills` may still appear in debug data for compatibility, but it is not part of the primary ranking while targets are disabled.
+
+## Local Projectile Hit Logs Do Not Mean Server Bot Damage
+
+Local Unreal projectile overlap logs are part of the offline/local feedback layer. Server-authoritative bot damage is confirmed by server combat events such as:
+
+```text
+SERVER HIT BOT-3 -20
+SERVER HEADSHOT BOT-3 -40
+SERVER MISS
+```
+
+Use the browser `Fire 5 Shots At Nearest Bot` button or the Unreal HUD hit marker text to verify server damage.
+
 ## GCP Firewall TCP 7777 Not Open
 
 If the server works on the VM but cannot be reached from your local machine, check the GCP firewall rule:
@@ -277,7 +312,7 @@ The equivalent JSON commands are:
 
 ## Game Starts In `game_over`
 
-This usually means the previous server match reached target score or the timer expired. For demo iteration:
+This usually means the previous server match reached the kill goal or the timer expired. For demo iteration:
 
 1. Click `Apply Safe Demo Mode`.
 2. Click `Send Debug Room`.
@@ -300,7 +335,7 @@ The equivalent JSON commands are:
 { "type": "debug_restart_match" }
 ```
 
-Disabling the match timer only disables timer-based `game_over`. A player can still end the match by reaching the target score.
+Disabling the match timer only disables timer-based `game_over`. A player can still end the match by reaching the kill goal.
 
 ## Browser Freezes After `Send Join`
 
@@ -314,11 +349,46 @@ If the log is noisy:
 
 The page limits the visible log to 200 lines. Raw snapshot logging is only for short debugging sessions.
 
+## Unreal Says `Server: Disconnected`
+
+For a local Docker demo, check:
+
+1. Docker Desktop is running.
+2. The server container is up:
+
+   ```powershell
+   docker compose ps
+   ```
+
+3. The active PlayerController Blueprint has `bUseRemoteServer=false`.
+4. `LocalServerUrl` is exactly:
+
+   ```text
+   ws://127.0.0.1:7777
+   ```
+
+5. `tools/websocket-test.html` can connect to the same URL.
+
+For a GCP demo, check `bUseRemoteServer=true`, `RemoteServerUrl=ws://<GCP_EXTERNAL_IP>:7777`, and the GCP firewall/network tag allows TCP `7777`.
+
+## Scoreboard Stays Visible
+
+The scoreboard auto-shows when the server match is `game_over`. This can happen if an old server session reached the kill goal or the timer expired.
+
+Fix:
+
+1. Open `tools/websocket-test.html`.
+2. Click `Apply Safe Demo Mode`.
+3. Click `Send Debug Room`.
+4. Confirm `match.state=in_progress` and `game_over=false`.
+
+For Unreal-only recording, enable `bApplySafeDemoModeOnJoin` in the active PlayerController Blueprint so the server is reset after `join_ok`.
+
 ## How To Use Demo/Debug Controls
 
 Open `tools/websocket-test.html`, connect to the same server Unreal uses, then send debug commands before starting the Unreal demo or immediately after joining:
 
-- `Apply Safe Demo Mode`: resets the match, respawns players, resets bots/cores/health packs, sets bot difficulty to easy, disables bot attacks, and disables timer-based game over.
+- `Apply Safe Demo Mode`: resets the match, respawns players, resets bots/health packs, sets bot difficulty to easy, disables bot attacks, and disables timer-based game over.
 - `Bot Difficulty Easy`: lowers bot damage, range, speed, and attack cadence.
 - `Disable Bot Attacks`: keeps bot movement/ghosts active but prevents player damage.
 - `Disable Match Timer`: prevents timer-based `game_over` during long recordings.
@@ -335,7 +405,7 @@ Use `tools/websocket-test.html`:
 1. Connect and send `Join`.
 2. Click `Apply Safe Demo Mode`.
 3. Click `Send Debug Room`.
-4. Confirm the combat tuning panel shows body/head damage `20/40`, bot difficulty `easy`, bot attacks disabled, timer auto-end disabled, and score values `1/2/1`.
+4. Confirm the combat tuning panel shows body/head damage `20/40`, bot difficulty `easy`, bot attacks disabled, timer auto-end disabled, and kill score values `1/1`.
 5. Wait for a snapshot with `bots=8/8`.
 6. Click `Send Fire At Nearest Bot`.
 7. For a faster kill test, click `Fire 5 Shots At Nearest Bot`.
@@ -360,8 +430,8 @@ The Unreal client still has a local projectile and local target layer for offlin
 
 For server combat, check one of these instead:
 
-- Server bot/core ghost labels show HP decreasing.
-- Browser snapshots show `bots`, `targets`, `scoreboard`, or `events` changing.
+- Server bot ghost labels show HP decreasing.
+- Browser snapshots show `bots`, `scoreboard`, or `events` changing.
 - Browser `Shot Result` shows `SERVER HIT`, `SERVER HEADSHOT`, or `SERVER MISS`.
 - Server logs show `Shot result`, `Hitscan bot hit`, `Hitscan target hit`, or a combat event.
 - The HUD `CombatMessageText` briefly shows `SERVER HIT ...` or `SERVER MISS`, then returns to the event feed.
@@ -372,20 +442,20 @@ This is expected during the transition from local prototype gameplay to server-a
 
 - `SERVER HP` comes from the own player snapshot in the C++ server.
 - `Local HP` comes from Unreal's offline hazard/local damage test layer.
-- By default, the HUD prioritizes `SERVER HP` and `SERVER Score`.
+- By default, the HUD prioritizes `SERVER HP` and `SERVER Kills`.
 - Enable `bShowLocalDebugHud` in the active PlayerController Blueprint only when you need to compare local/offline state with server state.
 
 If the server says the player is dead, local movement/fire can be locked even if the local pawn still appears alive. Use `Apply Safe Demo Mode` if the server state needs to be reset for testing.
 
 ## Why SERVER HUD Is Primary
 
-The PvPvE demo is meant to show server-authoritative match state. The server owns player HP, deaths, respawn timers, score, bot/core/health-pack state, match timer, scoreboard, and combat events.
+The PvPvE demo is meant to show server-authoritative match state. The server owns player HP, deaths, respawn timers, kills, bot/health-pack state, match timer, scoreboard, and combat events.
 
 The HUD therefore shows server state first:
 
 - `SERVER HP` in the health area.
-- `SERVER Score` and K/D in the score area.
-- Match time, cores, bots, health packs, and projectiles in the controls/status area.
+- `SERVER Kills` and K/D in the score area.
+- Match time, bots, health packs, and projectiles in the controls/status area.
 - Recent server combat events in the message area.
 
 Local HP/score remains available for offline debugging, but it should not be used to explain server bot damage, match scoring, or winner state.
@@ -394,7 +464,7 @@ Local HP/score remains available for offline debugging, but it should not be use
 
 Server arena coordinates use fixed spawns such as `P1 = (-1200, 0)`. If Unreal simply adds those coordinates to the local pawn location, the own server ghost appears far in front of the local character.
 
-Keep `bAutoCalibrateServerSnapshotOrigin` enabled on the PlayerController. On the first own-player snapshot, Unreal aligns that server coordinate to the current local pawn XY position, then all player, bot, core, projectile, and health pack ghosts use the same calibrated origin.
+Keep `bAutoCalibrateServerSnapshotOrigin` enabled on the PlayerController. On the first own-player snapshot, Unreal aligns that server coordinate to the current local pawn XY position, then all player, bot, projectile, and health pack ghosts use the same calibrated origin.
 
 If projectile direction is mirrored, check `ServerAimSignX` and `ServerAimSignY` on the PlayerController.
 
@@ -414,8 +484,8 @@ Check:
 
 - `TargetState.cpp` is listed in `server/CMakeLists.txt`.
 - `GameRoom` initializes default targets.
-- `BuildSnapshotJson` always emits `targets`.
-- `debug_room` includes `target_count` and `targets`.
+- `BuildSnapshotJson` emits `targets: []` while the legacy system is disabled.
+- `debug_room` includes `targets_enabled=false` and `targets_debug_count`.
 - The running server process is the rebuilt executable, not an old process.
 
 Expected snapshot field:

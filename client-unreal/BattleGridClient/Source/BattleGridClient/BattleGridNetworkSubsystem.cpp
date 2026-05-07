@@ -32,7 +32,7 @@ FString BuildShotResultDisplayText(const FBattleGridServerCombatEvent& Event)
 	}
 	else if (Event.TargetId > 0)
 	{
-		TargetLabel = FString::Printf(TEXT("CORE-%d"), Event.TargetId);
+		TargetLabel = FString::Printf(TEXT("LEGACY-TARGET-%d"), Event.TargetId);
 	}
 	else if (Event.TargetPlayerId > 0)
 	{
@@ -368,7 +368,7 @@ FString UBattleGridNetworkSubsystem::GetServerPrimaryStatusText() const
 
 	const int32 GoalScore = bHasMatchSnapshot ? LatestMatchSnapshot.TargetScore : 20;
 	return FString::Printf(
-		TEXT("SERVER | HP %d/%d | Score %d/%d | K/D %d/%d | Bots %d | PvP %d"),
+		TEXT("SERVER | HP %d/%d | Kills %d/%d | K/D %d/%d | Bots %d | PvP %d"),
 		OwnSnapshot.HP,
 		OwnSnapshot.MaxHP,
 		OwnSnapshot.Score,
@@ -384,12 +384,12 @@ FString UBattleGridNetworkSubsystem::GetServerMatchStatusText() const
 {
 	if (!bIsConnected)
 	{
-		return TEXT("Match --:-- | Goal -- | Offline");
+		return TEXT("Match --:-- | Kill Goal -- | Offline");
 	}
 
 	if (!bHasJoined || !bHasMatchSnapshot)
 	{
-		return TEXT("Match --:-- | Goal -- | Waiting");
+		return TEXT("Match --:-- | Kill Goal -- | Waiting");
 	}
 
 	if (LatestMatchSnapshot.bGameOver)
@@ -404,7 +404,7 @@ FString UBattleGridNetworkSubsystem::GetServerMatchStatusText() const
 	const int32 Minutes = TotalSeconds / 60;
 	const int32 Seconds = TotalSeconds % 60;
 	return FString::Printf(
-		TEXT("Match %02d:%02d | Goal %d | In Progress"),
+		TEXT("Match %02d:%02d | Kill Goal %d | In Progress"),
 		Minutes,
 		Seconds,
 		LatestMatchSnapshot.TargetScore
@@ -446,13 +446,11 @@ FString UBattleGridNetworkSubsystem::GetServerWorldCountsText() const
 {
 	if (!bIsConnected || !bHasJoined)
 	{
-		return TEXT("Cores -/- | Bots -/- | HPacks -/- | Projectiles -");
+		return TEXT("Bots -/- | HPacks -/- | Projectiles -");
 	}
 
 	return FString::Printf(
-		TEXT("Cores %d/%d | Bots %d/%d | HPacks %d/%d | Projectiles %d"),
-		GetServerAliveTargetCount(),
-		GetServerTargetCount(),
+		TEXT("Bots %d/%d | HPacks %d/%d | Projectiles %d"),
 		GetServerAliveBotCount(),
 		GetServerBotCount(),
 		GetServerActiveHealthPackCount(),
@@ -465,7 +463,7 @@ FString UBattleGridNetworkSubsystem::GetServerScoreboardCompactText() const
 {
 	if (!bIsConnected)
 	{
-		return TEXT("Top: - | You: -");
+		return TEXT("Ranking: - | You: -");
 	}
 
 	TArray<FBattleGridServerScoreboardEntry> SortedScoreboard = LatestScoreboard;
@@ -493,7 +491,7 @@ FString UBattleGridNetworkSubsystem::GetServerScoreboardCompactText() const
 	);
 
 	TArray<FString> TopEntries;
-	const int32 TopCount = FMath::Min(3, SortedScoreboard.Num());
+	const int32 TopCount = FMath::Min(5, SortedScoreboard.Num());
 	for (int32 Index = 0; Index < TopCount; ++Index)
 	{
 		const FBattleGridServerScoreboardEntry& Entry = SortedScoreboard[Index];
@@ -523,7 +521,7 @@ FString UBattleGridNetworkSubsystem::GetServerScoreboardCompactText() const
 		: FString(TEXT("-"));
 
 	return FString::Printf(
-		TEXT("Top: %s | You: %s"),
+		TEXT("Ranking: %s | You: %s kills"),
 		*TopText,
 		*OwnScoreText
 	);
@@ -729,7 +727,7 @@ FString UBattleGridNetworkSubsystem::GetMatchHeaderText() const
 			? FString::Printf(TEXT("P%d"), LatestMatchSnapshot.WinnerPlayerId)
 			: LatestMatchSnapshot.WinnerNickname;
 		return FString::Printf(
-			TEXT("SERVER GAME OVER | Winner: %s | Goal: %d"),
+			TEXT("SERVER GAME OVER | Winner: %s | Kill Goal: %d"),
 			*WinnerText,
 			LatestMatchSnapshot.TargetScore
 		);
@@ -740,7 +738,7 @@ FString UBattleGridNetworkSubsystem::GetMatchHeaderText() const
 	const int32 Seconds = TotalSeconds % 60;
 
 	return FString::Printf(
-		TEXT("Match %02d:%02d | Goal %d | In Progress"),
+		TEXT("Match %02d:%02d | Kill Goal %d | In Progress"),
 		Minutes,
 		Seconds,
 		LatestMatchSnapshot.TargetScore
@@ -774,9 +772,10 @@ FString UBattleGridNetworkSubsystem::GetScoreboardTableText() const
 	);
 
 	TArray<FString> Lines;
-	Lines.Add(TEXT("Rank | Player | Score | K | D | Bot | PvP | Target"));
+	Lines.Add(TEXT("Rank | Player | Kills | D | Bot | PvP"));
 
-	for (int32 Index = 0; Index < SortedScoreboard.Num(); ++Index)
+	const int32 TopCount = FMath::Min(5, SortedScoreboard.Num());
+	for (int32 Index = 0; Index < TopCount; ++Index)
 	{
 		const FBattleGridServerScoreboardEntry& Entry = SortedScoreboard[Index];
 		const FString Name = Entry.Nickname.IsEmpty()
@@ -784,21 +783,19 @@ FString UBattleGridNetworkSubsystem::GetScoreboardTableText() const
 			: Entry.Nickname;
 
 		Lines.Add(FString::Printf(
-			TEXT("%d | %s | %d | %d | %d | %d | %d | %d"),
+			TEXT("%d | %s | %d | %d | %d | %d"),
 			Index + 1,
 			*Name,
 			Entry.Score,
-			Entry.Kills,
 			Entry.Deaths,
 			Entry.BotKills,
-			Entry.PlayerKills,
-			Entry.TargetKills
+			Entry.PlayerKills
 		));
 	}
 
 	if (SortedScoreboard.Num() == 0)
 	{
-		Lines.Add(TEXT("- | No server scoreboard yet | - | - | - | - | - | -"));
+		Lines.Add(TEXT("- | No server ranking yet | - | - | - | -"));
 	}
 
 	return FString::Join(Lines, TEXT("\n"));
@@ -869,7 +866,7 @@ FString UBattleGridNetworkSubsystem::GetServerScoreboardSummaryText() const
 	const int32 Seconds = TotalSeconds % 60;
 
 	TArray<FString> TopEntries;
-	const int32 TopCount = FMath::Min(3, LatestScoreboard.Num());
+	const int32 TopCount = FMath::Min(5, LatestScoreboard.Num());
 	for (int32 Index = 0; Index < TopCount; ++Index)
 	{
 		const FBattleGridServerScoreboardEntry& Entry = LatestScoreboard[Index];
@@ -890,7 +887,7 @@ FString UBattleGridNetworkSubsystem::GetServerScoreboardSummaryText() const
 	}
 
 	return FString::Printf(
-		TEXT("Match %02d:%02d | Goal %d | Top: %s | You: %d"),
+		TEXT("Match %02d:%02d | Kill Goal %d | Ranking: %s | You: %d kills"),
 		Minutes,
 		Seconds,
 		LatestMatchSnapshot.TargetScore,

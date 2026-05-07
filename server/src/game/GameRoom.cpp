@@ -30,8 +30,8 @@ constexpr int BotMaxHp = 100;
 constexpr double BotRespawnSeconds = 8.0;
 constexpr double BotInvincibleSeconds = 1.5;
 constexpr int BotKillScore = 1;
-constexpr int PlayerKillScore = 2;
-constexpr int TargetKillScore = 1;
+constexpr int PlayerKillScore = 1;
+constexpr int TargetKillScore = 0;
 constexpr const char* SafeDemoDifficulty = "easy";
 constexpr bool bSafeDemoBotAttacksEnabled = false;
 constexpr bool bSafeDemoAutoEndMatchByTimer = false;
@@ -169,16 +169,19 @@ nlohmann::json BuildArenaBoundsJson()
     return boundsJson;
 }
 
-nlohmann::json BuildArenaLayoutJson(bool bIncludeSpawnLists)
+nlohmann::json BuildArenaLayoutJson(bool bIncludeSpawnLists, bool bIncludeTargetCores)
 {
     nlohmann::json arenaJson;
-    arenaJson["name"] = "BattleGrid PvPvE Arena v1";
+    arenaJson["name"] = "BattleGrid PvPvE Kill Race Arena v1";
     arenaJson["bounds"] = BuildArenaBoundsJson();
 
     if (bIncludeSpawnLists)
     {
         arenaJson["player_spawns"] = BuildArenaPointsJson(PlayerSpawnPoints, "spawn_id");
-        arenaJson["target_cores"] = BuildArenaPointsJson(TargetCorePositions, "target_id");
+        if (bIncludeTargetCores)
+        {
+            arenaJson["target_cores_debug"] = BuildArenaPointsJson(TargetCorePositions, "target_id");
+        }
         arenaJson["bot_spawns"] = BuildArenaPointsJson(BotSpawnPoints, "bot_id");
         arenaJson["health_pack_spawns"] = BuildArenaPointsJson(HealthPackSpawnPoints, "spawn_id");
     }
@@ -412,7 +415,7 @@ nlohmann::json BuildPlayerSnapshotJson(const PlayerState& player)
     playerJson["invincible"] = player.invincible;
     playerJson["respawn_timer"] = player.respawnTimerSeconds;
     playerJson["invincible_timer"] = player.invincibleTimerSeconds;
-    playerJson["score"] = player.score;
+    playerJson["score"] = CalculateKillRaceScore(player);
     playerJson["kills"] = player.kills;
     playerJson["deaths"] = player.deaths;
     playerJson["player_kills"] = player.playerKills;
@@ -475,6 +478,11 @@ nlohmann::json BuildHealthPackSnapshotJson(const HealthPackState& healthPack)
     healthPackJson["respawn_timer"] = healthPack.respawnTimerSeconds;
     return healthPackJson;
 }
+
+int CalculateKillRaceScore(const PlayerState& player)
+{
+    return player.botKills + player.playerKills;
+}
 }
 
 GameRoom::GameRoom(std::uint64_t inRoomId)
@@ -495,6 +503,7 @@ GameRoom::GameRoom(std::uint64_t inRoomId)
       bBotAttacksEnabled(true),
       botDifficulty("normal"),
       bAutoEndMatchByTimer(true),
+      bTargetsEnabled(false),
       botDetectRange(1500.0),
       botAttackRange(900.0),
       botAttackDamage(20),
@@ -505,7 +514,10 @@ GameRoom::GameRoom(std::uint64_t inRoomId)
       healthPacksInitialized(false),
       mutex()
 {
-    InitializeDefaultTargets();
+    if (bTargetsEnabled)
+    {
+        InitializeDefaultTargets();
+    }
     InitializeDefaultBots();
     InitializeDefaultHealthPacks();
 }
@@ -575,7 +587,10 @@ std::size_t GameRoom::GetPlayerCount() const
 void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
 {
     std::lock_guard lock(mutex);
-    InitializeDefaultTargets();
+    if (bTargetsEnabled)
+    {
+        InitializeDefaultTargets();
+    }
     InitializeDefaultBots();
     InitializeDefaultHealthPacks();
 
@@ -653,7 +668,7 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
     }
 
     UpdateProjectiles(deltaSeconds);
-    if (bProjectileCollisionDamageEnabled || !bUseHitscanDamage)
+    if (bTargetsEnabled && (bProjectileCollisionDamageEnabled || !bUseHitscanDamage))
     {
         UpdateProjectileTargetCollisions();
     }
@@ -667,7 +682,10 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
 nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
 {
     std::lock_guard lock(mutex);
-    InitializeDefaultTargets();
+    if (bTargetsEnabled)
+    {
+        InitializeDefaultTargets();
+    }
     InitializeDefaultBots();
     InitializeDefaultHealthPacks();
 
@@ -675,7 +693,7 @@ nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
     json["type"] = "snapshot";
     json["tick"] = tickNumber;
     json["room_id"] = roomId;
-    json["arena"] = BuildArenaLayoutJson(true);
+    json["arena"] = BuildArenaLayoutJson(true, bTargetsEnabled);
     json["match"] = matchState.ToJson();
     json["scoreboard"] = BuildScoreboardJson();
     json["events"] = BuildEventsJson();
@@ -721,10 +739,13 @@ nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
         json["health_packs"].push_back(BuildHealthPackSnapshotJson(healthPack));
     }
 
-    for (const auto& [targetId, target] : targets)
+    if (bTargetsEnabled)
     {
-        static_cast<void>(targetId);
-        json["targets"].push_back(BuildTargetSnapshotJson(target));
+        for (const auto& [targetId, target] : targets)
+        {
+            static_cast<void>(targetId);
+            json["targets"].push_back(BuildTargetSnapshotJson(target));
+        }
     }
 
     return json;
@@ -733,19 +754,23 @@ nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
 nlohmann::json GameRoom::ToDebugJson() const
 {
     std::lock_guard lock(mutex);
-    InitializeDefaultTargets();
+    if (bTargetsEnabled)
+    {
+        InitializeDefaultTargets();
+    }
     InitializeDefaultBots();
     InitializeDefaultHealthPacks();
 
     nlohmann::json json;
     json["room_id"] = roomId;
-    json["arena"] = BuildArenaLayoutJson(true);
+    json["arena"] = BuildArenaLayoutJson(true, true);
     json["match"] = matchState.ToJson();
     json["scoreboard"] = BuildScoreboardJson();
     json["events"] = BuildEventsJson();
     json["player_count"] = players.size();
     json["projectile_count"] = projectiles.size();
-    json["target_count"] = targets.size();
+    json["targets_enabled"] = bTargetsEnabled;
+    json["targets_debug_count"] = targets.size();
     json["bot_count"] = bots.size();
     json["bot_attacks_enabled"] = bBotAttacksEnabled;
     json["bot_difficulty"] = botDifficulty;
@@ -769,7 +794,7 @@ nlohmann::json GameRoom::ToDebugJson() const
     json["bots"] = nlohmann::json::array();
     json["health_packs"] = nlohmann::json::array();
     json["projectiles"] = nlohmann::json::array();
-    json["targets"] = nlohmann::json::array();
+    json["targets_debug"] = nlohmann::json::array();
 
     for (const auto& [playerId, player] : players)
     {
@@ -805,7 +830,7 @@ nlohmann::json GameRoom::ToDebugJson() const
         playerJson["speed"] = player.speed;
         playerJson["hp"] = player.hp;
         playerJson["max_hp"] = player.maxHp;
-        playerJson["score"] = player.score;
+        playerJson["score"] = CalculateKillRaceScore(player);
         playerJson["kills"] = player.kills;
         playerJson["deaths"] = player.deaths;
         playerJson["player_kills"] = player.playerKills;
@@ -851,7 +876,7 @@ nlohmann::json GameRoom::ToDebugJson() const
     for (const auto& [targetId, target] : targets)
     {
         static_cast<void>(targetId);
-        json["targets"].push_back(BuildTargetSnapshotJson(target));
+        json["targets_debug"].push_back(BuildTargetSnapshotJson(target));
     }
 
     return json;
@@ -879,7 +904,10 @@ std::uint64_t GameRoom::ResetMatch()
     botsInitialized = false;
     healthPacksInitialized = false;
 
-    InitializeDefaultTargets();
+    if (bTargetsEnabled)
+    {
+        InitializeDefaultTargets();
+    }
     InitializeDefaultBots();
     InitializeDefaultHealthPacks();
 
@@ -934,7 +962,10 @@ std::uint64_t GameRoom::ApplySafeDemoMode()
     botsInitialized = false;
     healthPacksInitialized = false;
 
-    InitializeDefaultTargets();
+    if (bTargetsEnabled)
+    {
+        InitializeDefaultTargets();
+    }
     InitializeDefaultBots();
     InitializeDefaultHealthPacks();
 
@@ -1575,7 +1606,7 @@ void GameRoom::CheckMatchEndCondition()
         {
             static_cast<void>(playerId);
 
-            if (player.connected && player.score >= matchState.targetScore)
+            if (player.connected && CalculateKillRaceScore(player) >= matchState.targetScore)
             {
                 bShouldEndMatch = true;
                 break;
@@ -1593,7 +1624,7 @@ void GameRoom::CheckMatchEndCondition()
     const std::string winnerNickname = winner != players.end()
         ? winner->second.nickname
         : std::string();
-    const int winnerScore = winner != players.end() ? winner->second.score : 0;
+    const int winnerScore = winner != players.end() ? CalculateKillRaceScore(winner->second) : 0;
 
     matchState.EndMatch(winnerPlayerId, winnerNickname);
 
@@ -1631,25 +1662,28 @@ std::uint64_t GameRoom::DetermineWinnerPlayerId() const
             continue;
         }
 
+        const int playerScore = CalculateKillRaceScore(player);
+        const int bestScore = CalculateKillRaceScore(*bestPlayer);
+
         const bool bIsBetter =
-            player.score > bestPlayer->score
+            playerScore > bestScore
             || (
-                player.score == bestPlayer->score
+                playerScore == bestScore
                 && player.playerKills > bestPlayer->playerKills
             )
             || (
-                player.score == bestPlayer->score
+                playerScore == bestScore
                 && player.playerKills == bestPlayer->playerKills
                 && player.botKills > bestPlayer->botKills
             )
             || (
-                player.score == bestPlayer->score
+                playerScore == bestScore
                 && player.playerKills == bestPlayer->playerKills
                 && player.botKills == bestPlayer->botKills
                 && player.deaths < bestPlayer->deaths
             )
             || (
-                player.score == bestPlayer->score
+                playerScore == bestScore
                 && player.playerKills == bestPlayer->playerKills
                 && player.botKills == bestPlayer->botKills
                 && player.deaths == bestPlayer->deaths
@@ -1685,9 +1719,11 @@ nlohmann::json GameRoom::BuildScoreboardJson() const
         sortedPlayers.end(),
         [](const PlayerState* lhs, const PlayerState* rhs)
         {
-            if (lhs->score != rhs->score)
+            const int lhsScore = CalculateKillRaceScore(*lhs);
+            const int rhsScore = CalculateKillRaceScore(*rhs);
+            if (lhsScore != rhsScore)
             {
-                return lhs->score > rhs->score;
+                return lhsScore > rhsScore;
             }
             if (lhs->playerKills != rhs->playerKills)
             {
@@ -1711,7 +1747,7 @@ nlohmann::json GameRoom::BuildScoreboardJson() const
         nlohmann::json entry;
         entry["player_id"] = player->playerId;
         entry["nickname"] = player->nickname;
-        entry["score"] = player->score;
+        entry["score"] = CalculateKillRaceScore(*player);
         entry["kills"] = player->kills;
         entry["deaths"] = player->deaths;
         entry["bot_kills"] = player->botKills;
@@ -1752,34 +1788,37 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
 
     HitscanHit bestHit;
 
-    for (const auto& [targetId, target] : targets)
+    if (bTargetsEnabled)
     {
-        if (!target.IsAlive())
+        for (const auto& [targetId, target] : targets)
         {
-            continue;
-        }
+            if (!target.IsAlive())
+            {
+                continue;
+            }
 
-        double hitDistance = 0.0;
-        const Vec3 center{target.x, target.y, TargetCenterZ};
-        if (
-            RaySphereIntersection(
-                origin,
-                direction,
-                center,
-                target.radius,
-                HitscanRange,
-                hitDistance
+            double hitDistance = 0.0;
+            const Vec3 center{target.x, target.y, TargetCenterZ};
+            if (
+                RaySphereIntersection(
+                    origin,
+                    direction,
+                    center,
+                    target.radius,
+                    HitscanRange,
+                    hitDistance
+                )
+                && hitDistance < bestHit.distance
             )
-            && hitDistance < bestHit.distance
-        )
-        {
-            bestHit.type = HitscanHit::Type::Target;
-            bestHit.distance = hitDistance;
-            bestHit.targetId = targetId;
-            bestHit.victimPlayerId = 0;
-            bestHit.headshot = false;
-            bestHit.used2dFallback = false;
-            bestHit.damage = BodyDamage;
+            {
+                bestHit.type = HitscanHit::Type::Target;
+                bestHit.distance = hitDistance;
+                bestHit.targetId = targetId;
+                bestHit.victimPlayerId = 0;
+                bestHit.headshot = false;
+                bestHit.used2dFallback = false;
+                bestHit.damage = BodyDamage;
+            }
         }
     }
 
@@ -1975,8 +2014,8 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
 
         if (!target->second.IsAlive())
         {
-            shooter.score += TargetKillScore;
             shooter.targetKills += 1;
+            shooter.score = CalculateKillRaceScore(shooter);
 
             std::ostringstream destroyLogMessage;
             destroyLogMessage
@@ -2063,9 +2102,9 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         if (!hitBot.IsAlive())
         {
             hitBot.respawnTimerSeconds = BotRespawnSeconds;
-            shooter.score += BotKillScore;
             shooter.kills += 1;
             shooter.botKills += 1;
+            shooter.score = CalculateKillRaceScore(shooter);
 
             std::ostringstream killLogMessage;
             killLogMessage
@@ -2151,9 +2190,9 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
             victimPlayer.latestInput.moveX = 0.0;
             victimPlayer.latestInput.moveY = 0.0;
 
-            shooter.score += PlayerKillScore;
             shooter.kills += 1;
             shooter.playerKills += 1;
+            shooter.score = CalculateKillRaceScore(shooter);
 
             std::ostringstream killLogMessage;
             killLogMessage
@@ -2233,6 +2272,11 @@ void GameRoom::UpdateProjectiles(double deltaSeconds)
 
 void GameRoom::UpdateProjectileTargetCollisions()
 {
+    if (!bTargetsEnabled)
+    {
+        return;
+    }
+
     for (auto& [projectileId, projectile] : projectiles)
     {
         if (!projectile.active)
@@ -2274,8 +2318,8 @@ void GameRoom::UpdateProjectileTargetCollisions()
                 int score = 0;
                 if (owner != players.end())
                 {
-                    owner->second.score += TargetKillScore;
                     owner->second.targetKills += 1;
+                    owner->second.score = CalculateKillRaceScore(owner->second);
                     CombatEvent event;
                     event.type = "target_destroyed";
                     event.message = owner->second.nickname + " destroyed CORE-" + std::to_string(targetId);

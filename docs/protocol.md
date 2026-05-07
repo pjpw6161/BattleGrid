@@ -123,7 +123,8 @@ Expected response:
   "room_id": 1,
   "player_count": 1,
   "projectile_count": 0,
-  "target_count": 5,
+  "targets_enabled": false,
+  "targets_debug_count": 0,
   "bot_count": 8,
   "bot_attacks_enabled": true,
   "bot_difficulty": "normal",
@@ -142,11 +143,13 @@ Expected response:
   "bots": [],
   "health_packs": [],
   "projectiles": [],
-  "targets": []
+  "targets_debug": []
 }
 ```
 
 `debug_room` is intended for browser testing and inspection.
+
+Primary PvPvE kill race snapshots use `players`, `bots`, `health_packs`, `projectiles`, `match`, `scoreboard`, and `events`. `targets` is legacy/debug-only and is empty by default while `targets_enabled=false`.
 
 ### `debug_restart_match`
 
@@ -166,7 +169,7 @@ Expected response:
 Rules:
 
 - This is a test/debug message, not a production rematch flow.
-- The server resets match timer, winner, scores, player combat counters, projectiles, targets, bots, and health packs.
+- The server resets match timer, winner, scores, player combat counters, projectiles, legacy targets, bots, and health packs.
 - Existing joined players remain joined and are reset to full HP.
 - Current bot difficulty, bot attack enablement, and timer auto-end settings are preserved.
 
@@ -185,7 +188,7 @@ Expected response:
 Rules:
 
 - This is a test/debug message, not a production admin command.
-- The server resets the match, clears projectiles, resets players, bots, cores, and health packs, and clears stale game-over state.
+- The server resets the match, clears projectiles, resets players, bots, legacy targets, and health packs, and clears stale game-over state.
 - Existing joined players remain joined, respawn at server spawn points, and return to full HP.
 - The command applies stable demo settings:
   - bot difficulty `easy`
@@ -243,7 +246,7 @@ Expected response:
 { "type": "debug_ok", "message": "auto end match by timer disabled" }
 ```
 
-When disabled, the match timer can reach zero without forcing `game_over`. The target-score win condition still applies.
+When disabled, the match timer can reach zero without forcing `game_over`. The kill-goal win condition still applies.
 
 ## Server To Client Messages
 
@@ -282,7 +285,8 @@ When disabled, the match timer can reach zero without forcing `game_over`. The t
   "room_id": 1,
   "player_count": 1,
   "projectile_count": 1,
-  "target_count": 5,
+  "targets_enabled": false,
+  "targets_debug_count": 0,
   "bot_count": 8,
   "bot_attacks_enabled": true,
   "bot_difficulty": "normal",
@@ -309,9 +313,9 @@ When disabled, the match timer can reach zero without forcing `game_over`. The t
       "player_id": 1,
       "nickname": "player1",
       "score": 4,
-      "kills": 3,
+      "kills": 4,
       "deaths": 1,
-      "bot_kills": 2,
+      "bot_kills": 3,
       "player_kills": 1,
       "target_kills": 0,
       "hp": 80,
@@ -463,9 +467,9 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
       "player_id": 1,
       "nickname": "player1",
       "score": 4,
-      "kills": 3,
+      "kills": 4,
       "deaths": 1,
-      "bot_kills": 2,
+      "bot_kills": 3,
       "player_kills": 1,
       "target_kills": 0,
       "hp": 80,
@@ -550,16 +554,7 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
       "dir_y": 0.0
     }
   ],
-  "targets": [
-    {
-      "target_id": 1,
-      "x": 600.0,
-      "y": 0.0,
-      "hp": 80,
-      "max_hp": 100,
-      "alive": true
-    }
-  ]
+  "targets_debug": []
 }
 ```
 
@@ -568,7 +563,7 @@ Match fields:
 - `state`: current match state, currently `in_progress` or `game_over`.
 - `time_left`: seconds remaining in the match.
 - `duration`: configured match duration in seconds.
-- `target_score`: score needed for immediate win.
+- `target_score`: kill goal needed for immediate win.
 - `game_over`: true after score or timer win condition is reached.
 - `winner_player_id`: server player ID of the winner, or `0` while in progress.
 - `winner_nickname`: winner display name, or empty while in progress.
@@ -577,12 +572,12 @@ Match fields:
 Scoreboard fields:
 
 - `player_id`, `nickname`: player identity.
-- `score`: authoritative server match score.
+- `score`: authoritative kill race score, currently `bot_kills + player_kills`.
 - `kills`: player plus bot kills.
 - `deaths`: player deaths.
 - `bot_kills`: bot kills worth +1 score.
-- `player_kills`: player kills worth +2 score.
-- `target_kills`: destroyed server targets worth +1 score.
+- `player_kills`: player kills worth +1 score.
+- `target_kills`: legacy/debug counter; not part of primary ranking while targets are disabled.
 - `hp`: current server player HP.
 - `alive`: whether the player is alive.
 
@@ -600,14 +595,14 @@ Combat event fields:
 - `health_pack_id`: health pack involved in the event, if any.
 - `headshot`: true for headshot kill events.
 - `damage`: damage amount for shot result events, or `0` when not applicable.
-- `hit_group`: shot result hit group such as `head`, `body`, `core`, or `miss`.
+- `hit_group`: shot result hit group such as `head`, `body`, `legacy_target`, or `miss`.
 - `hit_x`, `hit_y`, `hit_z`: approximate server-space hit position for shot result/debug display.
 
 Current event types:
 
 - `shot_hit_bot`
 - `shot_hit_player`
-- `shot_hit_target`
+- `shot_hit_target` legacy/debug only while targets are disabled
 - `shot_miss`
 - `target_destroyed`
 - `bot_killed`
@@ -654,7 +649,7 @@ Player fields:
 - `invincible`: true during the short post-respawn protection window.
 - `respawn_timer`: seconds remaining until respawn when dead.
 - `invincible_timer`: seconds remaining in post-respawn invincibility.
-- `score`: server score from destroyed server targets.
+- `score`: server kill race score.
 - `kills`, `deaths`, `player_kills`, `target_kills`, `bot_kills`: server combat counters.
 - `last_seq`: latest input sequence stored for the player.
 
@@ -725,11 +720,12 @@ Mismatched player ID:
 - Fire input creates server projectiles.
 - Server projectiles use the spread-adjusted `shot_dir_x` / `shot_dir_y` fields when available and remain as tracer visualization.
 - Server hitscan damage is applied immediately when a new fire input sequence is processed.
-- Hitscan target damage uses 20 damage and fixed server target spheres.
+- Legacy target hitscan is disabled by default with the old target objective.
 - Hitscan player damage checks head sphere first for 40 damage, then body sphere for 20 damage.
 - Hitscan bot damage checks head sphere first for 40 damage, then body sphere for 20 damage.
-- Server target kills award +1 score; server player kills award +2 score.
-- Server bot kills award +1 score and increment `bot_kills`.
+- Server bot kills award +1 kill and increment `bot_kills`.
+- Server player kills award +1 kill and increment `player_kills`.
+- Legacy target kills do not affect primary ranking while targets are disabled.
 - Dead players respawn after 8 seconds and are invincible for 1.5 seconds.
 - Dead bots respawn after 8 seconds and are invincible for 1.5 seconds.
 - Bots use simple server AI: move toward the nearest alive non-invincible player inside detect range, otherwise wander.
@@ -742,9 +738,9 @@ Mismatched player ID:
 - Alive players below max HP pick up active health packs by overlapping their pickup radius.
 - Health packs heal +35 HP, do not overheal above max HP, disappear on pickup, and respawn after 15 seconds.
 - Bots ignore health packs for now.
-- Match duration is 300 seconds and target score is 20.
-- The match ends when any connected player reaches target score or when the timer reaches zero.
-- `debug_set_match_timer` can disable timer-based `game_over` for development while keeping target-score wins.
+- Match duration is 300 seconds and kill goal is 20.
+- The match ends when any connected player reaches the kill goal or when the timer reaches zero.
+- `debug_set_match_timer` can disable timer-based `game_over` for development while keeping kill-goal wins.
 - Winner tie breakers are highest score, higher player kills, higher bot kills, fewer deaths, then lower player ID.
 - After game over, snapshots continue, but new combat score changes are stopped.
 
@@ -756,7 +752,7 @@ Mismatched player ID:
 - Bot behavior is simple direct-damage AI with no pathfinding, animations, or projectile visualization.
 - Health packs are server-side snapshot entities only; there are no local pickup effects, sounds, or imported models yet.
 - No lag compensation or advanced hit validation yet.
-- No target respawn.
+- Legacy targets/cores are disabled by default and kept only as debug compatibility data.
 - No authoritative synchronization with Unreal-placed local targets.
 - `debug_restart_match` is a browser/testing utility, not a production match flow.
 - No persistence or database.

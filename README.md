@@ -1,86 +1,75 @@
 # BattleGrid
 
-Unreal Engine C++ Multiplayer Arena with Custom C++ Authoritative Server
+Third-Person PvPvE Arena Shooter with Unreal Engine C++ and a Custom C++ Authoritative Server
 
-BattleGrid is a top-down arena game built with Unreal Engine C++ and a custom C++20 WebSocket game server. Unreal handles local gameplay, input, visuals, UI, and server ghost visualization. The custom C++ server handles sessions, room state, player input, fixed-rate server tick, snapshots, server projectiles, server targets, and server-authoritative scoring.
+BattleGrid is a third-person PvPvE arena shooter prototype. The Unreal client handles controls, visuals, local feedback, HUD, and server ghost visualization. The custom C++20 server handles WebSocket sessions, room state, server tick, player input, bots, health packs, server hitscan combat, match state, scoreboard, combat events, and snapshots.
 
-This project exists to demonstrate both Unreal gameplay programming and C++ real-time network server programming in one portfolio-scale repository.
+This project exists to demonstrate both Unreal gameplay programming and custom real-time C++ server programming in one portfolio-scale repository.
 
-## Current Features
+## Demo Video
 
-Unreal local gameplay:
+Coming soon.
 
-- WASD movement
-- Mouse aim
-- Local projectile firing
-- Local damageable targets
-- Local HP, score, victory, and restart
-- Player hazard damage and respawn
-- UMG combat HUD
+## Why This Project Matters
 
-Custom C++ server:
+BattleGrid shows the path from a playable Unreal prototype to a server-authoritative multiplayer architecture:
 
-- C++20 CMake console server
-- Boost.Beast WebSocket server
-- JSON message protocol
-- `ping` / `pong`
-- `join` / `join_ok`
-- `input` / `input_ack`
-- Room and player state
-- Fixed-rate server tick
-- Snapshot broadcast
-- Server projectiles
-- Server targets
-- Server projectile-target collision
-- Server score
+- Unreal gameplay programming: third-person controls, ADS, sprint, jump, weapon state, HUD, local feedback, and prototype combat visuals.
+- Custom C++ server programming: Boost.Beast WebSocket sessions, JSON protocol dispatch, fixed-rate room tick, authoritative game state, bots, pickups, match state, and snapshot broadcast.
+- Server-authoritative design: server-owned HP, deaths, respawn, bot/core/health-pack state, scoreboard, and hit result events.
+- Deployment workflow: local Docker Compose server and documented GCP VM Docker deployment.
+- Debugging workflow: browser protocol test page, safe demo mode, compact snapshot summaries, shot result events, ghost actors, and troubleshooting docs.
 
-Unreal/server integration:
+## Current Demo Features
 
-- WebSocket connection from Unreal
-- Join and input messages from Unreal to the server
-- Snapshot parsing in an Unreal `UGameInstanceSubsystem`
-- Server player ghost visualization
-- Server projectile ghost visualization
-- Server target ghost visualization
-- Server position error display
-- Optional server position correction
-- Server-authoritative HUD summary
-
-## Demo Status
-
-The current project is ready for a portfolio demo recording focused on architecture and feature bring-up:
-
-- Local Unreal gameplay is playable offline.
-- The custom C++ server can run locally with Docker Compose or remotely on a GCP VM with Docker Compose.
-- Unreal can switch between local and remote server profiles in PlayerController Blueprint defaults.
-- The HUD shows local HP/score separately from server score, target count, projectile count, snapshot tick, position error, and correction state.
-- Server player, projectile, and target ghosts make authoritative server state visible without hiding the local gameplay layer.
-- Demo mode keeps repetitive input, snapshot, and ack logs quiet while preserving connection, join, spawn, error, victory, and respawn logs.
+| Area | Feature | Status |
+| --- | --- | --- |
+| Unreal client | Third-person movement | Implemented |
+| Unreal client | ADS / sprint / jump | Implemented |
+| Unreal client | Ammo / reload / automatic fire | Implemented |
+| Networking | WebSocket JSON connection | Implemented |
+| Networking | Local/remote server profiles | Implemented |
+| Demo tooling | Safe demo mode | Implemented |
+| Server state | Snapshot broadcast | Implemented |
+| Visualization | Server player ghost / SERVER ECHO | Implemented |
+| Visualization | Server bot ghosts | Implemented |
+| Visualization | Server core/target ghosts | Implemented |
+| Visualization | Server health pack ghosts | Implemented |
+| Combat | Server hitscan shot feedback | Implemented |
+| PvE | Bot damage, death, respawn, score | Implemented |
+| Match | Match state and scoreboard | Implemented |
+| Deployment | Docker local server | Implemented |
+| Deployment | GCP deployment flow | Documented |
 
 ## Architecture
 
 ```text
-                local input / visuals / offline gameplay
-                              |
-                              v
-+------------------+   WebSocket JSON   +----------------------+
-| Unreal Client    | -----------------> | C++20 Server          |
-| PlayerController | input/join/ping    | WebSocketServer       |
-| Character        |                    | Session              |
-| UMG HUD          | <----------------- | RoomManager/GameRoom  |
-| Ghost Actors     | snapshot JSON      | Player/Projectile/Target State |
-+------------------+                    +----------------------+
-                              |
-                              v
-              Unreal renders server snapshots as ghost actors
+Unreal Client
+  -> WebSocket JSON input
+  -> C++ Server
+  -> GameRoom tick
+  -> snapshot
+  -> Unreal ghost actors / HUD
+```
+
+Expanded view:
+
+```text
++-----------------------+      WebSocket JSON       +------------------------+
+| Unreal Engine C++     |  input / join / debug     | C++20 Server           |
+| PlayerController      | ------------------------> | Boost.Beast sessions   |
+| Character + Weapon    |                           | MessageDispatcher      |
+| HUD / UMG             | <------------------------ | GameRoom fixed tick    |
+| Server ghost actors   |       snapshot JSON       | authoritative state    |
++-----------------------+                           +------------------------+
 ```
 
 The current demo intentionally keeps two layers visible:
 
-- Local offline layer: Unreal local character, local projectiles, local damageable targets, local HP, local score, victory, restart, and respawn.
-- Server-authoritative visualization layer: server players, projectiles, targets, positions, target HP, and server score shown through ghost actors and HUD summary.
+- Server-authoritative PvPvE layer: server player HP, bots, cores, health packs, match state, scoreboard, combat events, and shot results.
+- Local Unreal prototype layer: local projectile visuals, local target tests, local hazards, and offline gameplay fallback.
 
-This makes the networking bring-up easy to inspect before replacing local systems with fully authoritative gameplay.
+The server layer is the primary portfolio demo path. The local layer remains useful for offline testing and incremental client work.
 
 ## Repository Layout
 
@@ -88,12 +77,33 @@ This makes the networking bring-up easy to inspect before replacing local system
 client-unreal/   Unreal Engine C++ client project
 server/          Custom C++20 WebSocket game server
 tools/           Browser WebSocket protocol test page
-docs/            Architecture, protocol, demo, and troubleshooting docs
+docs/            Architecture, protocol, deployment, demo, and troubleshooting docs
 ```
 
 ## Build And Run
 
-### Server
+### Docker Server
+
+Build and run the server locally:
+
+```powershell
+docker compose up -d --build battlegrid-server
+docker compose logs -f battlegrid-server
+```
+
+Stop the server:
+
+```powershell
+docker compose down
+```
+
+The server listens on WebSocket port `7777`, so local tools use:
+
+```text
+ws://127.0.0.1:7777
+```
+
+### Native Server Build
 
 Install dependencies with vcpkg:
 
@@ -101,7 +111,7 @@ Install dependencies with vcpkg:
 C:\tools\vcpkg\vcpkg.exe install boost-beast:x64-windows boost-system:x64-windows nlohmann-json:x64-windows
 ```
 
-Configure and build from the repository root:
+Configure and build:
 
 ```powershell
 cmake -S server -B server/build -DCMAKE_TOOLCHAIN_FILE=C:/tools/vcpkg/scripts/buildsystems/vcpkg.cmake
@@ -114,37 +124,9 @@ Run:
 .\server\build\Debug\battlegrid-server.exe --host 127.0.0.1 --port 7777 --tick-rate 30
 ```
 
-### Docker Server
-
-Build and run the C++ server with Docker Compose:
-
-```powershell
-docker compose up --build
-```
-
-Run in the background:
-
-```powershell
-docker compose up -d --build
-```
-
-View logs:
-
-```powershell
-docker compose logs -f battlegrid-server
-```
-
-Stop:
-
-```powershell
-docker compose down
-```
-
-The container exposes WebSocket port `7777` on the host, so Unreal and `tools/websocket-test.html` can use `ws://127.0.0.1:7777`.
-
 ### GCP Docker Server
 
-The same Docker Compose setup can run on an Ubuntu GCP VM. The current manual deployment flow is:
+The same Docker Compose setup can run on an Ubuntu GCP VM:
 
 ```bash
 git clone https://github.com/pjpw6161/BattleGrid.git
@@ -168,57 +150,59 @@ See [GCP deployment](docs/deployment-gcp.md) for the full VM setup and operation
 3. Open the Unreal Editor.
 4. Press Play.
 
-Unreal server profile switching:
+Server profile settings live in the active PlayerController Blueprint defaults:
 
-- Local Docker server: set `bUseRemoteServer = false`, keep `LocalServerUrl = ws://127.0.0.1:7777`.
-- GCP server: set `bUseRemoteServer = true`, set `RemoteServerUrl = ws://<GCP_EXTERNAL_IP>:7777`.
-- The HUD shows the active profile as `Profile: Local` or `Profile: Remote`.
+- Local Docker server: `bUseRemoteServer = false`, `LocalServerUrl = ws://127.0.0.1:7777`.
+- GCP server: `bUseRemoteServer = true`, `RemoteServerUrl = ws://<GCP_EXTERNAL_IP>:7777`.
+- Demo startup: enable `bApplySafeDemoModeOnJoin` for stable recording.
 
-Unreal Editor assets such as Input Actions, Mapping Contexts, Blueprints, maps, and Widget Blueprints are edited by the human developer in Unreal Editor, not generated by Codex.
+Unreal assets such as Input Actions, Mapping Contexts, Blueprints, maps, materials, and Widget Blueprints are created or adjusted manually in Unreal Editor.
 
 ## Current Demo Flow
 
-1. Start the C++ server natively, with local Docker Compose, or on the GCP VM.
-2. Open `tools/websocket-test.html` and verify `ping`, `join`, `debug_room`, and snapshots.
-3. Open Unreal Editor.
-4. Press Play.
-5. Verify the HUD shows server connection, player ID, room ID, snapshot tick, server score, targets, projectiles, position error, and correction state.
-6. Move with WASD and aim with the mouse.
-7. Fire with left mouse button.
-8. Observe local projectiles and server projectile ghosts.
-9. Observe server player, projectile, and target ghost actors.
-10. Damage local targets and compare local score with server score.
-11. Test hazard damage, HP loss, death, respawn, victory, and R restart.
-12. Stop the server and verify local offline gameplay still works.
+1. Start the server with Docker Compose.
+2. Open `tools/websocket-test.html`.
+3. Connect, send join, and apply safe demo mode.
+4. Use `Fire 5 Shots At Nearest Bot` to verify `SERVER HIT` events and bot HP changes.
+5. Open Unreal and press Play.
+6. Verify the HUD shows server HP/score as primary.
+7. Move, ADS, sprint, jump, and fire.
+8. Show SERVER ECHO, bot ghosts, core ghosts, health pack ghosts, and server shot result text.
+9. Hold Tab to show the server scoreboard.
+10. Stop the server and confirm local offline gameplay still exists.
+
+See [demo checklist](docs/demo-checklist.md) and [demo script](docs/demo-script.md) for a recording-ready sequence.
 
 ## Current Limitations
 
-- Local targets and server targets are separate layers.
-- Local projectile damage and server projectile damage are separate.
-- Full prediction, input replay, and reconciliation history are not implemented.
-- Remote player meshes are not implemented.
-- Server-side player damage is not implemented.
-- Target respawn is not implemented.
-- There is no persistence or database.
-- GCP deployment is manual and not automated.
-- Bot load testing and benchmarking are not complete.
-- Networking is not production-ready and has no authentication or anti-cheat.
+- Local projectile visuals and server hitscan damage are still separate layers.
+- Local offline targets and server cores are still separate.
+- Server ghost actors are prototype visualization, not final player/bot/core presentation.
+- No production matchmaking or lobby flow.
+- No database or persistence.
+- No advanced lag compensation, rollback, or anti-cheat.
+- Placeholder visuals use Unreal built-in shapes and local materials.
+- No final character, weapon, animation, audio, or VFX assets yet.
+- GCP deployment is documented and manual, not fully automated infrastructure.
+- Networking is not production-ready.
 
 ## Next Steps
 
-- Plan the third-person PvPvE kill race upgrade.
-- Automate GCP deployment.
-- Add a bot client.
-- Add benchmark and load-test scripts.
-- Polish a demo video.
-- Improve client prediction and reconciliation.
-- Integrate local and server target layers.
-- Move more combat rules to the server.
+- Polish arena art and map layout.
+- Add character and weapon models.
+- Add Niagara muzzle flash, tracer, and impact effects.
+- Improve bot behavior and presentation.
+- Replace text scoreboard with a dedicated UMG scoreboard.
+- Polish GCP demo server operation.
+- Record and publish a demo video/GIF.
+- Continue prediction/reconciliation and server authority improvements.
 
 ## Documentation
 
 - [Project brief](PROJECT_BRIEF.md)
-- [Planned game design](docs/game-design.md)
+- [Portfolio summary](docs/portfolio-summary.md)
+- [Demo script](docs/demo-script.md)
+- [Game design](docs/game-design.md)
 - [Implementation roadmap](docs/implementation-roadmap.md)
 - [Overall architecture](docs/architecture.md)
 - [Unreal client](docs/unreal-client.md)
@@ -226,6 +210,7 @@ Unreal Editor assets such as Input Actions, Mapping Contexts, Blueprints, maps, 
 - [WebSocket JSON protocol](docs/protocol.md)
 - [Docker deployment](docs/deployment-docker.md)
 - [GCP deployment](docs/deployment-gcp.md)
+- [Asset credits](docs/asset-credits.md)
 - [Development log](docs/development-log.md)
 - [Demo checklist](docs/demo-checklist.md)
 - [Troubleshooting](docs/troubleshooting.md)

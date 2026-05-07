@@ -141,7 +141,7 @@
     <div class="summary-card"><strong>Scoreboard</strong><span id="scoreboardSummary">-</span></div>
     <div class="summary-card"><strong>Players</strong><span id="playersSummary">-</span></div>
     <div class="summary-card"><strong>Bots</strong><span id="botsSummary">-</span></div>
-    <div class="summary-card"><strong>Cores</strong><span id="targetsSummary">-</span></div>
+    <div class="summary-card"><strong>Targets Debug</strong><span id="targetsSummary">disabled</span></div>
     <div class="summary-card"><strong>Health Packs</strong><span id="healthPacksSummary">-</span></div>
     <div class="summary-card"><strong>Projectiles</strong><span id="projectilesSummary">-</span></div>
     <div class="summary-card"><strong>Shot Result</strong><span id="shotResultSummary">-</span></div>
@@ -365,7 +365,7 @@
         return `BOT-${event.bot_id}`;
       }
       if (event.target_id) {
-        return `CORE-${event.target_id}`;
+        return `LEGACY-TARGET-${event.target_id}`;
       }
       if (event.target_player_id) {
         return `P${event.target_player_id}`;
@@ -408,7 +408,7 @@
         `Damage body/head=${latestDebugRoom.body_damage ?? 20}/${latestDebugRoom.headshot_damage ?? 40}\n` +
         `Difficulty=${latestDebugRoom.bot_difficulty ?? "normal"} attacks=${latestDebugRoom.bot_attacks_enabled ?? true}\n` +
         `Timer auto-end=${latestDebugRoom.auto_end_match_by_timer ?? true}\n` +
-        `Score bot/player/core=${latestDebugRoom.bot_kill_score ?? 1}/${latestDebugRoom.player_kill_score ?? 2}/${latestDebugRoom.target_kill_score ?? 1}`
+        `Kill score bot/player=${latestDebugRoom.bot_kill_score ?? 1}/${latestDebugRoom.player_kill_score ?? 1}`
       );
     }
 
@@ -418,10 +418,10 @@
       }
 
       return scoreboard
-        .slice(0, 4)
+        .slice(0, 5)
         .map((entry, index) =>
           `${index + 1}. ${entry.nickname || "P" + entry.player_id} ` +
-          `S=${entry.score ?? 0} K/D=${entry.kills ?? 0}/${entry.deaths ?? 0} ` +
+          `Kills=${entry.score ?? 0} K/D=${entry.kills ?? 0}/${entry.deaths ?? 0} ` +
           `Bot=${entry.bot_kills ?? 0} PvP=${entry.player_kills ?? 0}`
         )
         .join("\n");
@@ -431,7 +431,6 @@
       const match = snapshot.match || {};
       const players = Array.isArray(snapshot.players) ? snapshot.players : [];
       const bots = Array.isArray(snapshot.bots) ? snapshot.bots : [];
-      const targets = Array.isArray(snapshot.targets) ? snapshot.targets : [];
       const healthPacks = Array.isArray(snapshot.health_packs) ? snapshot.health_packs : [];
       const projectiles = Array.isArray(snapshot.projectiles) ? snapshot.projectiles : [];
       const aliveBots = bots.filter((bot) => bot.alive).length;
@@ -441,7 +440,7 @@
         `snapshot tick=${snapshot.tick ?? "-"} ` +
         `match=${match.state ?? "-"} time=${formatTime(match.time_left)} ` +
         `players=${players.length} bots=${aliveBots}/${bots.length} ` +
-        `targets=${targets.length} hpacks=${activeHealthPacks}/${healthPacks.length} ` +
+        `hpacks=${activeHealthPacks}/${healthPacks.length} ` +
         `projectiles=${projectiles.length}`
       );
     }
@@ -460,7 +459,7 @@
         setText("scoreboardSummary", "-");
         setText("playersSummary", "-");
         setText("botsSummary", "-");
-        setText("targetsSummary", "-");
+        setText("targetsSummary", "disabled");
         setText("healthPacksSummary", "-");
         setText("projectilesSummary", "-");
         setText("shotResultSummary", latestShotResultMessage);
@@ -480,7 +479,7 @@
       const winner = match.winner_nickname || (match.winner_player_id ? `P${match.winner_player_id}` : "-");
       setText(
         "matchSummary",
-        `${match.state ?? "-"} | ${formatTime(match.time_left)} | goal=${match.target_score ?? "-"}\n` +
+        `${match.state ?? "-"} | ${formatTime(match.time_left)} | kill_goal=${match.target_score ?? "-"}\n` +
         `game_over=${match.game_over ?? false} winner=${winner} match=${match.match_id ?? "-"}`
       );
       setText("scoreboardSummary", summarizeScoreboard(scoreboard));
@@ -488,7 +487,7 @@
       const ownPlayer = players.find((player) => player.player_id === joinedPlayerId);
       const playerSummary = ownPlayer
         ? `P${ownPlayer.player_id} ${ownPlayer.nickname || ""} HP=${ownPlayer.hp}/${ownPlayer.max_hp}\n` +
-          `alive=${ownPlayer.alive} inv=${ownPlayer.invincible} score=${ownPlayer.score} deaths=${ownPlayer.deaths}`
+          `alive=${ownPlayer.alive} inv=${ownPlayer.invincible} kills=${ownPlayer.score} deaths=${ownPlayer.deaths}`
         : players.map((player) => `P${player.player_id}:${player.hp}/${player.max_hp}`).join(" ");
       setText("playersSummary", playerSummary || "-");
 
@@ -501,9 +500,12 @@
 
       const aliveTargets = targets.filter((target) => target.alive).length;
       const targetSummary = targets
-        .map((target) => `C${target.target_id}:${target.alive ? target.hp + "/" + target.max_hp : "DEAD"}`)
+        .map((target) => `T${target.target_id}:${target.alive ? target.hp + "/" + target.max_hp : "DEAD"}`)
         .join(" ");
-      setText("targetsSummary", `${aliveTargets}/${targets.length}\n${targetSummary || "-"}`);
+      setText(
+        "targetsSummary",
+        targets.length > 0 ? `legacy/debug ${aliveTargets}/${targets.length}\n${targetSummary || "-"}` : "disabled"
+      );
 
       const activeHealthPacks = healthPacks.filter((pack) => pack.active).length;
       const healthPackSummary = healthPacks
@@ -583,12 +585,13 @@
       const arena = message.arena;
       const bounds = arena.bounds;
       const playerSpawns = Array.isArray(arena.player_spawns) ? arena.player_spawns.length : 0;
-      const cores = Array.isArray(arena.target_cores) ? arena.target_cores.length : 0;
+      const legacyTargets = Array.isArray(arena.target_cores_debug) ? arena.target_cores_debug.length : 0;
       const botSpawns = Array.isArray(arena.bot_spawns) ? arena.bot_spawns.length : 0;
       const healthPackSpawns = Array.isArray(arena.health_pack_spawns) ? arena.health_pack_spawns.length : 0;
       log(
         `arena x=${bounds.min_x}..${bounds.max_x} y=${bounds.min_y}..${bounds.max_y} ` +
-        `player_spawns=${playerSpawns} cores=${cores} bot_spawns=${botSpawns} health_pack_spawns=${healthPackSpawns}`
+        `player_spawns=${playerSpawns} bot_spawns=${botSpawns} health_pack_spawns=${healthPackSpawns}` +
+        (legacyTargets > 0 ? ` legacy_targets_debug=${legacyTargets}` : "")
       );
     }
 
@@ -654,7 +657,7 @@
           updateLatestRoomEntities(message);
           log(
             `room_state players=${message.player_count ?? 0} ` +
-            `targets=${message.target_count ?? 0} bots=${message.bot_count ?? 0} ` +
+            `bots=${message.bot_count ?? 0} targets_debug=${message.targets_debug_count ?? 0} ` +
             `bot_attacks=${message.bot_attacks_enabled ?? true} ` +
             `difficulty=${message.bot_difficulty ?? "normal"} ` +
             `auto_timer=${message.auto_end_match_by_timer ?? true} ` +
@@ -671,7 +674,7 @@
           log(
             `combat_tuning body=${message.body_damage ?? 20} ` +
             `head=${message.headshot_damage ?? 40} ` +
-            `score bot/player/core=${message.bot_kill_score ?? 1}/${message.player_kill_score ?? 2}/${message.target_kill_score ?? 1}`
+            `kill_score bot/player=${message.bot_kill_score ?? 1}/${message.player_kill_score ?? 1}`
           );
           logArenaLayout(message);
           logEvents(message);

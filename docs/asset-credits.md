@@ -10,6 +10,8 @@ BattleGrid currently uses placeholder visuals for prototype readability.
 - Server CORE ghosts use basic cube placeholders.
 - Server bot ghosts use basic sphere placeholders.
 - Server health pack ghosts use basic cube placeholders.
+- Custom placeholder materials may be created locally in Unreal Editor for readability.
+- No external asset packs are required for the current portfolio demo.
 
 ## Local Project Materials
 
@@ -37,12 +39,24 @@ No external art, audio, animation, model, icon, or marketplace assets are import
 
 When external assets are added later, record:
 
-- asset name
-- creator/vendor
-- license
-- source URL
-- imported path
-- usage notes
+- Asset name:
+- Creator/vendor:
+- Source:
+- License:
+- Imported path:
+- Usage:
+- Redistribution notes:
+
+Suggested future asset source categories:
+
+| Source | Likely Use | Notes |
+| --- | --- | --- |
+| Unreal Marketplace / Fab | characters, weapons, arena props, materials, VFX | Check license and redistribution terms before committing assets. |
+| Kenney | prototype icons, UI, low-poly props | Preserve license text and source URL. |
+| Mixamo | temporary character animations | Check Adobe/Mixamo usage terms and document animation names. |
+| Freesound | temporary audio feedback | Use only assets with compatible licenses and credit requirements. |
+
+Do not redistribute marketplace or third-party assets outside the permissions of their license. If an asset license allows project use but not source redistribution, document it here and keep the asset out of public repository commits as needed.
 
 ## Current Limitation
 

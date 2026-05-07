@@ -9,9 +9,7 @@ namespace
 {
 FString ToGamePrototypeHudText(const FString& Text)
 {
-	FString Result = Text.Replace(TEXT("TargetKills"), TEXT("CoreKills"));
-	Result = Result.Replace(TEXT(" | Target"), TEXT(" | Core"));
-	Result = Result.Replace(TEXT("Targets"), TEXT("Cores"));
+	FString Result = Text;
 	Result = Result.Replace(TEXT("HealthPacks"), TEXT("HPacks"));
 	return Result;
 }
@@ -109,7 +107,7 @@ void UBattleGridCombatWidget::UpdateHud(
 		if (bShowServerHudValues)
 		{
 			ScoreText->SetText(FText::FromString(FString::Printf(
-				TEXT("SERVER Score: %d / %d | K/D %d/%d | Bots %d | PvP %d | Ammo %s"),
+				TEXT("SERVER Kills: %d / %d | K/D %d/%d | Bots %d | PvP %d | Ammo %s"),
 				ServerScore,
 				ServerTargetScore,
 				ServerKills,

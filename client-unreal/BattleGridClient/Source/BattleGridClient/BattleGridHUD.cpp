@@ -11,10 +11,7 @@ namespace
 {
 FString ToGamePrototypeHudText(const FString& Text)
 {
-	FString Result = Text.Replace(TEXT("TargetKills"), TEXT("CoreKills"));
-	Result = Result.Replace(TEXT(" | Target"), TEXT(" | Core"));
-	Result = Result.Replace(TEXT("Targets"), TEXT("Cores"));
-	Result = Result.Replace(TEXT("HealthPacks"), TEXT("HPacks"));
+	FString Result = Text.Replace(TEXT("HealthPacks"), TEXT("HPacks"));
 	return Result;
 }
 }

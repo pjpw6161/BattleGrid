@@ -4,50 +4,51 @@
 
 BattleGrid
 
-## One-line Description
+## One-Line Description
 
-BattleGrid is a top-down arena shooter built with an Unreal Engine C++ client and a custom C++20 authoritative server.
+BattleGrid is a third-person PvPvE arena shooter prototype built with an Unreal Engine C++ client and a custom C++20 WebSocket authoritative server.
 
 ## Portfolio Goal
 
 BattleGrid is designed to show two complementary engineering skills:
 
 - Unreal Engine C++ gameplay programming.
-- Real-time C++ server programming with WebSockets, JSON protocol handling, session state, game loop simulation, and snapshot broadcasting.
+- Real-time C++ server programming with WebSockets, JSON protocol handling, authoritative room simulation, combat state, snapshots, Docker deployment, and GCP operation flow.
 
 ## Target Roles
 
 - Unreal Game Client Programmer
+- Gameplay Programmer
 - Game Server Programmer
 - C++ Software Engineer
 
 ## Genre
 
-Top-down multiplayer arena shooter.
+Third-person PvPvE arena shooter.
 
-## Current MVP Shape
+## Current Demo Shape
 
-The current project is a hybrid local/network demo:
+The current project is a hybrid local/server portfolio prototype:
 
-- Unreal provides playable local arena shooter mechanics.
-- The C++ server runs an authoritative simulation layer for players, projectiles, targets, and score.
-- Unreal renders the server state as ghost actors instead of replacing local gameplay immediately.
+- Unreal provides playable third-person movement, local feedback, weapon state, HUD, and prototype visuals.
+- The C++ server owns the PvPvE state layer: players, bots, cores, health packs, hitscan combat, score, match state, scoreboard, and combat events.
+- Unreal renders server snapshots through ghost actors so authoritative state remains visible and debuggable.
 
-This separation keeps the demo playable while making server state visible and debuggable.
+The server-authoritative layer is the main demo focus. The local Unreal gameplay layer remains available for offline fallback and incremental feature development.
 
 ## Unreal Client Responsibilities
 
-- Enhanced Input based WASD movement.
-- Mouse aim rotation.
-- Local projectile spawning.
-- Local target damage and destruction.
-- Local player HP, hazard damage, death, respawn, score, victory, and restart.
-- UMG combat HUD.
+- Third-person character movement.
+- ADS, sprint, jump, and camera-relative controls.
+- Local weapon component with ammo, reload, fire rate, and spread values.
+- Local projectile and hazard feedback for prototype/offline testing.
+- UMG HUD with server-centric status.
 - WebSocket connection through a `UGameInstanceSubsystem`.
-- JSON message sending and parsing.
-- Server player, projectile, and target ghost visualization.
-- Server position error display.
-- Optional server position correction.
+- JSON message sending and snapshot parsing.
+- Server player, projectile, core, bot, and health pack ghost visualization.
+- Server shot result display and combat event feed.
+- Server scoreboard overlay.
+- Local/remote server profile selection.
 
 ## Custom C++ Server Responsibilities
 
@@ -58,13 +59,16 @@ This separation keeps the demo playable while making server state visible and de
 - Session join state and player ID assignment.
 - Fixed Room 1 state.
 - Latest player input storage.
-- Fixed-rate tick.
+- Fixed-rate server tick.
 - Player movement integration.
-- Server projectile spawn, movement, lifetime, and snapshot state.
-- Fixed server target HP.
-- Projectile-target collision.
-- Server score updates.
-- Snapshot broadcast to joined sessions.
+- Server projectile/tracer spawn and lifetime.
+- Server hitscan combat with body/head damage.
+- Server bots with simple movement, attack, death, respawn, and invincibility.
+- Fixed server cores with HP.
+- Server health packs with pickup and respawn.
+- Server score, match timer, winner, and scoreboard.
+- Recent combat event queue and snapshot broadcast.
+- Safe demo/debug controls.
 
 ## Technology Stack
 
@@ -84,43 +88,39 @@ Server:
 - Boost.Asio
 - Boost.Beast
 - nlohmann-json
-- Standard library threading and containers
+- Standard library containers and synchronization
 
-Planned deployment and tooling:
+Deployment and tooling:
 
-- Docker
-- GCP Compute Engine
-- Bot client
-- Benchmark scripts
+- Docker Compose
+- GCP Compute Engine deployment flow
+- Browser WebSocket protocol test page
 
 ## Implemented Scope
 
-- Local Unreal arena shooter input and combat loop.
-- Local damageable targets.
-- Player hazard damage, death, and respawn.
-- Local victory and restart.
-- UMG HUD.
-- WebSocket JSON server.
-- Join/input/snapshot protocol.
-- Server-side room and player state.
-- Server-side projectiles and fixed targets.
-- Server-side target HP and score.
-- Unreal visualization of server state.
+- Third-person Unreal controls and local prototype combat feedback.
+- Local weapon state with ammo, reload, automatic fire, and spread configuration.
+- WebSocket JSON server and protocol.
+- Join/input/snapshot/debug protocol messages.
+- Server-side room, players, bots, cores, health packs, projectiles/tracers, match state, scoreboard, and combat events.
+- Server hitscan combat against bots, cores, and players.
+- Bot kill/respawn and score updates.
+- Safe demo mode for stable recording.
+- Browser protocol test page with compact summaries and server shot tests.
+- Unreal visualization of server state through ghost actors.
+- Server-centric HUD and Tab scoreboard.
+- Docker local server setup and GCP deployment documentation.
 
 ## Not Implemented Yet
 
-- Full server-authoritative replacement of local combat.
-- Input replay and reconciliation history.
-- Remote player character meshes.
-- Server-side player damage.
-- Target respawn.
-- Multiple rooms.
-- Authentication.
+- Production-ready matchmaking or lobby flow.
 - Database persistence.
-- Docker/GCP deployment.
-- Bot load testing.
-- Production hardening.
+- Advanced lag compensation, rollback, or anti-cheat.
+- Final character, weapon, bot, pickup, audio, VFX, or arena art assets.
+- Dedicated polished UMG scoreboard/kill-feed widgets.
+- Automated cloud deployment pipeline.
+- Large-scale load testing.
 
 ## Final Portfolio Message
 
-BattleGrid demonstrates a practical path from Unreal local gameplay to a custom authoritative multiplayer architecture. It shows that the client can remain playable while the server simulation is built, visualized, tested, and gradually promoted into the source of truth.
+BattleGrid demonstrates a practical path from Unreal local gameplay to custom server-authoritative multiplayer architecture. It shows gameplay systems, C++ server simulation, WebSocket protocol design, snapshot visualization, Docker/GCP deployment workflow, and debugging tools in a single cohesive prototype.
