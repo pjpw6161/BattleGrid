@@ -23,6 +23,19 @@ void UBattleGridCombatWidget::UpdateHud(
 	int32 Score,
 	int32 TargetScore,
 	int32 ServerScore,
+	int32 ServerHP,
+	int32 ServerMaxHP,
+	int32 ServerKills,
+	int32 ServerDeaths,
+	int32 ServerBotKills,
+	int32 ServerPlayerKills,
+	int32 ServerTargetScore,
+	bool bHasServerOwnPlayerSnapshot,
+	bool bServerInvincible,
+	bool bServerGameOver,
+	bool bUseServerAuthoritativeHud,
+	bool bShowLocalDebugHud,
+	bool bShowCombatEventFeed,
 	int32 CurrentAmmo,
 	int32 MagazineSize,
 	bool bIsReloading,
@@ -37,15 +50,25 @@ void UBattleGridCombatWidget::UpdateHud(
 	bool bHasServerPositionError,
 	bool bUseServerCorrection,
 	bool bShowScoreboard,
-	const FString& ScoreboardText
+	const FString& ScoreboardText,
+	const FString& ServerCombatEventFeedText,
+	const FString& LocalDebugHudText
 )
 {
 	static_cast<void>(ServerPositionError);
 	static_cast<void>(bHasServerPositionError);
 	static_cast<void>(bUseServerCorrection);
 
-	const float HealthPercent = MaxHealth > 0.0f
-		? FMath::Clamp(CurrentHealth / MaxHealth, 0.0f, 1.0f)
+	const bool bShowServerHudValues =
+		bUseServerAuthoritativeHud && bHasServerOwnPlayerSnapshot;
+	const float DisplayHealth = bShowServerHudValues
+		? static_cast<float>(ServerHP)
+		: CurrentHealth;
+	const float DisplayMaxHealth = bShowServerHudValues
+		? static_cast<float>(ServerMaxHP)
+		: MaxHealth;
+	const float HealthPercent = DisplayMaxHealth > 0.0f
+		? FMath::Clamp(DisplayHealth / DisplayMaxHealth, 0.0f, 1.0f)
 		: 0.0f;
 
 	if (HealthBar)
@@ -55,11 +78,26 @@ void UBattleGridCombatWidget::UpdateHud(
 
 	if (HealthText)
 	{
-		HealthText->SetText(FText::FromString(FString::Printf(
-			TEXT("Local HP: %.0f / %.0f"),
-			CurrentHealth,
-			MaxHealth
-		)));
+		if (bShowServerHudValues)
+		{
+			const FString LifeSuffix = bServerDead
+				? FString(TEXT(" | DEAD"))
+				: (bServerInvincible ? FString(TEXT(" | INV")) : FString());
+			HealthText->SetText(FText::FromString(FString::Printf(
+				TEXT("SERVER HP: %d / %d%s"),
+				ServerHP,
+				ServerMaxHP,
+				*LifeSuffix
+			)));
+		}
+		else
+		{
+			HealthText->SetText(FText::FromString(FString::Printf(
+				TEXT("Local HP: %.0f / %.0f"),
+				CurrentHealth,
+				MaxHealth
+			)));
+		}
 	}
 
 	if (ScoreText)
@@ -67,29 +105,69 @@ void UBattleGridCombatWidget::UpdateHud(
 		const FString AmmoText = bIsReloading
 			? FString(TEXT("Reloading..."))
 			: FString::Printf(TEXT("%d/%d"), CurrentAmmo, MagazineSize);
-		ScoreText->SetText(FText::FromString(FString::Printf(
-			TEXT("Local Score: %d / %d | Server Score: %d | Ammo: %s | Spread: %.1f"),
-			Score,
-			TargetScore,
-			ServerScore,
-			*AmmoText,
-			LastShotSpreadDegrees
-		)));
+		if (bShowServerHudValues)
+		{
+			ScoreText->SetText(FText::FromString(FString::Printf(
+				TEXT("SERVER Score: %d / %d | K/D %d/%d | Bots %d | PvP %d | Ammo %s"),
+				ServerScore,
+				ServerTargetScore,
+				ServerKills,
+				ServerDeaths,
+				ServerBotKills,
+				ServerPlayerKills,
+				*AmmoText
+			)));
+		}
+		else
+		{
+			ScoreText->SetText(FText::FromString(FString::Printf(
+				TEXT("Local Score: %d / %d | Ammo: %s | Spread: %.1f"),
+				Score,
+				TargetScore,
+				*AmmoText,
+				LastShotSpreadDegrees
+			)));
+		}
 	}
 
 	if (CombatMessageText)
 	{
-		const FString DisplayMessage = bShowScoreboard
-			? ToGamePrototypeHudText(ScoreboardText)
-			: (bServerDead
-			? ServerLifeStateText
-			: (bHasWon
-			? FString(TEXT("Victory! Press F5/Enter to Restart"))
-			: CombatMessage));
+		FString DisplayMessage;
+		if (bShowScoreboard)
+		{
+			DisplayMessage = ToGamePrototypeHudText(ScoreboardText);
+		}
+		else if (bServerDead)
+		{
+			DisplayMessage = ServerLifeStateText;
+		}
+		else if (bServerGameOver)
+		{
+			DisplayMessage = TEXT("SERVER GAME OVER");
+		}
+		else if (bHasWon && !bUseServerAuthoritativeHud)
+		{
+			DisplayMessage = TEXT("Victory! Press F5/Enter to Restart");
+		}
+		else if (bServerInvincible && !ServerLifeStateText.IsEmpty())
+		{
+			DisplayMessage = ServerLifeStateText;
+		}
+		else if (bShowCombatEventFeed && !ServerCombatEventFeedText.IsEmpty())
+		{
+			DisplayMessage = FString::Printf(
+				TEXT("Events:\n%s"),
+				*ServerCombatEventFeedText
+			);
+		}
+		else if (bShowCombatMessage)
+		{
+			DisplayMessage = CombatMessage;
+		}
 
 		CombatMessageText->SetText(FText::FromString(DisplayMessage));
 		CombatMessageText->SetVisibility(
-			(bShowScoreboard || bServerDead || bShowCombatMessage || bHasWon)
+			!DisplayMessage.IsEmpty()
 				? ESlateVisibility::Visible
 				: ESlateVisibility::Collapsed
 		);
@@ -101,9 +179,17 @@ void UBattleGridCombatWidget::UpdateHud(
 		const FString BaseControlsMessage = bHasWon
 			? FString(TEXT("Victory! Press F5/Enter to Restart"))
 			: FString(TEXT("WASD Move | Mouse Look | LMB Fire | RMB ADS | Shift Sprint | Space Jump | R Reload | F5/Enter Restart | Tab Scoreboard"));
-		const FString FullControlsMessage = PolishedNetworkStatusText.IsEmpty()
-			? BaseControlsMessage
-			: FString::Printf(TEXT("%s\n%s"), *PolishedNetworkStatusText, *BaseControlsMessage);
+		TArray<FString> ControlLines;
+		if (!PolishedNetworkStatusText.IsEmpty())
+		{
+			ControlLines.Add(PolishedNetworkStatusText);
+		}
+		if (bShowLocalDebugHud && !LocalDebugHudText.IsEmpty())
+		{
+			ControlLines.Add(LocalDebugHudText);
+		}
+		ControlLines.Add(BaseControlsMessage);
+		const FString FullControlsMessage = FString::Join(ControlLines, TEXT("\n"));
 
 		ControlsText->SetText(FText::FromString(FullControlsMessage));
 	}

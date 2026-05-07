@@ -19,7 +19,7 @@ Use this checklist to run the current portfolio demo.
 7. Confirm the browser output shows `match.state=in_progress`, `game_over=false`, `bot_attacks_enabled=false`, `bot_difficulty=easy`, `auto_end_match_by_timer=false`, `targets=5`, `bots=8`, and `health_packs=3`.
 8. Keep `Log Raw Snapshots` unchecked so the page shows compact summaries without freezing.
 9. Open Unreal Editor.
-10. In the PlayerController Blueprint defaults, use the remote profile and confirm the HUD shows `Profile: Remote` and `Server: Connected`.
+10. In the PlayerController Blueprint defaults, use the remote profile and confirm the HUD shows `Profile: Remote`, `Server: Connected`, and server-authoritative `SERVER HP` / `SERVER Score` as the primary state.
 11. Move with WASD.
 12. Show the local character and the server player ghost moving together.
 13. Fire with left mouse button and show both the local projectile and server projectile ghost.
@@ -33,9 +33,12 @@ Use this checklist to run the current portfolio demo.
    - `HPACK-*` labels are visible and inactive packs show a countdown.
    - local objects and server ghost objects are visually distinguishable.
 18. Validate the arena layout: P1/P2/P3/P4 spawns sit on the four sides, CORE-1 is centered, bots are around center/lanes, and health packs are near the perimeter.
-19. Walk into the hazard and show local HP decrease, death, and respawn.
-20. Toggle optional server position correction on/off if useful for the recording.
-21. Stop the server or switch back to the Local profile and show that offline gameplay still runs.
+19. Verify the server combat event feed appears after a bot/core/player event.
+20. Hold Tab and verify the server scoreboard overlay appears; release Tab and verify the normal HUD returns.
+21. Walk into the hazard and show local HP decrease, death, and respawn only as an offline/local debug layer.
+22. Toggle `bShowLocalDebugHud` if you need to show local HP/score and position error during explanation.
+23. Toggle optional server position correction on/off if useful for the recording.
+24. Stop the server or switch back to the Local profile and show that offline gameplay still runs.
 
 ## Server Smoke Test
 
@@ -138,15 +141,17 @@ Use this checklist to run the current portfolio demo.
    - Set `RemoteServerUrl` to `ws://<GCP_EXTERNAL_IP>:7777`.
 5. Press Play.
 6. Verify the HUD shows:
-   - Local HP.
-   - Local score.
-   - Server score.
+   - `SERVER HP` as the primary health readout while connected/joined.
+   - `SERVER Score` and target score as the primary scoring readout.
    - Server connection.
    - Profile label, either `Profile: Local` or `Profile: Remote`.
-   - Player ID and room ID.
-   - Snapshot tick.
-   - Server target count.
+   - Match time and goal score.
+   - Core count.
+   - Bot count.
+   - Health pack count.
    - Server projectile count.
+   - Recent combat event feed.
+   - Optional local debug line only when `bShowLocalDebugHud` is enabled.
    - Position error and correction state.
 7. Move with WASD.
 8. Aim with the mouse.
@@ -169,8 +174,9 @@ Use this checklist to run the current portfolio demo.
    - health pack ghosts appear near outer lanes
 18. Switch from local mode to remote mode and show the HUD profile label changing.
 19. Show server ghosts driven by the remote GCP server.
-20. Toggle optional server position correction in the PlayerController Blueprint defaults if needed, then compare error behavior.
-21. Stop the server and verify local offline gameplay still works.
+20. Hold Tab and verify the server scoreboard overlay appears. It should also show automatically when the server match is `game_over`.
+21. Toggle optional server position correction in the PlayerController Blueprint defaults if needed, then compare error behavior.
+22. Stop the server and verify local offline gameplay still works.
 
 ## Victory And Restart
 
@@ -183,5 +189,5 @@ Use this checklist to run the current portfolio demo.
 
 - BattleGrid demonstrates both Unreal gameplay programming and custom C++ server programming.
 - The ghost layer makes server state visible without hiding local gameplay.
-- Local score and server score are separate on purpose during the bring-up phase.
-- The next step is to merge local and server gameplay layers into a stronger authoritative flow.
+- Server score/HP is primary for the PvPvE demo.
+- Local score/HP is still available as an optional debug/offline layer through `bShowLocalDebugHud`.

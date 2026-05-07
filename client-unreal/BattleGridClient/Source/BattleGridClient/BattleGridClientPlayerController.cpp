@@ -71,6 +71,10 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	DemoBotDifficulty = TEXT("easy");
 	bDemoAutoEndMatchByTimer = false;
 	bScoreboardToggleMode = false;
+	bUseServerAuthoritativeHud = true;
+	bShowLocalDebugHud = false;
+	bShowServerDebugDetails = true;
+	bShowCombatEventFeed = true;
 	CombatMessageExpireTime = 0.0f;
 	bPlayerDead = false;
 	bHasWon = false;
@@ -326,7 +330,7 @@ FString ABattleGridClientPlayerController::GetServerCombatEventFeedText() const
 		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
 			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
 		{
-			return NetworkSubsystem->GetCombatEventFeedText();
+			return NetworkSubsystem->GetServerCombatEventFeedText();
 		}
 	}
 
@@ -367,109 +371,128 @@ bool ABattleGridClientPlayerController::ShouldShowScoreboard() const
 	return false;
 }
 
-FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
+bool ABattleGridClientPlayerController::UseServerAuthoritativeHud() const
 {
-	const FString ProfileLabel = ResolveServerProfileLabel();
-	const FString CorrectionText = IsUsingServerPositionCorrection()
-		? FString(TEXT("On"))
-		: FString(TEXT("Off"));
-	const FString ErrorText = bShowServerPositionError && HasOwnServerWorldLocation()
-		? FString::Printf(TEXT("%.1f"), GetLastServerPositionError())
-		: FString(TEXT("-"));
-	const FString ADSStatusText = bIsADSActive ? FString(TEXT("On")) : FString(TEXT("Off"));
-	const FString SprintStatusText = bIsSprinting ? FString(TEXT("On")) : FString(TEXT("Off"));
+	return bUseServerAuthoritativeHud;
+}
+
+bool ABattleGridClientPlayerController::ShowLocalDebugHud() const
+{
+	return bShowLocalDebugHud;
+}
+
+bool ABattleGridClientPlayerController::ShowServerDebugDetails() const
+{
+	return bShowServerDebugDetails;
+}
+
+bool ABattleGridClientPlayerController::ShowCombatEventFeed() const
+{
+	return bShowCombatEventFeed;
+}
+
+FString ABattleGridClientPlayerController::GetServerPrimaryHudText() const
+{
+	const FString ProfileText = FString::Printf(TEXT("Profile: %s"), *ResolveServerProfileLabel());
 
 	if (const UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
 			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
 		{
+			TArray<FString> Lines;
+			Lines.Add(FString::Printf(
+				TEXT("%s | %s"),
+				*ProfileText,
+				*NetworkSubsystem->GetServerPrimaryStatusText()
+			));
+
 			if (NetworkSubsystem->HasJoined())
 			{
-				FBattleGridServerPlayerSnapshot OwnSnapshot;
-				const bool bHasOwnSnapshot =
-					NetworkSubsystem->GetOwnPlayerSnapshot(OwnSnapshot);
-				const FString MatchSummaryText =
-					NetworkSubsystem->GetServerScoreboardSummaryText();
-				const FString EventFeedText = NetworkSubsystem->GetCombatEventFeedText();
-				const FString EventDisplayText = EventFeedText.IsEmpty()
-					? FString(TEXT("Events: -"))
-					: FString::Printf(TEXT("Events:\n%s"), *EventFeedText);
-				const FString DebugDisplayText = NetworkSubsystem->GetLastDebugMessage().IsEmpty()
-					? FString()
-					: FString::Printf(
-						TEXT("\nDebug: %s"),
-						*NetworkSubsystem->GetLastDebugMessage()
-					);
-				const FString ServerLifeText = GetServerLifeStateText();
+				Lines.Add(NetworkSubsystem->GetServerMatchStatusText());
+				Lines.Add(NetworkSubsystem->GetServerScoreboardCompactText());
+				Lines.Add(NetworkSubsystem->GetServerWorldCountsText());
 
-				return FString::Printf(
-					TEXT("Profile: %s | Server: Connected | Player=%d Room=%d Snapshot=%d\n%s\nServer HP: %d/%d | %s | Server Score: %d | K/D: %d/%d | TargetKills: %d | BotKills: %d\nTargets: %d/%d | Bots: %d/%d | HealthPacks: %d/%d | Projectiles: %d | Error: %s | Correction: %s | ADS: %s | Sprint: %s\n%s%s"),
-					*ProfileLabel,
-					NetworkSubsystem->GetPlayerId(),
-					NetworkSubsystem->GetRoomId(),
-					NetworkSubsystem->GetLastSnapshotTick(),
-					*MatchSummaryText,
-					bHasOwnSnapshot ? OwnSnapshot.HP : 0,
-					bHasOwnSnapshot ? OwnSnapshot.MaxHP : 0,
-					*ServerLifeText,
-					NetworkSubsystem->GetOwnServerScore(),
-					bHasOwnSnapshot ? OwnSnapshot.Kills : 0,
-					bHasOwnSnapshot ? OwnSnapshot.Deaths : 0,
-					bHasOwnSnapshot ? OwnSnapshot.TargetKills : 0,
-					bHasOwnSnapshot ? OwnSnapshot.BotKills : 0,
-					NetworkSubsystem->GetServerAliveTargetCount(),
-					NetworkSubsystem->GetServerTargetCount(),
-					NetworkSubsystem->GetServerAliveBotCount(),
-					NetworkSubsystem->GetServerBotCount(),
-					NetworkSubsystem->GetServerActiveHealthPackCount(),
-					NetworkSubsystem->GetServerHealthPackCount(),
-					NetworkSubsystem->GetServerProjectileCount(),
-					*ErrorText,
-					*CorrectionText,
-					*ADSStatusText,
-					*SprintStatusText,
-					*EventDisplayText,
-					*DebugDisplayText
-				);
+				if (bShowServerDebugDetails)
+				{
+					const FString CorrectionText = IsUsingServerPositionCorrection()
+						? FString(TEXT("On"))
+						: FString(TEXT("Off"));
+					const FString ErrorText = bShowServerPositionError && HasOwnServerWorldLocation()
+						? FString::Printf(TEXT("%.1f"), GetLastServerPositionError())
+						: FString(TEXT("-"));
+					Lines.Add(FString::Printf(
+						TEXT("Snapshot %d | Error %s | Correction %s | ADS %s | Sprint %s"),
+						NetworkSubsystem->GetLastSnapshotTick(),
+						*ErrorText,
+						*CorrectionText,
+						bIsADSActive ? TEXT("On") : TEXT("Off"),
+						bIsSprinting ? TEXT("On") : TEXT("Off")
+					));
+
+					if (!NetworkSubsystem->GetLastDebugMessage().IsEmpty())
+					{
+						Lines.Add(FString::Printf(
+							TEXT("Debug: %s"),
+							*NetworkSubsystem->GetLastDebugMessage()
+						));
+					}
+				}
 			}
 
-			if (NetworkSubsystem->IsConnected())
-			{
-				return FString::Printf(
-					TEXT("Profile: %s | Server: Connected | Joining...\nTargets: - | Bots: - | HealthPacks: - | Projectiles: - | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
-					*ProfileLabel,
-					*ErrorText,
-					*CorrectionText,
-					*ADSStatusText,
-					*SprintStatusText
-				);
-			}
-
-			const FString LastNetworkError = NetworkSubsystem->GetLastError();
-			if (!LastNetworkError.IsEmpty())
-			{
-				return FString::Printf(
-					TEXT("Profile: %s | Server: Error | %s\nTargets: - | Bots: - | HealthPacks: - | Projectiles: - | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
-					*ProfileLabel,
-					*LastNetworkError,
-					*ErrorText,
-					*CorrectionText,
-					*ADSStatusText,
-					*SprintStatusText
-				);
-			}
+			return FString::Join(Lines, TEXT("\n"));
 		}
 	}
 
 	return FString::Printf(
-		TEXT("Profile: %s | Server: Disconnected\nTargets: - | Bots: - | HealthPacks: - | Projectiles: - | Error: %s | Correction: %s | ADS: %s | Sprint: %s"),
-		*ProfileLabel,
+		TEXT("%s | Server: Disconnected | Offline local test mode"),
+		*ProfileText
+	);
+}
+
+FString ABattleGridClientPlayerController::GetLocalDebugHudText() const
+{
+	const FString CorrectionText = IsUsingServerPositionCorrection()
+		? FString(TEXT("On"))
+		: FString(TEXT("Off"));
+	const FString ErrorText = bShowServerPositionError && HasOwnServerWorldLocation()
+		? FString::Printf(TEXT("%.1f"), GetLastServerPositionError())
+		: FString(TEXT("-"));
+
+	return FString::Printf(
+		TEXT("LOCAL DEBUG | HP %.0f/%.0f | Score %d/%d | Error %s | Correction %s | Profile %s"),
+		GetCurrentPlayerHealth(),
+		GetMaxPlayerHealth(),
+		GetScore(),
+		GetTargetScore(),
 		*ErrorText,
 		*CorrectionText,
-		*ADSStatusText,
-		*SprintStatusText
+		*ResolveServerProfileLabel()
 	);
+}
+
+FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
+{
+	TArray<FString> Lines;
+
+	if (bUseServerAuthoritativeHud)
+	{
+		Lines.Add(GetServerPrimaryHudText());
+	}
+	else
+	{
+		Lines.Add(FString::Printf(
+			TEXT("Profile: %s | Server HUD disabled | Offline/local debug mode"),
+			*ResolveServerProfileLabel()
+		));
+	}
+
+	if (bShowLocalDebugHud)
+	{
+		Lines.Add(GetLocalDebugHudText());
+	}
+
+	return FString::Join(Lines, TEXT("\n"));
 }
 
 bool ABattleGridClientPlayerController::IsServerConnected() const
@@ -659,7 +682,7 @@ FString ABattleGridClientPlayerController::GetServerLifeStateText() const
 	if (IsServerDead())
 	{
 		return FString::Printf(
-			TEXT("Server Life: DEAD - Respawn %.1fs"),
+			TEXT("SERVER DEAD | Respawn %.1fs"),
 			LastServerRespawnTimer
 		);
 	}
@@ -667,7 +690,7 @@ FString ABattleGridClientPlayerController::GetServerLifeStateText() const
 	if (IsServerInvincible())
 	{
 		return FString::Printf(
-			TEXT("Server Life: INVINCIBLE %.1fs"),
+			TEXT("SERVER INVINCIBLE %.1fs"),
 			LastServerInvincibleTimer
 		);
 	}

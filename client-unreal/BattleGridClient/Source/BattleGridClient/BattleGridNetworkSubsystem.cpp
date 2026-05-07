@@ -287,64 +287,224 @@ FString UBattleGridNetworkSubsystem::GetConnectionStatusText() const
 	return GetServerSummaryText();
 }
 
-FString UBattleGridNetworkSubsystem::GetServerSummaryText() const
+FString UBattleGridNetworkSubsystem::GetServerPrimaryStatusText() const
 {
-	if (bHasJoined)
+	if (!bIsConnected)
 	{
-		FBattleGridServerPlayerSnapshot OwnSnapshot;
-		const bool bHasOwnSnapshot = GetOwnPlayerSnapshot(OwnSnapshot);
-		FString LifeText = TEXT("-");
-		if (bHasOwnSnapshot)
-		{
-			if (!OwnSnapshot.bAlive)
-			{
-				LifeText = FString::Printf(TEXT("DEAD %.1fs"), OwnSnapshot.RespawnTimer);
-			}
-			else if (OwnSnapshot.bInvincible)
-			{
-				LifeText = FString::Printf(TEXT("INV %.1fs"), OwnSnapshot.InvincibleTimer);
-			}
-			else
-			{
-				LifeText = TEXT("Alive");
-			}
-		}
-
-		return FString::Printf(
-			TEXT("Server: Connected | Player=%d Room=%d Snapshot=%d | %s | ServerHP=%d/%d | %s | ServerScore=%d K/D=%d/%d TargetKills=%d BotKills=%d | Targets=%d/%d | Bots=%d/%d | HealthPacks=%d/%d | Projectiles=%d"),
-			PlayerId,
-			RoomId,
-			LastSnapshotTick,
-			*GetServerScoreboardSummaryText(),
-			bHasOwnSnapshot ? OwnSnapshot.HP : 0,
-			bHasOwnSnapshot ? OwnSnapshot.MaxHP : 0,
-			*LifeText,
-			GetOwnServerScore(),
-			bHasOwnSnapshot ? OwnSnapshot.Kills : 0,
-			bHasOwnSnapshot ? OwnSnapshot.Deaths : 0,
-			bHasOwnSnapshot ? OwnSnapshot.TargetKills : 0,
-			bHasOwnSnapshot ? OwnSnapshot.BotKills : 0,
-			GetServerAliveTargetCount(),
-			GetServerTargetCount(),
-			GetServerAliveBotCount(),
-			GetServerBotCount(),
-			GetServerActiveHealthPackCount(),
-			GetServerHealthPackCount(),
-			GetServerProjectileCount()
-		);
+		return TEXT("Server: Disconnected | Offline local test mode");
 	}
 
-	if (bIsConnected)
+	if (!bHasJoined)
 	{
 		return TEXT("Server: Connected | Joining...");
 	}
 
-	if (!LastError.IsEmpty())
+	FBattleGridServerPlayerSnapshot OwnSnapshot;
+	if (!GetOwnPlayerSnapshot(OwnSnapshot))
 	{
-		return FString::Printf(TEXT("Server: Error | %s"), *LastError);
+		return FString::Printf(
+			TEXT("SERVER | Waiting for own snapshot | Player=%d Room=%d Snapshot=%d"),
+			PlayerId,
+			RoomId,
+			LastSnapshotTick
+		);
 	}
 
-	return TEXT("Server: Disconnected");
+	const int32 GoalScore = bHasMatchSnapshot ? LatestMatchSnapshot.TargetScore : 20;
+	return FString::Printf(
+		TEXT("SERVER | HP %d/%d | Score %d/%d | K/D %d/%d | Bots %d | PvP %d"),
+		OwnSnapshot.HP,
+		OwnSnapshot.MaxHP,
+		OwnSnapshot.Score,
+		GoalScore,
+		OwnSnapshot.Kills,
+		OwnSnapshot.Deaths,
+		OwnSnapshot.BotKills,
+		OwnSnapshot.PlayerKills
+	);
+}
+
+FString UBattleGridNetworkSubsystem::GetServerMatchStatusText() const
+{
+	if (!bIsConnected)
+	{
+		return TEXT("Match --:-- | Goal -- | Offline");
+	}
+
+	if (!bHasJoined || !bHasMatchSnapshot)
+	{
+		return TEXT("Match --:-- | Goal -- | Waiting");
+	}
+
+	if (LatestMatchSnapshot.bGameOver)
+	{
+		const FString WinnerText = LatestMatchSnapshot.WinnerNickname.IsEmpty()
+			? FString::Printf(TEXT("P%d"), LatestMatchSnapshot.WinnerPlayerId)
+			: LatestMatchSnapshot.WinnerNickname;
+		return FString::Printf(TEXT("SERVER GAME OVER | Winner: %s"), *WinnerText);
+	}
+
+	const int32 TotalSeconds = FMath::Max(0, FMath::RoundToInt(LatestMatchSnapshot.TimeLeft));
+	const int32 Minutes = TotalSeconds / 60;
+	const int32 Seconds = TotalSeconds % 60;
+	return FString::Printf(
+		TEXT("Match %02d:%02d | Goal %d | In Progress"),
+		Minutes,
+		Seconds,
+		LatestMatchSnapshot.TargetScore
+	);
+}
+
+FString UBattleGridNetworkSubsystem::GetServerOwnPlayerStatusText() const
+{
+	if (!bIsConnected)
+	{
+		return TEXT("Server Life: Offline");
+	}
+
+	if (!bHasJoined)
+	{
+		return TEXT("Server Life: Joining");
+	}
+
+	FBattleGridServerPlayerSnapshot OwnSnapshot;
+	if (!GetOwnPlayerSnapshot(OwnSnapshot))
+	{
+		return TEXT("Server Life: Waiting");
+	}
+
+	if (!OwnSnapshot.bAlive)
+	{
+		return FString::Printf(TEXT("SERVER DEAD | Respawn %.1fs"), OwnSnapshot.RespawnTimer);
+	}
+
+	if (OwnSnapshot.bInvincible)
+	{
+		return FString::Printf(TEXT("SERVER INVINCIBLE %.1fs"), OwnSnapshot.InvincibleTimer);
+	}
+
+	return TEXT("Server Life: Alive");
+}
+
+FString UBattleGridNetworkSubsystem::GetServerWorldCountsText() const
+{
+	if (!bIsConnected || !bHasJoined)
+	{
+		return TEXT("Cores -/- | Bots -/- | HPacks -/- | Projectiles -");
+	}
+
+	return FString::Printf(
+		TEXT("Cores %d/%d | Bots %d/%d | HPacks %d/%d | Projectiles %d"),
+		GetServerAliveTargetCount(),
+		GetServerTargetCount(),
+		GetServerAliveBotCount(),
+		GetServerBotCount(),
+		GetServerActiveHealthPackCount(),
+		GetServerHealthPackCount(),
+		GetServerProjectileCount()
+	);
+}
+
+FString UBattleGridNetworkSubsystem::GetServerScoreboardCompactText() const
+{
+	if (!bIsConnected)
+	{
+		return TEXT("Top: - | You: -");
+	}
+
+	TArray<FBattleGridServerScoreboardEntry> SortedScoreboard = LatestScoreboard;
+	SortedScoreboard.Sort(
+		[](const FBattleGridServerScoreboardEntry& Left, const FBattleGridServerScoreboardEntry& Right)
+		{
+			if (Left.Score != Right.Score)
+			{
+				return Left.Score > Right.Score;
+			}
+			if (Left.PlayerKills != Right.PlayerKills)
+			{
+				return Left.PlayerKills > Right.PlayerKills;
+			}
+			if (Left.BotKills != Right.BotKills)
+			{
+				return Left.BotKills > Right.BotKills;
+			}
+			if (Left.Deaths != Right.Deaths)
+			{
+				return Left.Deaths < Right.Deaths;
+			}
+			return Left.PlayerId < Right.PlayerId;
+		}
+	);
+
+	TArray<FString> TopEntries;
+	const int32 TopCount = FMath::Min(3, SortedScoreboard.Num());
+	for (int32 Index = 0; Index < TopCount; ++Index)
+	{
+		const FBattleGridServerScoreboardEntry& Entry = SortedScoreboard[Index];
+		const FString Name = Entry.Nickname.IsEmpty()
+			? FString::Printf(TEXT("P%d"), Entry.PlayerId)
+			: Entry.Nickname;
+		TopEntries.Add(FString::Printf(TEXT("%s %d"), *Name, Entry.Score));
+	}
+
+	int32 OwnScore = 0;
+	bool bHasOwnScore = false;
+	for (const FBattleGridServerScoreboardEntry& Entry : LatestScoreboard)
+	{
+		if (Entry.PlayerId == PlayerId)
+		{
+			OwnScore = Entry.Score;
+			bHasOwnScore = true;
+			break;
+		}
+	}
+
+	const FString TopText = TopEntries.Num() > 0
+		? FString::Join(TopEntries, TEXT(", "))
+		: FString(TEXT("-"));
+	const FString OwnScoreText = bHasOwnScore
+		? FString::FromInt(OwnScore)
+		: FString(TEXT("-"));
+
+	return FString::Printf(
+		TEXT("Top: %s | You: %s"),
+		*TopText,
+		*OwnScoreText
+	);
+}
+
+FString UBattleGridNetworkSubsystem::GetServerCombatEventFeedText() const
+{
+	TArray<FString> EventLines;
+	for (int32 Index = RecentCombatEvents.Num() - 1; Index >= 0 && EventLines.Num() < 5; --Index)
+	{
+		if (!RecentCombatEvents[Index].Message.IsEmpty())
+		{
+			EventLines.Add(RecentCombatEvents[Index].Message);
+		}
+	}
+
+	return FString::Join(EventLines, TEXT("\n"));
+}
+
+FString UBattleGridNetworkSubsystem::GetServerSummaryText() const
+{
+	TArray<FString> Lines;
+	Lines.Add(GetServerPrimaryStatusText());
+
+	if (bIsConnected && bHasJoined)
+	{
+		Lines.Add(GetServerMatchStatusText());
+		Lines.Add(GetServerWorldCountsText());
+		Lines.Add(GetServerScoreboardCompactText());
+	}
+
+	if (!LastError.IsEmpty() && !bIsConnected)
+	{
+		Lines.Add(FString::Printf(TEXT("Last Error: %s"), *LastError));
+	}
+
+	return FString::Join(Lines, TEXT("\n"));
 }
 
 bool UBattleGridNetworkSubsystem::HasSnapshot() const
@@ -509,7 +669,7 @@ FString UBattleGridNetworkSubsystem::GetMatchHeaderText() const
 			? FString::Printf(TEXT("P%d"), LatestMatchSnapshot.WinnerPlayerId)
 			: LatestMatchSnapshot.WinnerNickname;
 		return FString::Printf(
-			TEXT("GAME OVER | Winner: %s | Goal: %d"),
+			TEXT("SERVER GAME OVER | Winner: %s | Goal: %d"),
 			*WinnerText,
 			LatestMatchSnapshot.TargetScore
 		);
@@ -520,7 +680,7 @@ FString UBattleGridNetworkSubsystem::GetMatchHeaderText() const
 	const int32 Seconds = TotalSeconds % 60;
 
 	return FString::Printf(
-		TEXT("Match: In Progress | Time Left: %02d:%02d | Goal: %d"),
+		TEXT("Match %02d:%02d | Goal %d | In Progress"),
 		Minutes,
 		Seconds,
 		LatestMatchSnapshot.TargetScore
@@ -626,7 +786,7 @@ FString UBattleGridNetworkSubsystem::GetServerScoreboardSummaryText() const
 		const FString WinnerText = LatestMatchSnapshot.WinnerNickname.IsEmpty()
 			? FString::Printf(TEXT("P%d"), LatestMatchSnapshot.WinnerPlayerId)
 			: LatestMatchSnapshot.WinnerNickname;
-		return FString::Printf(TEXT("GAME OVER | Winner: %s | Press Restart"), *WinnerText);
+		return FString::Printf(TEXT("SERVER GAME OVER | Winner: %s | Press Restart"), *WinnerText);
 	}
 
 	const int32 TotalSeconds = FMath::Max(0, FMath::RoundToInt(LatestMatchSnapshot.TimeLeft));
@@ -655,7 +815,7 @@ FString UBattleGridNetworkSubsystem::GetServerScoreboardSummaryText() const
 	}
 
 	return FString::Printf(
-		TEXT("Match: %02d:%02d | Goal: %d | Top: %s | You: %d"),
+		TEXT("Match %02d:%02d | Goal %d | Top: %s | You: %d"),
 		Minutes,
 		Seconds,
 		LatestMatchSnapshot.TargetScore,

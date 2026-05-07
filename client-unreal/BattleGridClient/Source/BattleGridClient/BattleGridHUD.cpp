@@ -3,6 +3,7 @@
 #include "BattleGridClientCharacter.h"
 #include "BattleGridClientPlayerController.h"
 #include "BattleGridCombatWidget.h"
+#include "BattleGridNetworkSubsystem.h"
 #include "BattleGridWeaponComponent.h"
 #include "Blueprint/UserWidget.h"
 
@@ -83,12 +84,67 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		}
 	}
 
+	int32 ServerHP = 0;
+	int32 ServerMaxHP = 0;
+	int32 ServerKills = 0;
+	int32 ServerDeaths = 0;
+	int32 ServerBotKills = 0;
+	int32 ServerPlayerKills = 0;
+	int32 ServerTargetScore = 20;
+	bool bHasServerOwnPlayerSnapshot = false;
+	bool bServerInvincible = false;
+	bool bServerGameOver = false;
+	FString ServerCombatEventFeedText;
+
+	if (const UGameInstance* GameInstance = BattleGridController->GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			FBattleGridServerPlayerSnapshot OwnSnapshot;
+			if (NetworkSubsystem->GetOwnPlayerSnapshot(OwnSnapshot))
+			{
+				bHasServerOwnPlayerSnapshot = true;
+				ServerHP = OwnSnapshot.HP;
+				ServerMaxHP = OwnSnapshot.MaxHP;
+				ServerKills = OwnSnapshot.Kills;
+				ServerDeaths = OwnSnapshot.Deaths;
+				ServerBotKills = OwnSnapshot.BotKills;
+				ServerPlayerKills = OwnSnapshot.PlayerKills;
+				bServerInvincible = OwnSnapshot.bInvincible;
+			}
+
+			if (NetworkSubsystem->HasMatchSnapshot())
+			{
+				const FBattleGridServerMatchSnapshot MatchSnapshot =
+					NetworkSubsystem->GetLatestMatchSnapshot();
+				ServerTargetScore = MatchSnapshot.TargetScore;
+				bServerGameOver = MatchSnapshot.bGameOver;
+			}
+
+			ServerCombatEventFeedText = NetworkSubsystem->GetServerCombatEventFeedText();
+		}
+	}
+
 	CombatWidget->UpdateHud(
 		BattleGridController->GetCurrentPlayerHealth(),
 		BattleGridController->GetMaxPlayerHealth(),
 		BattleGridController->GetScore(),
 		BattleGridController->GetTargetScore(),
 		BattleGridController->GetOwnServerScore(),
+		ServerHP,
+		ServerMaxHP,
+		ServerKills,
+		ServerDeaths,
+		ServerBotKills,
+		ServerPlayerKills,
+		ServerTargetScore,
+		bHasServerOwnPlayerSnapshot,
+		bServerInvincible,
+		bServerGameOver,
+		BattleGridController->UseServerAuthoritativeHud(),
+		BattleGridController->ShowLocalDebugHud(),
+		BattleGridController->ShowCombatEventFeed(),
 		CurrentAmmo,
 		MagazineSize,
 		bIsReloading,
@@ -98,13 +154,15 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		BattleGridController->HasWon(),
 		BattleGridController->GetServerLifeStateText(),
 		BattleGridController->IsServerDead(),
-		BattleGridController->GetDetailedNetworkStatusText(),
+		BattleGridController->GetServerPrimaryHudText(),
 		BattleGridController->GetLastServerPositionError(),
 		BattleGridController->bShowServerPositionError
 			&& BattleGridController->HasOwnServerWorldLocation(),
 		BattleGridController->IsUsingServerPositionCorrection(),
 		BattleGridController->ShouldShowScoreboard(),
-		BattleGridController->GetServerScoreboardText()
+		BattleGridController->GetServerScoreboardText(),
+		ServerCombatEventFeedText,
+		BattleGridController->GetLocalDebugHudText()
 	);
 }
 
@@ -165,11 +223,13 @@ void ABattleGridHUD::DrawHUD()
 		: FString::Printf(TEXT("%d/%d"), CurrentAmmo, MagazineSize);
 
 	DrawText(
-		FString::Printf(
-			TEXT("Local HP: %.0f / %.0f"),
-			BattleGridController->GetCurrentPlayerHealth(),
-			BattleGridController->GetMaxPlayerHealth()
-		),
+		BattleGridController->UseServerAuthoritativeHud()
+			? FString(TEXT("SERVER authoritative HUD active"))
+			: FString::Printf(
+				TEXT("Local HP: %.0f / %.0f"),
+				BattleGridController->GetCurrentPlayerHealth(),
+				BattleGridController->GetMaxPlayerHealth()
+			),
 		FLinearColor::White,
 		HudX + 20.0f,
 		HudY + 15.0f + LineHeight,
@@ -178,14 +238,19 @@ void ABattleGridHUD::DrawHUD()
 	);
 
 	DrawText(
-		FString::Printf(
-			TEXT("Local Score: %d / %d | Server Score: %d | Ammo: %s | Spread: %.1f"),
-			BattleGridController->GetScore(),
-			BattleGridController->GetTargetScore(),
-			BattleGridController->GetOwnServerScore(),
-			*AmmoText,
-			BattleGridController->GetLastShotSpreadDegrees()
-		),
+		BattleGridController->UseServerAuthoritativeHud()
+			? FString::Printf(
+				TEXT("Server state is primary | Ammo: %s | Local Debug: %s"),
+				*AmmoText,
+				BattleGridController->ShowLocalDebugHud() ? TEXT("On") : TEXT("Off")
+			)
+			: FString::Printf(
+				TEXT("Local Score: %d / %d | Ammo: %s | Spread: %.1f"),
+				BattleGridController->GetScore(),
+				BattleGridController->GetTargetScore(),
+				*AmmoText,
+				BattleGridController->GetLastShotSpreadDegrees()
+			),
 		FLinearColor::White,
 		HudX + 20.0f,
 		HudY + 15.0f + LineHeight * 2.0f,
@@ -194,7 +259,11 @@ void ABattleGridHUD::DrawHUD()
 	);
 
 	DrawText(
-		ToGamePrototypeHudText(BattleGridController->GetDetailedNetworkStatusText()),
+		ToGamePrototypeHudText(
+			BattleGridController->UseServerAuthoritativeHud()
+				? BattleGridController->GetServerPrimaryHudText()
+				: BattleGridController->GetDetailedNetworkStatusText()
+		),
 		FLinearColor(0.8f, 0.9f, 1.0f, 1.0f),
 		HudX + 20.0f,
 		HudY + 15.0f + LineHeight * 3.0f,

@@ -46,6 +46,12 @@ public:
 	FString GetServerCombatEventFeedText() const;
 	FString GetServerScoreboardText() const;
 	bool ShouldShowScoreboard() const;
+	bool UseServerAuthoritativeHud() const;
+	bool ShowLocalDebugHud() const;
+	bool ShowServerDebugDetails() const;
+	bool ShowCombatEventFeed() const;
+	FString GetServerPrimaryHudText() const;
+	FString GetLocalDebugHudText() const;
 	bool IsServerConnected() const;
 	bool HasJoinedServer() const;
 	int32 GetServerPlayerId() const;
@@ -195,6 +201,18 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
 	bool bScoreboardToggleMode;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
+	bool bUseServerAuthoritativeHud;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
+	bool bShowLocalDebugHud;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
+	bool bShowServerDebugDetails;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
+	bool bShowCombatEventFeed;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|Combat")
 	TSubclassOf<ABattleGridProjectile> ProjectileClass;

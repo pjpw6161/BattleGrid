@@ -365,6 +365,12 @@ public:
 	bool GetOwnPlayerSnapshot(FBattleGridServerPlayerSnapshot& OutSnapshot) const;
 	int32 GetOwnServerScore() const;
 	int32 GetOwnServerHP() const;
+	FString GetServerPrimaryStatusText() const;
+	FString GetServerMatchStatusText() const;
+	FString GetServerOwnPlayerStatusText() const;
+	FString GetServerWorldCountsText() const;
+	FString GetServerScoreboardCompactText() const;
+	FString GetServerCombatEventFeedText() const;
 	FString GetServerSummaryText() const;
 
 private:

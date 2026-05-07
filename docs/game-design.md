@@ -215,7 +215,14 @@ The third-person PvPvE HUD should show:
 - Scoreboard showing player names, score, kills, deaths, and ping if available.
 - Current v1: holding Tab shows a text scoreboard overlay using server snapshot `scoreboard` data and the active match state. It also appears automatically after server game over.
 
-The current debug-style server snapshot summary should move behind a developer/demo toggle once the PvPvE HUD becomes the primary presentation.
+Current HUD policy:
+
+- Server-authoritative state is primary by default for the PvPvE demo.
+- The primary HUD shows `SERVER HP`, server score, target score, K/D, bot kills, PvP kills, match time, world counts, and recent server combat events.
+- Local offline state still exists for testing local movement, projectiles, hazards, and targets.
+- Local HP/score and position-correction details are shown only when the PlayerController `bShowLocalDebugHud` option is enabled.
+- If the server says the player is dead, the HUD displays `SERVER DEAD` and the respawn countdown even if the local test pawn still has different local HP.
+- Local projectile hit logs do not imply server damage; server combat changes are confirmed through server HP, score, bot/core labels, scoreboard, and combat events.
 
 ## Prototype Visual Language
 
@@ -307,5 +314,5 @@ Clients should handle:
 - Magazine ammo, reload, ADS spread, jump spread, and shot direction are implemented locally and sent to the server; server ammo validation is not authoritative yet.
 - Full client prediction and reconciliation are not implemented.
 - Existing local targets and server targets are still separate layers.
-- The current HUD is still partly a debug/demo HUD for server snapshot visibility.
+- The current HUD is server-centric by default, but local debug/offline state can still be shown through PlayerController HUD toggles.
 - The server match restart flow is a debug protocol message, not a production lobby/rematch flow.

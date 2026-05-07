@@ -347,6 +347,41 @@ Expected server logs:
 
 For prototype aiming, bot hitscan uses 3D head/body spheres and a forgiving 2D body fallback. The fallback is only for bot hit testing; disabling bot attacks does not make bots invulnerable.
 
+## Local Projectile Hit Logs Do Not Mean Server Bot Damage
+
+The Unreal client still has a local projectile and local target layer for offline gameplay. Output Log lines about local projectiles hitting `StaticMeshActor` or local targets are not authoritative PvPvE combat results.
+
+For server combat, check one of these instead:
+
+- Server bot/core ghost labels show HP decreasing.
+- Browser snapshots show `bots`, `targets`, `scoreboard`, or `events` changing.
+- Server logs show `Hitscan bot hit`, `Hitscan target hit`, or a combat event.
+- The HUD server event feed reports a server kill, respawn, pickup, or match event.
+
+## Server HP Differs From Local HP
+
+This is expected during the transition from local prototype gameplay to server-authoritative PvPvE gameplay.
+
+- `SERVER HP` comes from the own player snapshot in the C++ server.
+- `Local HP` comes from Unreal's offline hazard/local damage test layer.
+- By default, the HUD prioritizes `SERVER HP` and `SERVER Score`.
+- Enable `bShowLocalDebugHud` in the active PlayerController Blueprint only when you need to compare local/offline state with server state.
+
+If the server says the player is dead, local movement/fire can be locked even if the local pawn still appears alive. Use `Apply Safe Demo Mode` if the server state needs to be reset for testing.
+
+## Why SERVER HUD Is Primary
+
+The PvPvE demo is meant to show server-authoritative match state. The server owns player HP, deaths, respawn timers, score, bot/core/health-pack state, match timer, scoreboard, and combat events.
+
+The HUD therefore shows server state first:
+
+- `SERVER HP` in the health area.
+- `SERVER Score` and K/D in the score area.
+- Match time, cores, bots, health packs, and projectiles in the controls/status area.
+- Recent server combat events in the message area.
+
+Local HP/score remains available for offline debugging, but it should not be used to explain server bot damage, match scoring, or winner state.
+
 ## SERVER ECHO Follows But Starts Far Away
 
 Server arena coordinates use fixed spawns such as `P1 = (-1200, 0)`. If Unreal simply adds those coordinates to the local pawn location, the own server ghost appears far in front of the local character.

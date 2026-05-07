@@ -22,6 +22,19 @@ public:
 		int32 Score,
 		int32 TargetScore,
 		int32 ServerScore,
+		int32 ServerHP,
+		int32 ServerMaxHP,
+		int32 ServerKills,
+		int32 ServerDeaths,
+		int32 ServerBotKills,
+		int32 ServerPlayerKills,
+		int32 ServerTargetScore,
+		bool bHasServerOwnPlayerSnapshot,
+		bool bServerInvincible,
+		bool bServerGameOver,
+		bool bUseServerAuthoritativeHud,
+		bool bShowLocalDebugHud,
+		bool bShowCombatEventFeed,
 		int32 CurrentAmmo,
 		int32 MagazineSize,
 		bool bIsReloading,
@@ -36,7 +49,9 @@ public:
 		bool bHasServerPositionError,
 		bool bUseServerCorrection,
 		bool bShowScoreboard,
-		const FString& ScoreboardText
+		const FString& ScoreboardText,
+		const FString& ServerCombatEventFeedText,
+		const FString& LocalDebugHudText
 	);
 
 private:
