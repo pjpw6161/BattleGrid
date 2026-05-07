@@ -99,6 +99,7 @@
     <button id="sendHeadshot">Send Headshot-like Shot</button>
     <button id="sendFireAtBot1">Send Fire At Bot 1</button>
     <button id="sendFireAtNearestBot">Send Fire At Nearest Bot</button>
+    <button id="fireFiveAtNearestBot">Fire 5 Shots At Nearest Bot</button>
     <button id="startFiring">Start Firing</button>
     <button id="stopFiring">Stop Firing</button>
     <button id="startMovingRight">Start Moving Right</button>
@@ -143,6 +144,8 @@
     <div class="summary-card"><strong>Cores</strong><span id="targetsSummary">-</span></div>
     <div class="summary-card"><strong>Health Packs</strong><span id="healthPacksSummary">-</span></div>
     <div class="summary-card"><strong>Projectiles</strong><span id="projectilesSummary">-</span></div>
+    <div class="summary-card"><strong>Shot Result</strong><span id="shotResultSummary">-</span></div>
+    <div class="summary-card"><strong>Combat Tuning</strong><span id="combatTuningSummary">Click Send Debug Room</span></div>
     <div class="summary-card"><strong>Recent Events</strong><span id="eventsSummary">-</span></div>
   </section>
 
@@ -164,12 +167,14 @@
     let moveTimer = null;
     let fireTimer = null;
     let latestSnapshot = null;
+    let latestDebugRoom = null;
     let latestPlayers = [];
     let latestBots = [];
     let snapshotCount = 0;
     let lastSummaryUpdateMs = 0;
     let pendingSummaryUpdateTimer = null;
     let arenaLogged = false;
+    let latestShotResultMessage = "-";
     const seenEventIds = new Set();
     const recentEventMessages = [];
     const logLines = [];
@@ -220,6 +225,11 @@
     }
 
     function sendInput(moveX, moveY, fire, options = {}) {
+      if (fire && latestSnapshot && latestSnapshot.match && latestSnapshot.match.game_over) {
+        log("Match is game_over. Click Apply Safe Demo Mode or Debug Restart Match before testing shots.");
+        return;
+      }
+
       inputSeq += 1;
       const shotDirX = options.shotDirX ?? 1;
       const shotDirY = options.shotDirY ?? 0;
@@ -269,6 +279,11 @@
     function sendFireAtNearestBot() {
       if (!latestSnapshot) {
         log("Cannot fire at nearest bot: no snapshot has been received yet.");
+        return;
+      }
+
+      if (latestSnapshot.match && latestSnapshot.match.game_over) {
+        log("Match is game_over. Click Apply Safe Demo Mode or Debug Restart Match before testing shots.");
         return;
       }
 
@@ -324,6 +339,79 @@
       });
     }
 
+    function fireFiveShotsAtNearestBot() {
+      if (!latestSnapshot) {
+        log("Cannot fire 5 shots: no snapshot has been received yet.");
+        return;
+      }
+
+      if (latestSnapshot.match && latestSnapshot.match.game_over) {
+        log("Match is game_over. Click Apply Safe Demo Mode or Debug Restart Match before testing shots.");
+        return;
+      }
+
+      log("Firing 5 server test shots at the nearest alive bot.");
+      for (let index = 0; index < 5; index += 1) {
+        window.setTimeout(() => sendFireAtNearestBot(), index * 160);
+      }
+    }
+
+    function isShotResultEvent(event) {
+      return typeof event.type === "string" && event.type.startsWith("shot_");
+    }
+
+    function getShotTargetLabel(event) {
+      if (event.bot_id) {
+        return `BOT-${event.bot_id}`;
+      }
+      if (event.target_id) {
+        return `CORE-${event.target_id}`;
+      }
+      if (event.target_player_id) {
+        return `P${event.target_player_id}`;
+      }
+      return "";
+    }
+
+    function formatShotResult(event) {
+      if (event.short_message) {
+        return event.short_message;
+      }
+
+      if (event.type === "shot_miss") {
+        return "SERVER MISS";
+      }
+
+      const targetLabel = getShotTargetLabel(event) || "TARGET";
+      const damage = Number(event.damage ?? 0);
+      const damageText = damage > 0 ? ` -${damage}` : "";
+      if (event.headshot) {
+        return `SERVER HEADSHOT ${targetLabel}${damageText}`;
+      }
+
+      return `SERVER HIT ${targetLabel}${damageText}`;
+    }
+
+    function getShotResultLogPrefix(event) {
+      if (event.type === "shot_miss") {
+        return "SERVER MISS";
+      }
+      return event.headshot ? "SERVER HEADSHOT" : "SERVER HIT";
+    }
+
+    function buildCombatTuningSummary() {
+      if (!latestDebugRoom) {
+        return "Click Send Debug Room";
+      }
+
+      return (
+        `Damage body/head=${latestDebugRoom.body_damage ?? 20}/${latestDebugRoom.headshot_damage ?? 40}\n` +
+        `Difficulty=${latestDebugRoom.bot_difficulty ?? "normal"} attacks=${latestDebugRoom.bot_attacks_enabled ?? true}\n` +
+        `Timer auto-end=${latestDebugRoom.auto_end_match_by_timer ?? true}\n` +
+        `Score bot/player/core=${latestDebugRoom.bot_kill_score ?? 1}/${latestDebugRoom.player_kill_score ?? 2}/${latestDebugRoom.target_kill_score ?? 1}`
+      );
+    }
+
     function summarizeScoreboard(scoreboard) {
       if (!Array.isArray(scoreboard) || scoreboard.length === 0) {
         return "-";
@@ -375,6 +463,8 @@
         setText("targetsSummary", "-");
         setText("healthPacksSummary", "-");
         setText("projectilesSummary", "-");
+        setText("shotResultSummary", latestShotResultMessage);
+        setText("combatTuningSummary", buildCombatTuningSummary());
         setText("eventsSummary", recentEventMessages.slice(-5).join("\n") || "-");
         return;
       }
@@ -433,6 +523,8 @@
         setText("projectilesSummary", "0");
       }
 
+      setText("shotResultSummary", latestShotResultMessage);
+      setText("combatTuningSummary", buildCombatTuningSummary());
       setText("eventsSummary", recentEventMessages.slice(-5).join("\n") || "-");
     }
 
@@ -467,11 +559,18 @@
 
         seenEventIds.add(event.event_id);
         const eventMessage = `event #${event.event_id} ${event.type}: ${event.message}`;
+        if (isShotResultEvent(event)) {
+          latestShotResultMessage = formatShotResult(event);
+          log(`${getShotResultLogPrefix(event)}: ${event.message || latestShotResultMessage}`);
+          continue;
+        }
         recentEventMessages.push(event.message || eventMessage);
         if (recentEventMessages.length > 5) {
           recentEventMessages.splice(0, recentEventMessages.length - 5);
         }
-        log(eventMessage);
+        if (!isShotResultEvent(event)) {
+          log(eventMessage);
+        }
       }
     }
 
@@ -531,12 +630,16 @@
         case "match_restarted":
           seenEventIds.clear();
           recentEventMessages.length = 0;
+          latestShotResultMessage = "-";
+          latestDebugRoom = null;
           log(`match_restarted match_id=${message.match_id}`);
           break;
         case "debug_ok":
           if (message.message === "safe demo mode applied") {
             seenEventIds.clear();
             recentEventMessages.length = 0;
+            latestShotResultMessage = "-";
+            latestDebugRoom = null;
             latestSnapshot = null;
             latestPlayers = [];
             latestBots = [];
@@ -547,6 +650,7 @@
           }
           break;
         case "room_state":
+          latestDebugRoom = message;
           updateLatestRoomEntities(message);
           log(
             `room_state players=${message.player_count ?? 0} ` +
@@ -563,6 +667,11 @@
             `detect=${message.bot_detect_range ?? 1500} ` +
             `attack_range=${message.bot_attack_range ?? 900} ` +
             `speed=${message.bot_move_speed ?? 500}`
+          );
+          log(
+            `combat_tuning body=${message.body_damage ?? 20} ` +
+            `head=${message.headshot_damage ?? 40} ` +
+            `score bot/player/core=${message.bot_kill_score ?? 1}/${message.player_kill_score ?? 2}/${message.target_kill_score ?? 1}`
           );
           logArenaLayout(message);
           logEvents(message);
@@ -600,6 +709,8 @@
 
       seenEventIds.clear();
       recentEventMessages.length = 0;
+      latestShotResultMessage = "-";
+      latestDebugRoom = null;
       latestSnapshot = null;
       latestPlayers = [];
       latestBots = [];
@@ -677,6 +788,10 @@
 
     document.getElementById("sendFireAtNearestBot").addEventListener("click", () => {
       sendFireAtNearestBot();
+    });
+
+    document.getElementById("fireFiveAtNearestBot").addEventListener("click", () => {
+      fireFiveShotsAtNearestBot();
     });
 
     document.getElementById("startFiring").addEventListener("click", () => {

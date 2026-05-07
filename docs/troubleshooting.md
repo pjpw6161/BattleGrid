@@ -333,19 +333,26 @@ Server bot damage comes from server hitscan, not from local Unreal projectile ov
 Use `tools/websocket-test.html`:
 
 1. Connect and send `Join`.
-2. Click `Bot Difficulty Easy`.
-3. Click `Disable Bot Attacks` if you want the player to survive while testing.
-4. Wait for a snapshot with `bots=8/8`.
-5. Click `Send Fire At Nearest Bot`.
+2. Click `Apply Safe Demo Mode`.
+3. Click `Send Debug Room`.
+4. Confirm the combat tuning panel shows body/head damage `20/40`, bot difficulty `easy`, bot attacks disabled, timer auto-end disabled, and score values `1/2/1`.
+5. Wait for a snapshot with `bots=8/8`.
+6. Click `Send Fire At Nearest Bot`.
+7. For a faster kill test, click `Fire 5 Shots At Nearest Bot`.
 
 Expected server logs:
 
 ```text
 [BattleGridServer] Hitscan fire shooter=1 seq=...
+[BattleGridServer] Shot result shooter=1 result=hit target=bot damage=20 headshot=false
 [BattleGridServer] Hitscan bot hit shooter=1 bot=... damage=20 hp=80/100
 ```
 
+The browser page now also shows a `Shot Result` summary. A valid server hit should show `SERVER HIT BOT-* -20` or `SERVER HEADSHOT BOT-* -40`. If the match is `game_over`, click `Apply Safe Demo Mode` before testing shots; fire inputs can still be acknowledged, but server combat is disabled while the match is over.
+
 For prototype aiming, bot hitscan uses 3D head/body spheres and a forgiving 2D body fallback. The fallback is only for bot hit testing; disabling bot attacks does not make bots invulnerable.
+
+`Fire 5 Shots At Nearest Bot` sends five spread-free server fire inputs toward the nearest alive bot using the latest snapshot position. It does not rely on local projectile collision, and it keeps small delays between inputs so the browser stays responsive.
 
 ## Local Projectile Hit Logs Do Not Mean Server Bot Damage
 
@@ -355,8 +362,9 @@ For server combat, check one of these instead:
 
 - Server bot/core ghost labels show HP decreasing.
 - Browser snapshots show `bots`, `targets`, `scoreboard`, or `events` changing.
-- Server logs show `Hitscan bot hit`, `Hitscan target hit`, or a combat event.
-- The HUD server event feed reports a server kill, respawn, pickup, or match event.
+- Browser `Shot Result` shows `SERVER HIT`, `SERVER HEADSHOT`, or `SERVER MISS`.
+- Server logs show `Shot result`, `Hitscan bot hit`, `Hitscan target hit`, or a combat event.
+- The HUD `CombatMessageText` briefly shows `SERVER HIT ...` or `SERVER MISS`, then returns to the event feed.
 
 ## Server HP Differs From Local HP
 

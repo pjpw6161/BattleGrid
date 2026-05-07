@@ -44,6 +44,7 @@ public:
 	FString GetNetworkStatusText() const;
 	FString GetDetailedNetworkStatusText() const;
 	FString GetServerCombatEventFeedText() const;
+	FString GetRecentServerShotResultText() const;
 	FString GetServerScoreboardText() const;
 	bool ShouldShowScoreboard() const;
 	bool UseServerAuthoritativeHud() const;
@@ -213,6 +214,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
 	bool bShowCombatEventFeed;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD", meta = (ClampMin = "0.1"))
+	float ShotResultDisplayDurationSeconds;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|Combat")
 	TSubclassOf<ABattleGridProjectile> ProjectileClass;

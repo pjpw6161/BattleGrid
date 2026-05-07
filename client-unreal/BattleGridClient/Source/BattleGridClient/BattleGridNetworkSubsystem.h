@@ -264,6 +264,9 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerCombatEvent
 	FString Message;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	FString ShortMessage;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
 	float Time = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
@@ -283,6 +286,21 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerCombatEvent
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
 	bool bHeadshot = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	int32 Damage = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	FString HitGroup;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	float HitX = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	float HitY = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	float HitZ = 0.0f;
 };
 
 UCLASS()
@@ -326,6 +344,7 @@ public:
 		int32 InSnapshotLogInterval,
 		int32 InInputAckLogInterval
 	);
+	void SetShotResultDisplayDuration(float InDurationSeconds);
 
 	bool IsConnected() const;
 	bool HasJoined() const;
@@ -362,6 +381,8 @@ public:
 	FString GetFullScoreboardText() const;
 	void GetRecentCombatEvents(TArray<FBattleGridServerCombatEvent>& OutEvents) const;
 	FString GetCombatEventFeedText() const;
+	FString GetLastShotResultMessage() const;
+	bool HasRecentShotResult() const;
 	bool GetOwnPlayerSnapshot(FBattleGridServerPlayerSnapshot& OutSnapshot) const;
 	int32 GetOwnServerScore() const;
 	int32 GetOwnServerHP() const;
@@ -404,6 +425,9 @@ private:
 	TArray<FBattleGridServerCombatEvent> RecentCombatEvents;
 	TSet<int32> SeenCombatEventIds;
 	int32 MaxRecentCombatEvents = 5;
+	FString LastShotResultMessage;
+	double LastShotResultTimestampSeconds = -1000.0;
+	float LastShotResultDisplaySeconds = 1.25f;
 	bool bHasMatchSnapshot = false;
 	bool bHasLoggedServerSummary = false;
 	bool bVerboseNetworkLogs = false;

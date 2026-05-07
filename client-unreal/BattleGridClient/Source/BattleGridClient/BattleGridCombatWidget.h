@@ -51,6 +51,7 @@ public:
 		bool bShowScoreboard,
 		const FString& ScoreboardText,
 		const FString& ServerCombatEventFeedText,
+		const FString& ServerShotResultText,
 		const FString& LocalDebugHudText
 	);
 

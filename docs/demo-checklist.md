@@ -18,27 +18,32 @@ Use this checklist to run the current portfolio demo.
 6. Click `Send Debug Room`.
 7. Confirm the browser output shows `match.state=in_progress`, `game_over=false`, `bot_attacks_enabled=false`, `bot_difficulty=easy`, `auto_end_match_by_timer=false`, `targets=5`, `bots=8`, and `health_packs=3`.
 8. Keep `Log Raw Snapshots` unchecked so the page shows compact summaries without freezing.
-9. Open Unreal Editor.
-10. In the PlayerController Blueprint defaults, use the remote profile and confirm the HUD shows `Profile: Remote`, `Server: Connected`, and server-authoritative `SERVER HP` / `SERVER Score` as the primary state.
-11. Move with WASD.
-12. Show the local character and the server player ghost moving together.
-13. Fire with left mouse button and show both the local projectile and server projectile ghost.
-14. Show server target ghosts with HP labels.
-15. Hit a local target and show local score increasing.
-16. Hit a server target and show server score / target HP changing in the HUD and browser snapshots.
-17. Validate visual placeholder readability:
+9. Click `Fire 5 Shots At Nearest Bot` and verify BOT HP decreases or a bot kill event appears.
+10. Open Unreal Editor.
+11. In the PlayerController Blueprint defaults, use the remote profile and confirm the HUD shows `Profile: Remote`, `Server: Connected`, and server-authoritative `SERVER HP` / `SERVER Score` as the primary state.
+12. Move with WASD.
+13. Show the local character and the server player ghost moving together.
+14. Fire with left mouse button and show both the local projectile and server projectile ghost.
+15. Show server target ghosts with HP labels.
+16. Hit a local target and show local score increasing.
+17. Hit a server target or bot and show the explicit server shot result:
+   - Browser `Shot Result`: `SERVER HIT BOT-* -20`, `SERVER HEADSHOT BOT-* -40`, `SERVER HIT CORE-* -20`, or `SERVER MISS`.
+   - Unreal HUD hit marker text: `SERVER HIT ...` or `SERVER MISS` for about 1.25 seconds by default.
+   - Server score / HP changes in the HUD and browser summaries when the hit deals damage.
+18. Validate visual placeholder readability:
    - `SERVER ECHO` label is visible on the server player ghost.
    - `CORE-*` labels are visible and destroyed cores read as `DESTROYED`.
    - `BOT-*` labels are visible and dead bots read as `DOWN`.
    - `HPACK-*` labels are visible and inactive packs show a countdown.
    - local objects and server ghost objects are visually distinguishable.
-18. Validate the arena layout: P1/P2/P3/P4 spawns sit on the four sides, CORE-1 is centered, bots are around center/lanes, and health packs are near the perimeter.
-19. Verify the server combat event feed appears after a bot/core/player event.
-20. Hold Tab and verify the server scoreboard overlay appears; release Tab and verify the normal HUD returns.
-21. Walk into the hazard and show local HP decrease, death, and respawn only as an offline/local debug layer.
-22. Toggle `bShowLocalDebugHud` if you need to show local HP/score and position error during explanation.
-23. Toggle optional server position correction on/off if useful for the recording.
-24. Stop the server or switch back to the Local profile and show that offline gameplay still runs.
+19. Validate the arena layout: P1/P2/P3/P4 spawns sit on the four sides, CORE-1 is centered, bots are around center/lanes, and health packs are near the perimeter.
+20. Verify the server combat event feed appears after a bot/core/player event and that shot results are distinct from local projectile overlap logs.
+21. Hold Tab and verify the server scoreboard overlay appears; release Tab and verify the normal HUD returns.
+22. Optional: enable bot attacks on easy to show server danger after the stable shooting demo.
+23. Walk into the hazard and show local HP decrease, death, and respawn only as an offline/local debug layer.
+24. Toggle `bShowLocalDebugHud` if you need to show local HP/score and position error during explanation.
+25. Toggle optional server position correction on/off if useful for the recording.
+26. Stop the server or switch back to the Local profile and show that offline gameplay still runs.
 
 ## Server Smoke Test
 
@@ -69,7 +74,10 @@ Use this checklist to run the current portfolio demo.
 8. Click `Apply Safe Demo Mode`.
 9. Click `Send Debug Room` and verify Room 1, player state, and targets.
 10. Confirm `match.state=in_progress`, `game_over=false`, `bot_attacks_enabled=false`, `bot_difficulty=easy`, and `auto_end_match_by_timer=false`.
-11. Verify the arena layout values from the first snapshot output:
+11. Click `Send Fire At Nearest Bot` and verify the `Shot Result` card shows `SERVER HIT BOT-* -20` or `SERVER MISS`.
+12. Click `Fire 5 Shots At Nearest Bot` and verify bot HP drops quickly. A 100 HP bot should be killed by five body hits at 20 damage each unless shots miss or the match is over.
+13. Verify the combat tuning summary shows body/head damage `20/40`, easy bot difficulty, bot attacks disabled, timer auto-end disabled, and score values `1/2/1`.
+14. Verify the arena layout values from the first snapshot output:
    - bounds `x=-1800..1800`, `y=-1200..1200`
    - player spawns at `(-1200,0)`, `(1200,0)`, `(0,900)`, `(0,-900)`
    - cores at center and four diagonal mid-lane positions
@@ -102,7 +110,9 @@ Use this checklist to run the current portfolio demo.
 
 1. Click `Start Moving Right` and watch snapshots update player `x` / `y`.
 2. Click `Send Fire Input` and watch projectiles appear in snapshots.
-3. Watch target HP and server score change after projectile hits.
+3. Click `Send Fire At Nearest Bot` and watch bot HP plus the `Shot Result` card update.
+4. Click `Fire 5 Shots At Nearest Bot` and watch bot HP decrease across multiple snapshots, then confirm a kill event and scoreboard score update when the bot reaches 0 HP.
+5. Watch target HP and server score change after server hits.
 
 ### Option C: Remote GCP Server
 
@@ -151,6 +161,7 @@ Use this checklist to run the current portfolio demo.
    - Health pack count.
    - Server projectile count.
    - Recent combat event feed.
+   - Temporary server hit marker text after shots: `SERVER HIT ...`, `SERVER HEADSHOT ...`, or `SERVER MISS`.
    - Optional local debug line only when `bShowLocalDebugHud` is enabled.
    - Position error and correction state.
 7. Move with WASD.

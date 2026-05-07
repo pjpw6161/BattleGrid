@@ -162,6 +162,7 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		BattleGridController->ShouldShowScoreboard(),
 		BattleGridController->GetServerScoreboardText(),
 		ServerCombatEventFeedText,
+		BattleGridController->GetRecentServerShotResultText(),
 		BattleGridController->GetLocalDebugHudText()
 	);
 }

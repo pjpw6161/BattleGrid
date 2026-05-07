@@ -52,6 +52,7 @@ void UBattleGridCombatWidget::UpdateHud(
 	bool bShowScoreboard,
 	const FString& ScoreboardText,
 	const FString& ServerCombatEventFeedText,
+	const FString& ServerShotResultText,
 	const FString& LocalDebugHudText
 )
 {
@@ -152,6 +153,10 @@ void UBattleGridCombatWidget::UpdateHud(
 		else if (bServerInvincible && !ServerLifeStateText.IsEmpty())
 		{
 			DisplayMessage = ServerLifeStateText;
+		}
+		else if (!ServerShotResultText.IsEmpty())
+		{
+			DisplayMessage = ServerShotResultText;
 		}
 		else if (bShowCombatEventFeed && !ServerCombatEventFeedText.IsEmpty())
 		{

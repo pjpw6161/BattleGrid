@@ -323,13 +323,19 @@ When disabled, the match timer can reach zero without forcing `game_over`. The t
       "event_id": 1,
       "type": "bot_killed",
       "message": "player1 killed BOT-3",
+      "short_message": "",
       "time": 123.4,
       "actor_player_id": 1,
       "target_player_id": 0,
       "bot_id": 3,
       "target_id": 0,
       "health_pack_id": 0,
-      "headshot": false
+      "headshot": false,
+      "damage": 0,
+      "hit_group": "",
+      "hit_x": 0.0,
+      "hit_y": 0.0,
+      "hit_z": 0.0
     }
   ],
   "players": [
@@ -471,13 +477,19 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
       "event_id": 1,
       "type": "bot_killed",
       "message": "player1 killed BOT-3",
+      "short_message": "",
       "time": 123.4,
       "actor_player_id": 1,
       "target_player_id": 0,
       "bot_id": 3,
       "target_id": 0,
       "health_pack_id": 0,
-      "headshot": false
+      "headshot": false,
+      "damage": 0,
+      "hit_group": "",
+      "hit_x": 0.0,
+      "hit_y": 0.0,
+      "hit_z": 0.0
     }
   ],
   "players": [
@@ -579,6 +591,7 @@ Combat event fields:
 - `event_id`: monotonically increasing room-local event ID for deduplication.
 - `type`: event type.
 - `message`: human-readable short kill-feed message.
+- `short_message`: compact HUD/browser display text for shot results, such as `SERVER HIT BOT-3 -20`.
 - `time`: server room time in seconds.
 - `actor_player_id`: player that caused the event, if any.
 - `target_player_id`: player affected by the event, if any.
@@ -586,9 +599,16 @@ Combat event fields:
 - `target_id`: server target involved in the event, if any.
 - `health_pack_id`: health pack involved in the event, if any.
 - `headshot`: true for headshot kill events.
+- `damage`: damage amount for shot result events, or `0` when not applicable.
+- `hit_group`: shot result hit group such as `head`, `body`, `core`, or `miss`.
+- `hit_x`, `hit_y`, `hit_z`: approximate server-space hit position for shot result/debug display.
 
 Current event types:
 
+- `shot_hit_bot`
+- `shot_hit_player`
+- `shot_hit_target`
+- `shot_miss`
 - `target_destroyed`
 - `bot_killed`
 - `player_killed`
@@ -597,6 +617,31 @@ Current event types:
 - `health_pack_picked`
 - `match_ended`
 - `match_restarted`
+
+Shot result events are emitted once per processed `fire=true` input sequence while the match is not `game_over`. They are intended for browser/Unreal hit confirmation and do not replace the scoreboard or kill events. A bot headshot can produce both a `shot_hit_bot` event and, if HP reaches zero, a later `bot_killed` event in the same snapshot event feed.
+
+Example shot result event:
+
+```json
+{
+  "event_id": 42,
+  "type": "shot_hit_bot",
+  "message": "player1 hit BOT-3 for 20",
+  "short_message": "SERVER HIT BOT-3 -20",
+  "time": 124.2,
+  "actor_player_id": 1,
+  "target_player_id": 0,
+  "bot_id": 3,
+  "target_id": 0,
+  "health_pack_id": 0,
+  "headshot": false,
+  "damage": 20,
+  "hit_group": "body",
+  "hit_x": 300.0,
+  "hit_y": 300.0,
+  "hit_z": 90.0
+}
+```
 
 Player fields:
 

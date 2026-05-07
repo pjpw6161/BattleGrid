@@ -75,6 +75,7 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bShowLocalDebugHud = false;
 	bShowServerDebugDetails = true;
 	bShowCombatEventFeed = true;
+	ShotResultDisplayDurationSeconds = 1.25f;
 	CombatMessageExpireTime = 0.0f;
 	bPlayerDead = false;
 	bHasWon = false;
@@ -331,6 +332,20 @@ FString ABattleGridClientPlayerController::GetServerCombatEventFeedText() const
 			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
 		{
 			return NetworkSubsystem->GetServerCombatEventFeedText();
+		}
+	}
+
+	return FString();
+}
+
+FString ABattleGridClientPlayerController::GetRecentServerShotResultText() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetLastShotResultMessage();
 		}
 	}
 
@@ -762,6 +777,7 @@ void ABattleGridClientPlayerController::BeginPlay()
 					SnapshotLogInterval,
 					InputAckLogInterval
 				);
+				NetworkSubsystem->SetShotResultDisplayDuration(ShotResultDisplayDurationSeconds);
 				NetworkSubsystem->Connect(ResolvedServerUrl, Nickname);
 			}
 			else

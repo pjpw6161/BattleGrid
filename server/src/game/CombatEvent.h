@@ -12,6 +12,7 @@ struct CombatEvent
     std::uint64_t eventId = 0;
     std::string type;
     std::string message;
+    std::string shortMessage;
     double serverTimeSeconds = 0.0;
     std::uint64_t actorPlayerId = 0;
     std::uint64_t targetPlayerId = 0;
@@ -19,6 +20,11 @@ struct CombatEvent
     std::uint64_t targetId = 0;
     std::uint64_t healthPackId = 0;
     bool headshot = false;
+    int damage = 0;
+    std::string hitGroup;
+    double hitX = 0.0;
+    double hitY = 0.0;
+    double hitZ = 0.0;
 
     nlohmann::json ToJson() const;
 };

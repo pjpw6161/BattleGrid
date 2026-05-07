@@ -54,6 +54,11 @@ ADS moves the camera slightly to the right, reduces spread, and lowers movement 
 - Player kill score: +2.
 - Bot kill score: +1.
 - Highest score wins.
+- Server shot results use compact demo feedback:
+  - `SERVER HIT BOT-* -20`
+  - `SERVER HEADSHOT BOT-* -40`
+  - `SERVER HIT CORE-* -20`
+  - `SERVER MISS`
 
 The long-term target is server-authoritative combat. The server should validate hits, damage, deaths, respawns, score changes, and match results.
 
@@ -119,6 +124,8 @@ Debug/demo bot difficulty values:
 | Hard | 25 | 0.7s | 1800 | 1100 | 600 |
 
 For demo iteration, bot attacks can be disabled while keeping bot movement and snapshots active.
+
+Safe demo mode applies `easy`, disables bot attacks, disables timer-based match end, resets player/bot/core/health-pack state, clears projectiles, and restarts the match in progress.
 
 This v1 does not use navmesh pathfinding, bot projectile visuals, animations, or tactical decision making.
 
@@ -222,7 +229,7 @@ Current HUD policy:
 - Local offline state still exists for testing local movement, projectiles, hazards, and targets.
 - Local HP/score and position-correction details are shown only when the PlayerController `bShowLocalDebugHud` option is enabled.
 - If the server says the player is dead, the HUD displays `SERVER DEAD` and the respawn countdown even if the local test pawn still has different local HP.
-- Local projectile hit logs do not imply server damage; server combat changes are confirmed through server HP, score, bot/core labels, scoreboard, and combat events.
+- Local projectile hit logs do not imply server damage; server combat changes are confirmed through server HP, score, bot/core labels, scoreboard, compact shot result text, and combat events.
 
 ## Prototype Visual Language
 
@@ -249,7 +256,7 @@ The server now emits a compact combat event feed for important authoritative eve
 - match ended
 - match restarted
 
-Snapshots include recent events so clients can show a short kill feed without needing a separate event stream. The current Unreal HUD displays the latest few server event messages in the existing server summary area. A future polished HUD should move this into a dedicated kill feed panel with timing, color, and animation.
+Snapshots include recent events so clients can show a short kill feed without needing a separate event stream. Shot result events also include a `short_message` field for readable hit marker text. The current Unreal HUD displays recent server shot results separately from the persistent event feed so automatic fire does not bury kill/death/pickup events. A future polished HUD should move this into a dedicated kill feed panel with timing, color, and animation.
 
 ## Server-Authoritative Rules
 

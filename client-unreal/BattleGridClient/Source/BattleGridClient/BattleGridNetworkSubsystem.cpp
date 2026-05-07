@@ -4,11 +4,58 @@
 
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
+#include "HAL/PlatformTime.h"
 #include "IWebSocket.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "WebSocketsModule.h"
+
+namespace
+{
+FString BuildShotResultDisplayText(const FBattleGridServerCombatEvent& Event)
+{
+	if (!Event.ShortMessage.IsEmpty())
+	{
+		return Event.ShortMessage;
+	}
+
+	if (Event.Type == TEXT("shot_miss"))
+	{
+		return TEXT("SERVER MISS");
+	}
+
+	FString TargetLabel = TEXT("TARGET");
+	if (Event.BotId > 0)
+	{
+		TargetLabel = FString::Printf(TEXT("BOT-%d"), Event.BotId);
+	}
+	else if (Event.TargetId > 0)
+	{
+		TargetLabel = FString::Printf(TEXT("CORE-%d"), Event.TargetId);
+	}
+	else if (Event.TargetPlayerId > 0)
+	{
+		TargetLabel = FString::Printf(TEXT("P%d"), Event.TargetPlayerId);
+	}
+
+	const FString DamageText = Event.Damage > 0
+		? FString::Printf(TEXT(" -%d"), Event.Damage)
+		: FString();
+
+	if (Event.bHeadshot)
+	{
+		return FString::Printf(TEXT("SERVER HEADSHOT %s%s"), *TargetLabel, *DamageText);
+	}
+
+	return FString::Printf(TEXT("SERVER HIT %s%s"), *TargetLabel, *DamageText);
+}
+
+bool ShouldShowInPersistentCombatFeed(const FBattleGridServerCombatEvent& Event)
+{
+	return !Event.Type.StartsWith(TEXT("shot_"));
+}
+}
 
 void UBattleGridNetworkSubsystem::Deinitialize()
 {
@@ -45,6 +92,8 @@ void UBattleGridNetworkSubsystem::Connect(const FString& InServerUrl, const FStr
 	LatestMatchSnapshot = FBattleGridServerMatchSnapshot();
 	RecentCombatEvents.Empty();
 	SeenCombatEventIds.Empty();
+	LastShotResultMessage.Empty();
+	LastShotResultTimestampSeconds = -1000.0;
 	bHasMatchSnapshot = false;
 	bHasLoggedServerSummary = false;
 	InputAckLogCounter = 0;
@@ -89,6 +138,8 @@ void UBattleGridNetworkSubsystem::Disconnect()
 	LatestMatchSnapshot = FBattleGridServerMatchSnapshot();
 	RecentCombatEvents.Empty();
 	SeenCombatEventIds.Empty();
+	LastShotResultMessage.Empty();
+	LastShotResultTimestampSeconds = -1000.0;
 	bHasMatchSnapshot = false;
 	bHasLoggedServerSummary = false;
 	InputAckLogCounter = 0;
@@ -220,6 +271,11 @@ void UBattleGridNetworkSubsystem::SendInput(
 			);
 		}
 	}
+}
+
+void UBattleGridNetworkSubsystem::SetShotResultDisplayDuration(float InDurationSeconds)
+{
+	LastShotResultDisplaySeconds = FMath::Max(0.1f, InDurationSeconds);
 }
 
 void UBattleGridNetworkSubsystem::ConfigureDemoLogging(
@@ -480,6 +536,10 @@ FString UBattleGridNetworkSubsystem::GetServerCombatEventFeedText() const
 	{
 		if (!RecentCombatEvents[Index].Message.IsEmpty())
 		{
+			if (!ShouldShowInPersistentCombatFeed(RecentCombatEvents[Index]))
+			{
+				continue;
+			}
 			EventLines.Add(RecentCombatEvents[Index].Message);
 		}
 	}
@@ -767,11 +827,26 @@ FString UBattleGridNetworkSubsystem::GetCombatEventFeedText() const
 	{
 		if (!RecentCombatEvents[Index].Message.IsEmpty())
 		{
+			if (!ShouldShowInPersistentCombatFeed(RecentCombatEvents[Index]))
+			{
+				continue;
+			}
 			EventLines.Add(RecentCombatEvents[Index].Message);
 		}
 	}
 
 	return FString::Join(EventLines, TEXT("\n"));
+}
+
+FString UBattleGridNetworkSubsystem::GetLastShotResultMessage() const
+{
+	return HasRecentShotResult() ? LastShotResultMessage : FString();
+}
+
+bool UBattleGridNetworkSubsystem::HasRecentShotResult() const
+{
+	return !LastShotResultMessage.IsEmpty()
+		&& FPlatformTime::Seconds() - LastShotResultTimestampSeconds <= LastShotResultDisplaySeconds;
 }
 
 FString UBattleGridNetworkSubsystem::GetServerScoreboardSummaryText() const
@@ -883,6 +958,8 @@ void UBattleGridNetworkSubsystem::HandleClosed(
 	LatestMatchSnapshot = FBattleGridServerMatchSnapshot();
 	RecentCombatEvents.Empty();
 	SeenCombatEventIds.Empty();
+	LastShotResultMessage.Empty();
+	LastShotResultTimestampSeconds = -1000.0;
 	LastDebugMessage.Empty();
 	bHasMatchSnapshot = false;
 	bHasLoggedServerSummary = false;
@@ -979,6 +1056,8 @@ void UBattleGridNetworkSubsystem::HandleMessage(const FString& Message)
 		LatestScoreboard.Empty();
 		RecentCombatEvents.Empty();
 		SeenCombatEventIds.Empty();
+		LastShotResultMessage.Empty();
+		LastShotResultTimestampSeconds = -1000.0;
 		bHasMatchSnapshot = false;
 
 		UE_LOG(
@@ -995,6 +1074,11 @@ void UBattleGridNetworkSubsystem::HandleMessage(const FString& Message)
 		FString DebugMessage;
 		JsonObject->TryGetStringField(TEXT("message"), DebugMessage);
 		LastDebugMessage = DebugMessage.IsEmpty() ? FString(TEXT("debug ok")) : DebugMessage;
+		if (LastDebugMessage == TEXT("safe demo mode applied"))
+		{
+			LastShotResultMessage.Empty();
+			LastShotResultTimestampSeconds = -1000.0;
+		}
 		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Server debug response: %s"), *LastDebugMessage);
 		return;
 	}
@@ -1161,11 +1245,16 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			double BotIdValue = 0.0;
 			double TargetIdValue = 0.0;
 			double HealthPackIdValue = 0.0;
+			double DamageValue = 0.0;
+			double HitXValue = 0.0;
+			double HitYValue = 0.0;
+			double HitZValue = 0.0;
 			bool bHeadshotValue = false;
 
 			EventObject->TryGetNumberField(TEXT("event_id"), EventIdValue);
 			EventObject->TryGetStringField(TEXT("type"), Event.Type);
 			EventObject->TryGetStringField(TEXT("message"), Event.Message);
+			EventObject->TryGetStringField(TEXT("short_message"), Event.ShortMessage);
 			EventObject->TryGetNumberField(TEXT("time"), TimeValue);
 			EventObject->TryGetNumberField(TEXT("actor_player_id"), ActorPlayerIdValue);
 			EventObject->TryGetNumberField(TEXT("target_player_id"), TargetPlayerIdValue);
@@ -1173,6 +1262,11 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			EventObject->TryGetNumberField(TEXT("target_id"), TargetIdValue);
 			EventObject->TryGetNumberField(TEXT("health_pack_id"), HealthPackIdValue);
 			EventObject->TryGetBoolField(TEXT("headshot"), bHeadshotValue);
+			EventObject->TryGetNumberField(TEXT("damage"), DamageValue);
+			EventObject->TryGetStringField(TEXT("hit_group"), Event.HitGroup);
+			EventObject->TryGetNumberField(TEXT("hit_x"), HitXValue);
+			EventObject->TryGetNumberField(TEXT("hit_y"), HitYValue);
+			EventObject->TryGetNumberField(TEXT("hit_z"), HitZValue);
 
 			Event.EventId = static_cast<int32>(EventIdValue);
 			Event.Time = static_cast<float>(TimeValue);
@@ -1182,6 +1276,10 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			Event.TargetId = static_cast<int32>(TargetIdValue);
 			Event.HealthPackId = static_cast<int32>(HealthPackIdValue);
 			Event.bHeadshot = bHeadshotValue;
+			Event.Damage = static_cast<int32>(DamageValue);
+			Event.HitX = static_cast<float>(HitXValue);
+			Event.HitY = static_cast<float>(HitYValue);
+			Event.HitZ = static_cast<float>(HitZValue);
 
 			if (Event.EventId <= 0 || SeenCombatEventIds.Contains(Event.EventId))
 			{
@@ -1196,6 +1294,17 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			}
 
 			UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Combat event: %s"), *Event.Message);
+			if (Event.Type.StartsWith(TEXT("shot_")))
+			{
+				LastShotResultMessage = BuildShotResultDisplayText(Event);
+				LastShotResultTimestampSeconds = FPlatformTime::Seconds();
+				UE_LOG(
+					LogTemp,
+					Log,
+					TEXT("[BattleGrid] Server shot result: %s"),
+					*LastShotResultMessage
+				);
+			}
 		}
 	}
 

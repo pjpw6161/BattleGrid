@@ -197,6 +197,20 @@ Scoring:
 - Server bot killed: shooter gains +1 score, +1 kill, and +1 bot kill.
 - Server player killed: shooter gains +2 score, +1 kill, and +1 player kill.
 
+The current combat tuning values are centralized in `GameRoom.cpp` for demo readability:
+
+- body damage: `20`
+- headshot damage: `40`
+- hitscan range: `3000`
+- bot max HP: `100`
+- bot respawn: `8s`
+- bot invincibility after respawn: `1.5s`
+- bot kill score: `+1`
+- player kill score: `+2`
+- core/target kill score: `+1`
+
+`debug_room` includes these values so the browser test page can show a compact combat tuning summary.
+
 ## Match State And Scoreboard
 
 `GameRoom` owns one `MatchState` for Room 1.
@@ -239,6 +253,7 @@ Each event stores:
 - event ID
 - event type
 - display message
+- compact `short_message` for shot result HUD/browser text
 - server room time
 - actor player ID
 - target player ID
@@ -257,8 +272,11 @@ Events are generated when:
 - a player picks up a health pack
 - a match ends
 - a match restarts
+- a processed fire input hits or misses
 
 Snapshots and `debug_room` include the recent `events` array. Unreal deduplicates by `event_id` and displays the last few messages in the existing HUD as a simple kill feed.
+
+Shot result events use compact text such as `SERVER HIT BOT-3 -20`, `SERVER HEADSHOT BOT-3 -40`, `SERVER HIT CORE-1 -20`, or `SERVER MISS`. Unreal displays these separately from the persistent event feed so automatic fire does not bury kill, death, pickup, and match events.
 
 ## Bot AI
 
@@ -282,6 +300,8 @@ Each tick, bot logic is intentionally simple:
 | Hard | 25 | 0.7s | 1800 | 1100 | 600 |
 
 `debug_set_bot_attacks` can disable bot damage while leaving bot movement, chasing, respawn, snapshots, and ghost visualization active.
+
+Safe demo mode applies the easy profile, disables bot attacks, disables timer-based match ending, resets players/bots/cores/health packs, clears projectiles, and restarts the match in `in_progress`. This is the recommended startup state for portfolio recording and local combat tests.
 
 There is no navmesh, pathfinding, projectile attack, animation, or bot score yet.
 

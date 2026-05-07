@@ -8,6 +8,7 @@ nlohmann::json CombatEvent::ToJson() const
     json["event_id"] = eventId;
     json["type"] = type;
     json["message"] = message;
+    json["short_message"] = shortMessage;
     json["time"] = serverTimeSeconds;
     json["actor_player_id"] = actorPlayerId;
     json["target_player_id"] = targetPlayerId;
@@ -15,6 +16,11 @@ nlohmann::json CombatEvent::ToJson() const
     json["target_id"] = targetId;
     json["health_pack_id"] = healthPackId;
     json["headshot"] = headshot;
+    json["damage"] = damage;
+    json["hit_group"] = hitGroup;
+    json["hit_x"] = hitX;
+    json["hit_y"] = hitY;
+    json["hit_z"] = hitZ;
     return json;
 }
 }

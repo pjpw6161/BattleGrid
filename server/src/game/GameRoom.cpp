@@ -24,12 +24,21 @@ constexpr double ProjectileSpawnForwardOffset = 50.0;
 constexpr int BodyDamage = 20;
 constexpr int HeadshotDamage = 40;
 constexpr double HitscanRange = 3000.0;
+constexpr double PlayerRespawnSeconds = 8.0;
+constexpr double PlayerInvincibleSeconds = 1.5;
+constexpr int BotMaxHp = 100;
+constexpr double BotRespawnSeconds = 8.0;
+constexpr double BotInvincibleSeconds = 1.5;
+constexpr int BotKillScore = 1;
+constexpr int PlayerKillScore = 2;
+constexpr int TargetKillScore = 1;
+constexpr const char* SafeDemoDifficulty = "easy";
+constexpr bool bSafeDemoBotAttacksEnabled = false;
+constexpr bool bSafeDemoAutoEndMatchByTimer = false;
 constexpr bool bUseHitscanDamage = true;
 constexpr bool bProjectileCollisionDamageEnabled = false;
 constexpr double FireOriginHeight = 100.0;
 constexpr double TargetCenterZ = 80.0;
-constexpr double RespawnDelaySeconds = 8.0;
-constexpr double RespawnInvincibilitySeconds = 1.5;
 
 struct ArenaPoint
 {
@@ -289,6 +298,85 @@ Vec3 BuildShotDirection(const PlayerInput& input)
     }
 
     return direction;
+}
+
+Vec3 BuildHitPoint(const Vec3& origin, const Vec3& direction, double distance)
+{
+    if (!std::isfinite(distance) || distance == std::numeric_limits<double>::max())
+    {
+        return origin;
+    }
+
+    return Vec3{
+        origin.x + (direction.x * distance),
+        origin.y + (direction.y * distance),
+        origin.z + (direction.z * distance),
+    };
+}
+
+std::string GetShotResultTargetName(HitscanHit::Type type)
+{
+    switch (type)
+    {
+    case HitscanHit::Type::Target:
+        return "core";
+    case HitscanHit::Type::Player:
+        return "player";
+    case HitscanHit::Type::Bot:
+        return "bot";
+    default:
+        return "none";
+    }
+}
+
+void LogShotResult(
+    std::uint64_t shooterId,
+    bool bHit,
+    HitscanHit::Type targetType,
+    int damage,
+    bool bHeadshot
+)
+{
+    std::ostringstream logMessage;
+    logMessage
+        << "Shot result shooter=" << shooterId
+        << " result=" << (bHit ? "hit" : "miss")
+        << " target=" << GetShotResultTargetName(targetType)
+        << " damage=" << damage
+        << " headshot=" << (bHeadshot ? "true" : "false");
+    Logger::Info(logMessage.str());
+}
+
+std::string BuildShotShortMessage(
+    HitscanHit::Type targetType,
+    std::uint64_t targetId,
+    int damage,
+    bool bHeadshot
+)
+{
+    if (targetType == HitscanHit::Type::None)
+    {
+        return "SERVER MISS";
+    }
+
+    std::string label = "TARGET";
+    if (targetType == HitscanHit::Type::Bot)
+    {
+        label = "BOT-" + std::to_string(targetId);
+    }
+    else if (targetType == HitscanHit::Type::Target)
+    {
+        label = "CORE-" + std::to_string(targetId);
+    }
+    else if (targetType == HitscanHit::Type::Player)
+    {
+        label = "PLAYER-" + std::to_string(targetId);
+    }
+
+    return std::string(bHeadshot ? "SERVER HEADSHOT " : "SERVER HIT ")
+        + label
+        + " -"
+        + std::to_string(damage);
 }
 
 void AssignRespawnPosition(PlayerState& player)
@@ -667,6 +755,15 @@ nlohmann::json GameRoom::ToDebugJson() const
     json["bot_attack_range"] = botAttackRange;
     json["bot_move_speed"] = botMoveSpeed;
     json["auto_end_match_by_timer"] = bAutoEndMatchByTimer;
+    json["body_damage"] = BodyDamage;
+    json["headshot_damage"] = HeadshotDamage;
+    json["hitscan_range"] = HitscanRange;
+    json["bot_max_hp"] = BotMaxHp;
+    json["bot_respawn_seconds"] = BotRespawnSeconds;
+    json["bot_invincible_seconds"] = BotInvincibleSeconds;
+    json["bot_kill_score"] = BotKillScore;
+    json["player_kill_score"] = PlayerKillScore;
+    json["target_kill_score"] = TargetKillScore;
     json["health_pack_count"] = healthPacks.size();
     json["players"] = nlohmann::json::array();
     json["bots"] = nlohmann::json::array();
@@ -815,9 +912,9 @@ std::uint64_t GameRoom::ApplySafeDemoMode()
 {
     std::lock_guard lock(mutex);
 
-    bBotAttacksEnabled = false;
-    bAutoEndMatchByTimer = false;
-    ApplyBotDifficultyUnlocked("easy");
+    bBotAttacksEnabled = bSafeDemoBotAttacksEnabled;
+    bAutoEndMatchByTimer = bSafeDemoAutoEndMatchByTimer;
+    ApplyBotDifficultyUnlocked(SafeDemoDifficulty);
 
     const std::uint64_t nextMatchId = matchState.matchId + 1;
     matchState.Reset();
@@ -982,8 +1079,8 @@ void GameRoom::InitializeDefaultBots() const
         bot.y = spawn.y;
         bot.z = spawn.z;
         bot.yaw = 0.0;
-        bot.hp = 100;
-        bot.maxHp = 100;
+        bot.hp = BotMaxHp;
+        bot.maxHp = BotMaxHp;
         bot.alive = true;
         bot.invincible = false;
         bot.speed = botMoveSpeed;
@@ -1107,7 +1204,7 @@ void GameRoom::ProcessPlayerRespawns(double deltaSeconds)
             player.invincible = true;
             player.hp = player.maxHp;
             player.respawnTimerSeconds = 0.0;
-            player.invincibleTimerSeconds = RespawnInvincibilitySeconds;
+            player.invincibleTimerSeconds = PlayerInvincibleSeconds;
             player.latestInput.moveX = 0.0;
             player.latestInput.moveY = 0.0;
             player.latestInput.fire = false;
@@ -1158,6 +1255,8 @@ void GameRoom::UpdateBotRespawns(double deltaSeconds)
             );
             const ArenaPoint& spawnPoint = BotSpawnPoints[spawnIndex];
             bot.Respawn(spawnPoint.x, spawnPoint.y);
+            bot.invincibleTimerSeconds = BotInvincibleSeconds;
+            bot.speed = botMoveSpeed;
 
             Logger::Info("Bot respawned bot_id=" + std::to_string(bot.botId));
             continue;
@@ -1255,7 +1354,7 @@ void GameRoom::UpdateBotAI(double deltaSeconds)
                         targetPlayer->alive = false;
                         targetPlayer->invincible = false;
                         targetPlayer->deaths += 1;
-                        targetPlayer->respawnTimerSeconds = RespawnDelaySeconds;
+                        targetPlayer->respawnTimerSeconds = PlayerRespawnSeconds;
                         targetPlayer->invincibleTimerSeconds = 0.0;
                         targetPlayer->latestInput.fire = false;
                         targetPlayer->latestInput.moveX = 0.0;
@@ -1633,6 +1732,11 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         return;
     }
 
+    if (matchState.IsGameOver())
+    {
+        return;
+    }
+
     const Vec3 origin{shooter.x, shooter.y, shooter.z + FireOriginHeight};
     const Vec3 direction = BuildShotDirection(input);
 
@@ -1839,9 +1943,39 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
             << "/" << target->second.maxHp;
         Logger::Info(hitLogMessage.str());
 
+        const Vec3 hitPoint = BuildHitPoint(origin, direction, bestHit.distance);
+        CombatEvent shotEvent;
+        shotEvent.type = "shot_hit_target";
+        shotEvent.message = shooter.nickname
+            + " hit CORE-"
+            + std::to_string(bestHit.targetId)
+            + " for "
+            + std::to_string(bestHit.damage);
+        shotEvent.shortMessage = BuildShotShortMessage(
+            bestHit.type,
+            bestHit.targetId,
+            bestHit.damage,
+            bestHit.headshot
+        );
+        shotEvent.actorPlayerId = shooter.playerId;
+        shotEvent.targetId = bestHit.targetId;
+        shotEvent.damage = bestHit.damage;
+        shotEvent.hitGroup = "core";
+        shotEvent.hitX = hitPoint.x;
+        shotEvent.hitY = hitPoint.y;
+        shotEvent.hitZ = hitPoint.z;
+        AddCombatEvent(shotEvent);
+        LogShotResult(
+            shooter.playerId,
+            true,
+            bestHit.type,
+            bestHit.damage,
+            bestHit.headshot
+        );
+
         if (!target->second.IsAlive())
         {
-            shooter.score += 1;
+            shooter.score += TargetKillScore;
             shooter.targetKills += 1;
 
             std::ostringstream destroyLogMessage;
@@ -1895,10 +2029,41 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
             Logger::Info(fallbackLogMessage.str());
         }
 
+        const Vec3 hitPoint = BuildHitPoint(origin, direction, bestHit.distance);
+        CombatEvent shotEvent;
+        shotEvent.type = "shot_hit_bot";
+        shotEvent.message = shooter.nickname
+            + (bestHit.headshot ? " headshot " : " hit ")
+            + hitBot.name
+            + " for "
+            + std::to_string(bestHit.damage);
+        shotEvent.shortMessage = BuildShotShortMessage(
+            bestHit.type,
+            hitBot.botId,
+            bestHit.damage,
+            bestHit.headshot
+        );
+        shotEvent.actorPlayerId = shooter.playerId;
+        shotEvent.botId = hitBot.botId;
+        shotEvent.headshot = bestHit.headshot;
+        shotEvent.damage = bestHit.damage;
+        shotEvent.hitGroup = bestHit.headshot ? "head" : "body";
+        shotEvent.hitX = hitPoint.x;
+        shotEvent.hitY = hitPoint.y;
+        shotEvent.hitZ = hitPoint.z;
+        AddCombatEvent(shotEvent);
+        LogShotResult(
+            shooter.playerId,
+            true,
+            bestHit.type,
+            bestHit.damage,
+            bestHit.headshot
+        );
+
         if (!hitBot.IsAlive())
         {
-            hitBot.respawnTimerSeconds = RespawnDelaySeconds;
-            shooter.score += 1;
+            hitBot.respawnTimerSeconds = BotRespawnSeconds;
+            shooter.score += BotKillScore;
             shooter.kills += 1;
             shooter.botKills += 1;
 
@@ -1944,18 +2109,49 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
             << "/" << victimPlayer.maxHp;
         Logger::Info(hitLogMessage.str());
 
+        const Vec3 hitPoint = BuildHitPoint(origin, direction, bestHit.distance);
+        CombatEvent shotEvent;
+        shotEvent.type = "shot_hit_player";
+        shotEvent.message = shooter.nickname
+            + (bestHit.headshot ? " headshot " : " hit ")
+            + victimPlayer.nickname
+            + " for "
+            + std::to_string(bestHit.damage);
+        shotEvent.shortMessage = BuildShotShortMessage(
+            bestHit.type,
+            victimPlayer.playerId,
+            bestHit.damage,
+            bestHit.headshot
+        );
+        shotEvent.actorPlayerId = shooter.playerId;
+        shotEvent.targetPlayerId = victimPlayer.playerId;
+        shotEvent.headshot = bestHit.headshot;
+        shotEvent.damage = bestHit.damage;
+        shotEvent.hitGroup = bestHit.headshot ? "head" : "body";
+        shotEvent.hitX = hitPoint.x;
+        shotEvent.hitY = hitPoint.y;
+        shotEvent.hitZ = hitPoint.z;
+        AddCombatEvent(shotEvent);
+        LogShotResult(
+            shooter.playerId,
+            true,
+            bestHit.type,
+            bestHit.damage,
+            bestHit.headshot
+        );
+
         if (victimPlayer.hp <= 0)
         {
             victimPlayer.alive = false;
             victimPlayer.invincible = false;
             victimPlayer.deaths += 1;
-            victimPlayer.respawnTimerSeconds = RespawnDelaySeconds;
+            victimPlayer.respawnTimerSeconds = PlayerRespawnSeconds;
             victimPlayer.invincibleTimerSeconds = 0.0;
             victimPlayer.latestInput.fire = false;
             victimPlayer.latestInput.moveX = 0.0;
             victimPlayer.latestInput.moveY = 0.0;
 
-            shooter.score += 2;
+            shooter.score += PlayerKillScore;
             shooter.kills += 1;
             shooter.playerKills += 1;
 
@@ -1984,6 +2180,29 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
     Logger::Info(
         "Hitscan missed shooter=" + std::to_string(shooter.playerId)
         + " seq=" + std::to_string(input.seq)
+    );
+
+    CombatEvent missEvent;
+    missEvent.type = "shot_miss";
+    missEvent.message = shooter.nickname + " missed";
+    missEvent.shortMessage = BuildShotShortMessage(
+        HitscanHit::Type::None,
+        0,
+        0,
+        false
+    );
+    missEvent.actorPlayerId = shooter.playerId;
+    missEvent.hitGroup = "miss";
+    missEvent.hitX = origin.x;
+    missEvent.hitY = origin.y;
+    missEvent.hitZ = origin.z;
+    AddCombatEvent(missEvent);
+    LogShotResult(
+        shooter.playerId,
+        false,
+        HitscanHit::Type::None,
+        0,
+        false
     );
 }
 
@@ -2055,7 +2274,7 @@ void GameRoom::UpdateProjectileTargetCollisions()
                 int score = 0;
                 if (owner != players.end())
                 {
-                    owner->second.score += 1;
+                    owner->second.score += TargetKillScore;
                     owner->second.targetKills += 1;
                     CombatEvent event;
                     event.type = "target_destroyed";
