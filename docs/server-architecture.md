@@ -173,19 +173,19 @@ Movement is intentionally simple:
 
 ## Projectile, Hitscan, And Bot Simulation
 
-Server projectiles spawn from the owning player or bot current position, offset slightly forward along the aim direction. With hitscan combat enabled, these projectiles are visual tracers and do not apply gameplay damage.
+Server projectiles are visual tracer records. They spawn from the owning player or bot server fire origin, offset slightly forward along the shot direction, and include explicit `start_*` / `end_*` points for client visualization. With hitscan combat enabled, these projectiles do not apply gameplay damage.
 
 Projectiles:
 
-- Move at fixed speed.
+- Store owner type, player owner ID, bot owner ID, current position, direction, start point, end point, and visual-only flag.
+- Move only as short-lived visual state for snapshot interpolation.
 - Track age.
 - Expire after lifetime.
-- Deactivate outside the projectile arena.
 - Collide with alive legacy targets only if target debug gameplay and projectile collision damage are explicitly enabled.
 
 On server hitscan fire:
 
-1. A tracer projectile is spawned for snapshot visualization.
+1. A visual-only tracer is spawned for snapshot visualization.
 2. A ray is cast from the shooter's server position.
 3. Alive non-invincible bots and other alive non-invincible players are tested. Legacy targets are tested only when `bTargetsEnabled=true`.
 4. Head spheres are checked before body spheres for bots and players.

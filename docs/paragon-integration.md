@@ -46,6 +46,28 @@ These folders should be created manually in Unreal Editor when assets are import
 
 If the socket is missing, C++ attaches the weapon to the character mesh root and logs a one-time warning. This prevents crashes while the asset setup is still in progress.
 
+## Muzzle And Socket Setup
+
+For Murdock-style or Paragon/Fab assets, inspect sockets in the Skeleton editor before tuning offsets.
+
+Recommended socket candidates:
+
+- `Muzzle`
+- `weapon_r`
+- `hand_r`
+- `hand_rSocket`
+
+Current C++ defaults:
+
+- player `WeaponSocketName`: `hand_rSocket`
+- player `MuzzleSocketName`: `Muzzle`
+- player `MuzzleFallbackOffset`: `(80, 20, 80)`
+- bot `BotWeaponSocketName`: `hand_rSocket`
+- bot `MuzzleSocketName`: `Muzzle`
+- bot `MuzzleFallbackOffset`: `(80, 20, 100)`
+
+If no muzzle socket exists yet, use the fallback offset first so the demo can proceed without editing assets. Later, add a real muzzle socket to the weapon or character skeleton and retune the relative weapon offsets.
+
 ## Bot Ghost Setup
 
 1. Open `BP_BattleGridServerBotGhostActor`.

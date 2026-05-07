@@ -1584,8 +1584,16 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			double OwnerBotIdValue = 0.0;
 			double XValue = 0.0;
 			double YValue = 0.0;
+			double ZValue = 0.0;
 			double DirXValue = 1.0;
 			double DirYValue = 0.0;
+			double DirZValue = 0.0;
+			double StartXValue = 0.0;
+			double StartYValue = 0.0;
+			double StartZValue = 0.0;
+			double EndXValue = 0.0;
+			double EndYValue = 0.0;
+			double EndZValue = 0.0;
 			bool bVisualOnlyValue = false;
 
 			ProjectileObject->TryGetNumberField(TEXT("projectile_id"), ProjectileIdValue);
@@ -1594,8 +1602,22 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			ProjectileObject->TryGetNumberField(TEXT("owner_bot_id"), OwnerBotIdValue);
 			ProjectileObject->TryGetNumberField(TEXT("x"), XValue);
 			ProjectileObject->TryGetNumberField(TEXT("y"), YValue);
+			ProjectileObject->TryGetNumberField(TEXT("z"), ZValue);
 			ProjectileObject->TryGetNumberField(TEXT("dir_x"), DirXValue);
 			ProjectileObject->TryGetNumberField(TEXT("dir_y"), DirYValue);
+			ProjectileObject->TryGetNumberField(TEXT("dir_z"), DirZValue);
+			StartXValue = XValue;
+			StartYValue = YValue;
+			StartZValue = ZValue;
+			EndXValue = XValue + (DirXValue * 100.0);
+			EndYValue = YValue + (DirYValue * 100.0);
+			EndZValue = ZValue + (DirZValue * 100.0);
+			ProjectileObject->TryGetNumberField(TEXT("start_x"), StartXValue);
+			ProjectileObject->TryGetNumberField(TEXT("start_y"), StartYValue);
+			ProjectileObject->TryGetNumberField(TEXT("start_z"), StartZValue);
+			ProjectileObject->TryGetNumberField(TEXT("end_x"), EndXValue);
+			ProjectileObject->TryGetNumberField(TEXT("end_y"), EndYValue);
+			ProjectileObject->TryGetNumberField(TEXT("end_z"), EndZValue);
 			ProjectileObject->TryGetBoolField(TEXT("visual_only"), bVisualOnlyValue);
 
 			ProjectileSnapshot.ProjectileId = static_cast<int32>(ProjectileIdValue);
@@ -1603,9 +1625,21 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			ProjectileSnapshot.OwnerBotId = static_cast<int32>(OwnerBotIdValue);
 			ProjectileSnapshot.X = static_cast<float>(XValue);
 			ProjectileSnapshot.Y = static_cast<float>(YValue);
+			ProjectileSnapshot.Z = static_cast<float>(ZValue);
 			ProjectileSnapshot.DirX = static_cast<float>(DirXValue);
 			ProjectileSnapshot.DirY = static_cast<float>(DirYValue);
+			ProjectileSnapshot.DirZ = static_cast<float>(DirZValue);
 			ProjectileSnapshot.bVisualOnly = bVisualOnlyValue;
+			ProjectileSnapshot.ServerStart = FVector(
+				static_cast<float>(StartXValue),
+				static_cast<float>(StartYValue),
+				static_cast<float>(StartZValue)
+			);
+			ProjectileSnapshot.ServerEnd = FVector(
+				static_cast<float>(EndXValue),
+				static_cast<float>(EndYValue),
+				static_cast<float>(EndZValue)
+			);
 
 			if (ProjectileSnapshot.ProjectileId > 0)
 			{

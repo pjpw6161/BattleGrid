@@ -71,6 +71,7 @@ public:
 	bool IsSprinting() const { return bSprinting; }
 	UBattleGridWeaponComponent* GetWeaponComponent() const { return WeaponComponent.Get(); }
 	void AttachWeaponToCharacterMesh();
+	FVector GetApproximateMuzzleWorldLocation() const;
 
 private:
 	void HandleDeath();
@@ -99,6 +100,12 @@ private:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
 	FVector WeaponRelativeScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	FName MuzzleSocketName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	FVector MuzzleFallbackOffset;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Camera", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float DefaultArmLength;

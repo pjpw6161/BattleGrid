@@ -401,11 +401,22 @@ When disabled, the match timer can reach zero without forcing `game_over`. The k
   "projectiles": [
     {
       "projectile_id": 1,
+      "owner_type": "player",
       "owner_player_id": 1,
+      "owner_bot_id": 0,
+      "visual_only": true,
       "x": 150.0,
       "y": 0.0,
+      "z": 100.0,
       "dir_x": 1.0,
-      "dir_y": 0.0
+      "dir_y": 0.0,
+      "dir_z": 0.0,
+      "start_x": 150.0,
+      "start_y": 0.0,
+      "start_z": 100.0,
+      "end_x": 1950.0,
+      "end_y": 0.0,
+      "end_z": 100.0
     }
   ],
   "targets": [
@@ -547,11 +558,22 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
   "projectiles": [
     {
       "projectile_id": 1,
+      "owner_type": "player",
       "owner_player_id": 1,
+      "owner_bot_id": 0,
+      "visual_only": true,
       "x": 150.0,
       "y": 0.0,
+      "z": 100.0,
       "dir_x": 1.0,
-      "dir_y": 0.0
+      "dir_y": 0.0,
+      "dir_z": 0.0,
+      "start_x": 150.0,
+      "start_y": 0.0,
+      "start_z": 100.0,
+      "end_x": 1950.0,
+      "end_y": 0.0,
+      "end_z": 100.0
     }
   ],
   "targets_debug": []
@@ -690,9 +712,13 @@ Projectile fields:
 - `owner_player_id`: player that fired the projectile, or `0` for non-player tracers.
 - `owner_type`: `"player"` or `"bot"`.
 - `owner_bot_id`: bot that fired the projectile when `owner_type` is `"bot"`.
-- `x`, `y`: server logical 2D projectile position.
-- `dir_x`, `dir_y`: normalized server logical movement direction.
+- `x`, `y`, `z`: current server visual tracer position.
+- `dir_x`, `dir_y`, `dir_z`: normalized server logical shot/tracer direction.
 - `visual_only`: true for tracer projectiles that do not apply collision damage.
+- `start_x`, `start_y`, `start_z`: visual tracer start point, usually near the server shooter muzzle/origin.
+- `end_x`, `end_y`, `end_z`: visual tracer end point.
+
+Projectile/tracer records are visual-only for the current PvPvE shooter path. Server damage is applied by hitscan at fire time, not by projectile collision.
 
 Target fields:
 
@@ -732,8 +758,8 @@ Mismatched player ID:
 - Room ID is fixed to `1`.
 - Player IDs are process-local and reset when the server restarts.
 - Movement integrates latest input at a fixed speed and clamps to the arena.
-- Fire input creates server projectiles.
-- Server projectiles use the spread-adjusted `shot_dir_x` / `shot_dir_y` fields when available and remain as tracer visualization.
+- Fire input creates visual-only server tracer records.
+- Server tracers use the spread-adjusted `shot_dir_x` / `shot_dir_y` / `shot_dir_z` fields when available.
 - Server hitscan damage is applied immediately when a new fire input sequence is processed.
 - Legacy target hitscan is disabled by default with the old target objective.
 - Hitscan player damage checks head sphere first for 40 damage, then body sphere for 20 damage.

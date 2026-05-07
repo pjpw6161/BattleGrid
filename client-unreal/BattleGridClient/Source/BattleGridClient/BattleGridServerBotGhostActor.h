@@ -29,6 +29,7 @@ public:
 		const FVector& WorldLocation
 	);
 	int32 GetBotId() const;
+	FVector GetApproximateMuzzleWorldLocation() const;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	TObjectPtr<USceneComponent> SceneRoot;
@@ -84,6 +85,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
 	FVector BotWeaponRelativeScale;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	FName MuzzleSocketName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	FVector MuzzleFallbackOffset;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.01"))
 	float HumanoidAliveScale;
 
@@ -109,9 +116,7 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> DefaultMaterial;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInterface> DefaultSkeletalMaterial;
-
 	bool bLoggedMissingWeaponSocketWarning;
 	bool bLoggedWeaponAttachment;
+	bool bLoggedSkeletalMaterialPreservation;
 };

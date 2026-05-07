@@ -34,6 +34,8 @@ BattleGrid is currently a gameplay and networking prototype with placeholder vis
 
 - Player C++ now exposes a `WeaponMeshComponent` and socket/offset settings.
 - Bot ghost C++ now exposes optional Skeletal Mesh visualization and a weapon mesh slot.
+- Player and bot visual classes now expose muzzle socket names and fallback offsets for future muzzle/tracer alignment.
+- Server projectile ghosts support visual-only tracer lines with player/bot material slots.
 - External assets are not imported yet.
 - No animation retargeting, aim offsets, firing montages, reload montages, or weapon sockets are authored by Codex.
 
@@ -45,7 +47,9 @@ The human developer should import and configure assets in Unreal Editor:
 - Assign player Skeletal Mesh and optional AnimBP in `BP_BattleGridCharacter`.
 - Assign bot Skeletal Mesh and optional AnimBP in `BP_BattleGridServerBotGhostActor`.
 - Create or verify right-hand weapon sockets.
+- Create or verify muzzle sockets when the weapon mesh is ready.
 - Tune mesh scale, location, rotation, label height, and weapon offsets.
+- Assign separate player and bot projectile materials to the server projectile ghost Blueprint if clearer tracer colors are needed.
 - Record all third-party asset sources in `docs/asset-credits.md`.
 
 ## Future Visual Work

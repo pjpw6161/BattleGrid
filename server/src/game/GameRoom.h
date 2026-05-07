@@ -48,8 +48,21 @@ private:
     void InitializeDefaultBots() const;
     void InitializeHealthPackSpawnPoints() const;
     void InitializeDefaultHealthPacks() const;
-    void SpawnProjectile(std::uint64_t ownerPlayerId, double dirX, double dirY);
-    void SpawnBotProjectile(const BotState& bot, double dirX, double dirY);
+    void SpawnProjectile(std::uint64_t ownerPlayerId, double dirX, double dirY, double dirZ);
+    void SpawnBotProjectile(const BotState& bot, double dirX, double dirY, double dirZ);
+    void CreateVisualTracer(
+        const std::string& ownerType,
+        std::uint64_t ownerPlayerId,
+        std::uint64_t ownerBotId,
+        double startX,
+        double startY,
+        double startZ,
+        double dirX,
+        double dirY,
+        double dirZ,
+        double rangeOrLength,
+        double lifeTimeSeconds
+    );
     void ProcessPlayerRespawns(double deltaSeconds);
     void UpdateBotRespawns(double deltaSeconds);
     void UpdateBots(double deltaSeconds);

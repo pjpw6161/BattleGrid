@@ -2275,13 +2275,55 @@ void ABattleGridClientPlayerController::UpdateServerProjectileGhostsFromSnapshot
 		const FVector WorldLocation = ConvertServerPositionToWorld(
 			ProjectileSnapshot.X,
 			ProjectileSnapshot.Y,
-			ServerProjectileGhostHeight
+			ServerProjectileGhostHeight + (ProjectileSnapshot.Z * ServerToUnrealScale)
+		);
+		FVector WorldStartLocation = ConvertServerPositionToWorld(
+			ProjectileSnapshot.ServerStart.X,
+			ProjectileSnapshot.ServerStart.Y,
+			ServerProjectileGhostHeight + (ProjectileSnapshot.ServerStart.Z * ServerToUnrealScale)
+		);
+		const FVector WorldEndLocation = ConvertServerPositionToWorld(
+			ProjectileSnapshot.ServerEnd.X,
+			ProjectileSnapshot.ServerEnd.Y,
+			ServerProjectileGhostHeight + (ProjectileSnapshot.ServerEnd.Z * ServerToUnrealScale)
 		);
 		const FVector2D UnrealProjectileDirection =
 			ConvertServerDirectionToUnrealDirection(
 				ProjectileSnapshot.DirX,
 				ProjectileSnapshot.DirY
 			);
+		FVector UnrealProjectileDirection3D(
+			UnrealProjectileDirection.X,
+			UnrealProjectileDirection.Y,
+			ProjectileSnapshot.DirZ
+		);
+		if (!UnrealProjectileDirection3D.Normalize())
+		{
+			UnrealProjectileDirection3D = FVector(1.0f, 0.0f, 0.0f);
+		}
+
+		if (ProjectileSnapshot.OwnerType.Equals(TEXT("bot"), ESearchCase::IgnoreCase))
+		{
+			if (const TObjectPtr<ABattleGridServerBotGhostActor>* BotGhostActor =
+				ServerBotGhostActors.Find(ProjectileSnapshot.OwnerBotId))
+			{
+				if (*BotGhostActor)
+				{
+					WorldStartLocation = (*BotGhostActor)->GetApproximateMuzzleWorldLocation();
+				}
+			}
+		}
+		else if (
+			ProjectileSnapshot.OwnerType.Equals(TEXT("player"), ESearchCase::IgnoreCase)
+			&& ProjectileSnapshot.OwnerPlayerId == NetworkSubsystem->GetPlayerId()
+		)
+		{
+			if (const ABattleGridClientCharacter* Character =
+				Cast<ABattleGridClientCharacter>(GetPawn()))
+			{
+				WorldStartLocation = Character->GetApproximateMuzzleWorldLocation();
+			}
+		}
 
 		TObjectPtr<ABattleGridServerProjectileGhostActor>& GhostActor =
 			ServerProjectileGhostActors.FindOrAdd(ProjectileSnapshot.ProjectileId);
@@ -2326,7 +2368,9 @@ void ABattleGridClientPlayerController::UpdateServerProjectileGhostsFromSnapshot
 			GhostActor->SetSnapshotData(
 				ProjectileSnapshot,
 				WorldLocation,
-				FVector(UnrealProjectileDirection.X, UnrealProjectileDirection.Y, 0.0f)
+				UnrealProjectileDirection3D,
+				WorldStartLocation,
+				WorldEndLocation
 			);
 		}
 	}

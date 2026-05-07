@@ -15,6 +15,9 @@ ABattleGridServerProjectileGhostActor::ABattleGridServerProjectileGhostActor()
 
 	InterpSpeed = 20.0f;
 	ProjectileScale = 0.25f;
+	bUseTracerLineVisual = true;
+	TracerThickness = 0.08f;
+	TracerLengthScale = 1.0f;
 	bUsePointLight = true;
 	PointLightIntensity = 350.0f;
 	PointLightRadius = 160.0f;
@@ -31,12 +34,12 @@ ABattleGridServerProjectileGhostActor::ABattleGridServerProjectileGhostActor()
 	MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	MeshComponent->SetRelativeScale3D(FVector(ProjectileScale));
 
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(
-		TEXT("/Engine/BasicShapes/Sphere.Sphere")
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> TracerMesh(
+		TEXT("/Engine/BasicShapes/Cube.Cube")
 	);
-	if (SphereMesh.Succeeded())
+	if (TracerMesh.Succeeded())
 	{
-		MeshComponent->SetStaticMesh(SphereMesh.Object);
+		MeshComponent->SetStaticMesh(TracerMesh.Object);
 	}
 
 	PointLightComponent = CreateDefaultSubobject<UPointLightComponent>(TEXT("PointLightComponent"));
@@ -73,16 +76,37 @@ void ABattleGridServerProjectileGhostActor::Tick(float DeltaSeconds)
 void ABattleGridServerProjectileGhostActor::SetSnapshotData(
 	const FBattleGridServerProjectileSnapshot& Snapshot,
 	const FVector& WorldLocation,
-	const FVector& UnrealDirection
+	const FVector& UnrealDirection,
+	const FVector& WorldStartLocation,
+	const FVector& WorldEndLocation
 )
 {
 	ProjectileId = Snapshot.ProjectileId;
 	OwnerType = Snapshot.OwnerType.IsEmpty() ? FString(TEXT("player")) : Snapshot.OwnerType;
-	TargetLocation = WorldLocation;
+
+	const FVector TracerDelta = WorldEndLocation - WorldStartLocation;
+	const float TracerLength = TracerDelta.Size();
+	const bool bCanUseTracerLine = bUseTracerLineVisual && TracerLength > KINDA_SMALL_NUMBER;
+	TargetLocation = bCanUseTracerLine
+		? (WorldStartLocation + (TracerDelta * 0.5f))
+		: WorldLocation;
 
 	if (MeshComponent)
 	{
-		MeshComponent->SetRelativeScale3D(FVector(ProjectileScale));
+		if (bCanUseTracerLine)
+		{
+			constexpr float BasicShapeLength = 100.0f;
+			MeshComponent->SetRelativeScale3D(FVector(
+				FMath::Max(0.01f, (TracerLength / BasicShapeLength) * TracerLengthScale),
+				TracerThickness,
+				TracerThickness
+			));
+		}
+		else
+		{
+			MeshComponent->SetRelativeScale3D(FVector(ProjectileScale));
+		}
+
 		UMaterialInterface* MaterialToApply = nullptr;
 		if (OwnerType.Equals(TEXT("bot"), ESearchCase::IgnoreCase) && BotProjectileMaterial)
 		{
@@ -111,13 +135,25 @@ void ABattleGridServerProjectileGhostActor::SetSnapshotData(
 	{
 		PointLightComponent->SetIntensity(PointLightIntensity);
 		PointLightComponent->SetAttenuationRadius(PointLightRadius);
+		PointLightComponent->SetLightColor(
+			OwnerType.Equals(TEXT("bot"), ESearchCase::IgnoreCase)
+				? FLinearColor(1.0f, 0.45f, 0.1f)
+				: FLinearColor(0.4f, 0.8f, 1.0f)
+		);
 		PointLightComponent->SetVisibility(bUsePointLight);
 	}
 
-	FVector FlatDirection(UnrealDirection.X, UnrealDirection.Y, 0.0f);
-	if (FlatDirection.Normalize())
+	if (bCanUseTracerLine)
 	{
-		SetActorRotation(FlatDirection.Rotation());
+		SetActorLocation(TargetLocation);
+		SetActorRotation(TracerDelta.Rotation());
+		return;
+	}
+
+	FVector Direction = UnrealDirection;
+	if (Direction.Normalize())
+	{
+		SetActorRotation(Direction.Rotation());
 	}
 }
 

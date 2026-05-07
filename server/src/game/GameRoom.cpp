@@ -26,7 +26,8 @@ constexpr int HeadshotDamage = 40;
 constexpr int BotBodyDamage = 10;
 constexpr int BotHeadshotDamage = 20;
 constexpr double HitscanRange = 3000.0;
-constexpr double BotTracerSpeed = 2500.0;
+constexpr double VisualTracerLength = 1800.0;
+constexpr double VisualTracerLifetimeSeconds = 0.35;
 constexpr double BotTracerLifetimeSeconds = 0.4;
 constexpr double PlayerRespawnSeconds = 8.0;
 constexpr double PlayerInvincibleSeconds = 1.5;
@@ -503,9 +504,17 @@ nlohmann::json BuildProjectileSnapshotJson(const ProjectileState& projectile)
     projectileJson["owner_bot_id"] = projectile.ownerBotId;
     projectileJson["x"] = projectile.x;
     projectileJson["y"] = projectile.y;
+    projectileJson["z"] = projectile.z;
     projectileJson["dir_x"] = projectile.dirX;
     projectileJson["dir_y"] = projectile.dirY;
+    projectileJson["dir_z"] = projectile.dirZ;
     projectileJson["visual_only"] = projectile.visualOnly;
+    projectileJson["start_x"] = projectile.startX;
+    projectileJson["start_y"] = projectile.startY;
+    projectileJson["start_z"] = projectile.startZ;
+    projectileJson["end_x"] = projectile.endX;
+    projectileJson["end_y"] = projectile.endY;
+    projectileJson["end_z"] = projectile.endZ;
     return projectileJson;
 }
 
@@ -693,18 +702,23 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
         {
             double projectileDirX = player.latestInput.shotDirX;
             double projectileDirY = player.latestInput.shotDirY;
+            double projectileDirZ = player.latestInput.shotDirZ;
             const double shotDirectionLengthSquared =
-                (projectileDirX * projectileDirX) + (projectileDirY * projectileDirY);
+                (projectileDirX * projectileDirX)
+                + (projectileDirY * projectileDirY)
+                + (projectileDirZ * projectileDirZ);
             if (shotDirectionLengthSquared <= 0.0001)
             {
                 projectileDirX = player.latestInput.aimX;
                 projectileDirY = player.latestInput.aimY;
+                projectileDirZ = 0.0;
             }
 
             SpawnProjectile(
                 player.playerId,
                 projectileDirX,
-                projectileDirY
+                projectileDirY,
+                projectileDirZ
             );
             if (bUseHitscanDamage)
             {
@@ -1266,7 +1280,8 @@ void GameRoom::InitializeDefaultHealthPacks() const
 void GameRoom::SpawnProjectile(
     std::uint64_t ownerPlayerId,
     double dirX,
-    double dirY
+    double dirY,
+    double dirZ
 )
 {
     const auto owner = players.find(ownerPlayerId);
@@ -1275,35 +1290,88 @@ void GameRoom::SpawnProjectile(
         return;
     }
 
+    const double startX = owner->second.x;
+    const double startY = owner->second.y;
+    const double startZ = owner->second.z + FireOriginHeight;
+    CreateVisualTracer(
+        "player",
+        ownerPlayerId,
+        0,
+        startX,
+        startY,
+        startZ,
+        dirX,
+        dirY,
+        dirZ,
+        VisualTracerLength,
+        VisualTracerLifetimeSeconds
+    );
+}
+
+void GameRoom::CreateVisualTracer(
+    const std::string& ownerType,
+    std::uint64_t ownerPlayerId,
+    std::uint64_t ownerBotId,
+    double startX,
+    double startY,
+    double startZ,
+    double dirX,
+    double dirY,
+    double dirZ,
+    double rangeOrLength,
+    double lifeTimeSeconds
+)
+{
     ProjectileState projectile;
     projectile.projectileId = nextProjectileId++;
     projectile.ownerPlayerId = ownerPlayerId;
-    projectile.ownerType = "player";
-    projectile.ownerBotId = 0;
-    projectile.visualOnly = bUseHitscanDamage;
+    projectile.ownerType = ownerType;
+    projectile.ownerBotId = ownerBotId;
+    projectile.visualOnly = true;
+    projectile.damage = 0;
+    projectile.lifeTimeSeconds = lifeTimeSeconds > 0.0
+        ? lifeTimeSeconds
+        : VisualTracerLifetimeSeconds;
+    projectile.maxLifetimeSeconds = projectile.lifeTimeSeconds;
     projectile.dirX = dirX;
     projectile.dirY = dirY;
+    projectile.dirZ = dirZ;
     projectile.NormalizeDirection();
-    projectile.x = owner->second.x + (projectile.dirX * ProjectileSpawnForwardOffset);
-    projectile.y = owner->second.y + (projectile.dirY * ProjectileSpawnForwardOffset);
+
+    projectile.startX = startX + (projectile.dirX * ProjectileSpawnForwardOffset);
+    projectile.startY = startY + (projectile.dirY * ProjectileSpawnForwardOffset);
+    projectile.startZ = startZ + (projectile.dirZ * ProjectileSpawnForwardOffset);
+    projectile.x = projectile.startX;
+    projectile.y = projectile.startY;
+    projectile.z = projectile.startZ;
+
+    const double tracerLength = rangeOrLength > 0.0 ? rangeOrLength : VisualTracerLength;
+    projectile.endX = projectile.startX + (projectile.dirX * tracerLength);
+    projectile.endY = projectile.startY + (projectile.dirY * tracerLength);
+    projectile.endZ = projectile.startZ + (projectile.dirZ * tracerLength);
+    projectile.speed = tracerLength / projectile.lifeTimeSeconds;
 
     projectiles.emplace(projectile.projectileId, projectile);
 
     std::ostringstream logMessage;
     logMessage
-        << "Projectile spawned id=" << projectile.projectileId
-        << " owner=" << projectile.ownerPlayerId
-        << " x=" << projectile.x
-        << " y=" << projectile.y
+        << "Visual tracer spawned id=" << projectile.projectileId
+        << " owner_type=" << projectile.ownerType
+        << " owner_player=" << projectile.ownerPlayerId
+        << " owner_bot=" << projectile.ownerBotId
+        << " start=(" << projectile.startX << "," << projectile.startY << "," << projectile.startZ << ")"
+        << " end=(" << projectile.endX << "," << projectile.endY << "," << projectile.endZ << ")"
         << " dir_x=" << projectile.dirX
-        << " dir_y=" << projectile.dirY;
+        << " dir_y=" << projectile.dirY
+        << " dir_z=" << projectile.dirZ;
     Logger::Info(logMessage.str());
 }
 
 void GameRoom::SpawnBotProjectile(
     const BotState& bot,
     double dirX,
-    double dirY
+    double dirY,
+    double dirZ
 )
 {
     if (!bot.IsAlive())
@@ -1311,22 +1379,19 @@ void GameRoom::SpawnBotProjectile(
         return;
     }
 
-    ProjectileState projectile;
-    projectile.projectileId = nextProjectileId++;
-    projectile.ownerPlayerId = 0;
-    projectile.ownerType = "bot";
-    projectile.ownerBotId = bot.botId;
-    projectile.visualOnly = true;
-    projectile.damage = 0;
-    projectile.speed = BotTracerSpeed;
-    projectile.maxLifetimeSeconds = BotTracerLifetimeSeconds;
-    projectile.dirX = dirX;
-    projectile.dirY = dirY;
-    projectile.NormalizeDirection();
-    projectile.x = bot.x + (projectile.dirX * ProjectileSpawnForwardOffset);
-    projectile.y = bot.y + (projectile.dirY * ProjectileSpawnForwardOffset);
-
-    projectiles.emplace(projectile.projectileId, projectile);
+    CreateVisualTracer(
+        "bot",
+        0,
+        bot.botId,
+        bot.x,
+        bot.y,
+        bot.z + FireOriginHeight,
+        dirX,
+        dirY,
+        dirZ,
+        VisualTracerLength,
+        BotTracerLifetimeSeconds
+    );
 }
 
 void GameRoom::ProcessPlayerRespawns(double deltaSeconds)
@@ -1462,7 +1527,7 @@ void GameRoom::ProcessBotShot(BotState& bot, PlayerState& targetPlayer)
     direction = ApplyConeSpread(direction, bot.aimSpreadDegrees, spreadSeed);
 
     bot.ConsumeAmmo();
-    SpawnBotProjectile(bot, direction.x, direction.y);
+    SpawnBotProjectile(bot, direction.x, direction.y, direction.z);
 
     bool bHit = false;
     bool bHeadshot = false;
@@ -2520,11 +2585,15 @@ void GameRoom::UpdateProjectiles(double deltaSeconds)
 
         projectile.x += projectile.dirX * projectile.speed * deltaSeconds;
         projectile.y += projectile.dirY * projectile.speed * deltaSeconds;
+        projectile.z += projectile.dirZ * projectile.speed * deltaSeconds;
         projectile.ageSeconds += deltaSeconds;
 
+        const double lifetime = projectile.lifeTimeSeconds > 0.0
+            ? projectile.lifeTimeSeconds
+            : projectile.maxLifetimeSeconds;
         if (
-            projectile.ageSeconds > projectile.maxLifetimeSeconds
-            || !IsInsideArena(projectile.x, projectile.y)
+            projectile.ageSeconds > lifetime
+            || (!projectile.visualOnly && !IsInsideArena(projectile.x, projectile.y))
         )
         {
             projectile.active = false;

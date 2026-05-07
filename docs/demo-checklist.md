@@ -34,6 +34,8 @@ Use this checklist to run the current portfolio demo.
   - Player weapon mesh is attached to the intended hand socket.
   - Bot humanoid mesh appears in `BP_BattleGridServerBotGhostActor` when `bUseSkeletalMeshVisual=true`.
   - Bot weapon mesh is attached and bot labels remain readable.
+  - Player and bot muzzle fallback offsets look reasonable if real muzzle sockets are not present yet.
+  - Server projectile ghost has visually distinct player/bot materials if materials were created locally.
   - Assigned Animation Blueprints prevent visible T-pose during the demo.
 
 ## During Recording
@@ -81,7 +83,7 @@ Use this checklist to run the current portfolio demo.
 11. In the PlayerController Blueprint defaults, use the remote profile and confirm the HUD shows `Profile: Remote`, `Server: Connected`, and server-authoritative `SERVER HP` / `SERVER Kills` as the primary state.
 12. Move with WASD.
 13. Show the local character and the server player ghost moving together.
-14. Fire with left mouse button and show both the local projectile and server projectile ghost.
+14. Fire with left mouse button and show both the local projectile and visual-only server tracer ghost.
 15. Confirm server target/core ghosts are hidden by default for the kill race demo.
 16. Hit a local target only if you want to explain the legacy offline layer.
 17. Validate the dynamic crosshair:
@@ -99,6 +101,7 @@ Use this checklist to run the current portfolio demo.
    - `BOT-*` labels are visible and dead bots read as `DOWN`.
    - `HPACK-*` labels are visible and inactive packs show a countdown.
    - local objects and server ghost objects are visually distinguishable.
+   - player-fired and bot-fired tracers are visually distinguishable if `PlayerProjectileMaterial` and `BotProjectileMaterial` are assigned
 20. Validate the arena layout: P1/P2/P3/P4 spawns sit on the four sides, bots are around center/lanes, and health packs are near the perimeter.
 21. Verify the server combat event feed appears after a bot/player event and that shot results are distinct from local projectile overlap logs.
 22. Hold Tab and verify the server scoreboard overlay appears; release Tab and verify the normal HUD returns.
@@ -177,6 +180,7 @@ Use this checklist to run the current portfolio demo.
 5. Watch bot HP and server kills change after server hits.
 6. Click `Enable Bot Attacks` to test Bot Shooter AI v2.
 7. Stand near a bot and verify bot shot events appear as `BOT-* hit player* -10`, `BOT-* headshot player* -20`, or `BOT-* killed player*`.
+8. Confirm projectile snapshots include `owner_type`, `visual_only`, `start_*`, and `end_*` fields.
 
 ### Option C: Remote GCP Server
 
@@ -240,7 +244,7 @@ Use this checklist to run the current portfolio demo.
 14. Show local projectile and local target damage.
 15. Show local player hazard damage, death, and respawn.
 16. Show server player ghost movement.
-17. Show server projectile ghost movement.
+17. Show server tracer/projectile ghosts for player shots.
 18. Confirm server target/core ghosts are hidden by default.
 19. Show server kills increasing when server bots are killed.
 20. Verify the top-right ranking updates after a bot kill and highlights the local player with `YOU`.
@@ -254,8 +258,10 @@ Use this checklist to run the current portfolio demo.
 25. Optional humanoid visual checks:
    - player mesh aligns with the capsule
    - player weapon is attached to the right hand or selected socket
+   - player muzzle socket or fallback offset is plausible for future muzzle flash alignment
    - bot ghost skeletal mesh appears when `bUseSkeletalMeshVisual=true`
    - bot weapon follows the bot ghost
+   - bot muzzle socket or fallback offset is plausible
    - `BOT-*` labels stay above the head and remain readable
    - no visible T-pose if an AnimBP is assigned
 26. Validate the server layout against the Unreal map:

@@ -45,6 +45,8 @@ ABattleGridClientCharacter::ABattleGridClientCharacter()
 	WeaponRelativeLocation = FVector::ZeroVector;
 	WeaponRelativeRotation = FRotator::ZeroRotator;
 	WeaponRelativeScale = FVector(1.0f, 1.0f, 1.0f);
+	MuzzleSocketName = TEXT("Muzzle");
+	MuzzleFallbackOffset = FVector(80.0f, 20.0f, 80.0f);
 	bADSActive = false;
 	bSprinting = false;
 
@@ -291,6 +293,30 @@ void ABattleGridClientCharacter::AttachWeaponToCharacterMesh()
 		);
 		bLoggedWeaponAttachment = true;
 	}
+}
+
+FVector ABattleGridClientCharacter::GetApproximateMuzzleWorldLocation() const
+{
+	if (
+		WeaponMeshComponent
+		&& MuzzleSocketName != NAME_None
+		&& WeaponMeshComponent->DoesSocketExist(MuzzleSocketName)
+	)
+	{
+		return WeaponMeshComponent->GetSocketLocation(MuzzleSocketName);
+	}
+
+	const USkeletalMeshComponent* CharacterMesh = GetMesh();
+	if (
+		CharacterMesh
+		&& MuzzleSocketName != NAME_None
+		&& CharacterMesh->DoesSocketExist(MuzzleSocketName)
+	)
+	{
+		return CharacterMesh->GetSocketLocation(MuzzleSocketName);
+	}
+
+	return GetActorTransform().TransformPosition(MuzzleFallbackOffset);
 }
 
 void ABattleGridClientCharacter::ApplyCameraSettings(float DeltaSeconds)

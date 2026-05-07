@@ -26,7 +26,9 @@ public:
 	void SetSnapshotData(
 		const FBattleGridServerProjectileSnapshot& Snapshot,
 		const FVector& WorldLocation,
-		const FVector& UnrealDirection
+		const FVector& UnrealDirection,
+		const FVector& WorldStartLocation,
+		const FVector& WorldEndLocation
 	);
 	int32 GetProjectileId() const;
 
@@ -53,6 +55,15 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.01"))
 	float ProjectileScale;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	bool bUseTracerLineVisual;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.001"))
+	float TracerThickness;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.01"))
+	float TracerLengthScale;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
 	bool bUsePointLight;

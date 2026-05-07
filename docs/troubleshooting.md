@@ -146,6 +146,24 @@ Check:
 
 If the Output Log says the socket was not found, create or rename the socket in the Skeleton editor, or adjust the socket name in the Blueprint Class Defaults. The C++ fallback attaches the weapon to the mesh root so the game can continue running during setup.
 
+## Paragon Bot Appears Bright Purple
+
+If only part of the humanoid bot mesh appears bright purple, check whether placeholder materials such as `M_Bot_Purple`, `M_Bot_Dead`, or `M_Bot_Invincible` are being applied to the skeletal mesh.
+
+Expected behavior after Step 56:
+
+- `AliveMaterial`, `DeadMaterial`, and `InvincibleMaterial` apply only to the static placeholder mesh.
+- When `bUseSkeletalMeshVisual=true`, C++ preserves the Skeletal Mesh materials assigned by the imported character asset.
+- The bot can still change scale, label text, hidden state, and weapon attachment without overriding Paragon/Fab material slots.
+
+If purple still appears after rebuilding:
+
+- Reopen `BP_BattleGridServerBotGhostActor`.
+- Select `SkeletalMeshComponent`.
+- Check the `Materials` override list and clear any placeholder material overrides.
+- Confirm `MeshComponent` still owns placeholder materials, while `SkeletalMeshComponent` uses the imported mesh's original materials.
+- Compile and save the Blueprint, then restart Play.
+
 ## Character Or Bot Is In T-Pose
 
 The Skeletal Mesh is visible but has no compatible animation setup.
@@ -166,6 +184,23 @@ When bot ghost skeletal visuals are enabled, tune:
 - `HumanoidDeadScale`
 
 These settings live on `BP_BattleGridServerBotGhostActor` under `BattleGrid|Visual`. They only affect visualization and do not change server hit volumes.
+
+## Tracer Does Not Appear From The Weapon Area
+
+Server tracer records are visual-only and currently come from the server fire origin, not from an exact Unreal weapon socket. The C++ classes expose muzzle helpers for alignment work:
+
+- `ABattleGridClientCharacter`: `MuzzleSocketName`, `MuzzleFallbackOffset`
+- `ABattleGridServerBotGhostActor`: `MuzzleSocketName`, `MuzzleFallbackOffset`
+
+Check:
+
+- The weapon or character skeleton has a socket such as `Muzzle`, `weapon_r`, `hand_r`, or `hand_rSocket`.
+- If no muzzle socket exists, tune the fallback offset in the Blueprint Class Defaults.
+- `BP_BattleGridServerProjectileGhostActor` has `bUseTracerLineVisual=true`.
+- `PlayerProjectileMaterial` and `BotProjectileMaterial` are assigned if you need different tracer colors.
+- Server snapshots include `visual_only=true`, `start_x/y/z`, and `end_x/y/z` for projectiles.
+
+Tracer ghosts do not apply damage. Server shot result events and bot/player HP changes are the authoritative combat result.
 
 ## GCP Firewall TCP 7777 Not Open
 

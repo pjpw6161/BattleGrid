@@ -24,6 +24,8 @@ ABattleGridServerBotGhostActor::ABattleGridServerBotGhostActor()
 	BotWeaponRelativeLocation = FVector::ZeroVector;
 	BotWeaponRelativeRotation = FRotator::ZeroRotator;
 	BotWeaponRelativeScale = FVector(1.0f, 1.0f, 1.0f);
+	MuzzleSocketName = TEXT("Muzzle");
+	MuzzleFallbackOffset = FVector(80.0f, 20.0f, 100.0f);
 	HumanoidAliveScale = 1.0f;
 	HumanoidDeadScale = 0.35f;
 	HumanoidLabelHeight = 190.0f;
@@ -35,9 +37,9 @@ ABattleGridServerBotGhostActor::ABattleGridServerBotGhostActor()
 	bAlive = true;
 	bInvincible = false;
 	DefaultMaterial = nullptr;
-	DefaultSkeletalMaterial = nullptr;
 	bLoggedMissingWeaponSocketWarning = false;
 	bLoggedWeaponAttachment = false;
+	bLoggedSkeletalMaterialPreservation = false;
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
@@ -84,10 +86,6 @@ void ABattleGridServerBotGhostActor::BeginPlay()
 	if (MeshComponent)
 	{
 		DefaultMaterial = MeshComponent->GetMaterial(0);
-	}
-	if (SkeletalMeshComponent)
-	{
-		DefaultSkeletalMaterial = SkeletalMeshComponent->GetMaterial(0);
 	}
 }
 
@@ -159,6 +157,30 @@ int32 ABattleGridServerBotGhostActor::GetBotId() const
 	return BotId;
 }
 
+FVector ABattleGridServerBotGhostActor::GetApproximateMuzzleWorldLocation() const
+{
+	if (
+		WeaponMeshComponent
+		&& MuzzleSocketName != NAME_None
+		&& WeaponMeshComponent->DoesSocketExist(MuzzleSocketName)
+	)
+	{
+		return WeaponMeshComponent->GetSocketLocation(MuzzleSocketName);
+	}
+
+	if (
+		bUseSkeletalMeshVisual
+		&& SkeletalMeshComponent
+		&& MuzzleSocketName != NAME_None
+		&& SkeletalMeshComponent->DoesSocketExist(MuzzleSocketName)
+	)
+	{
+		return SkeletalMeshComponent->GetSocketLocation(MuzzleSocketName);
+	}
+
+	return GetActorTransform().TransformPosition(MuzzleFallbackOffset);
+}
+
 void ABattleGridServerBotGhostActor::ApplyVisualState(bool bIsAlive, bool bIsInvincible)
 {
 	if (!MeshComponent && !SkeletalMeshComponent)
@@ -211,16 +233,14 @@ void ABattleGridServerBotGhostActor::ApplyVisualState(bool bIsAlive, bool bIsInv
 		SkeletalMeshComponent->SetHiddenInGame(!bCanUseSkeletalVisual);
 		SkeletalMeshComponent->SetVisibility(bCanUseSkeletalVisual);
 		SkeletalMeshComponent->SetRelativeScale3D(FVector(DesiredHumanoidScale));
-		if (bCanUseSkeletalVisual)
+		if (bCanUseSkeletalVisual && !bLoggedSkeletalMaterialPreservation)
 		{
-			if (DesiredMaterial)
-			{
-				SkeletalMeshComponent->SetMaterial(0, DesiredMaterial);
-			}
-			else if (DefaultSkeletalMaterial)
-			{
-				SkeletalMeshComponent->SetMaterial(0, DefaultSkeletalMaterial.Get());
-			}
+			UE_LOG(
+				LogTemp,
+				Log,
+				TEXT("[BattleGrid] Bot skeletal visual mode enabled; preserving original skeletal mesh materials.")
+			);
+			bLoggedSkeletalMaterialPreservation = true;
 		}
 	}
 

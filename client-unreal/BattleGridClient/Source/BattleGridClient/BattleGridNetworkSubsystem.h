@@ -93,13 +93,25 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerProjectileSnapshot
 	float Y = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float Z = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	float DirX = 1.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	float DirY = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float DirZ = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	bool bVisualOnly = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	FVector ServerStart = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	FVector ServerEnd = FVector::ZeroVector;
 };
 
 USTRUCT(BlueprintType)
