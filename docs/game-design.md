@@ -115,6 +115,38 @@ All difficulties keep bot damage at 10 body / 20 headshot. Difficulty changes pr
 
 Safe demo mode applies easy difficulty, disables bot attacks, disables timer-based match end, clears stale game-over state, resets players/bots/health packs, and keeps the match in progress.
 
+## Demo Presets
+
+Use one-click demo presets from `tools/websocket-test.html` or the Unreal PlayerController `DemoPresetOnJoin` setting to avoid manual debug setup.
+
+- `safe_visual`: clean visual/model/HUD pass. Easy bots, bot attacks off, timer auto-end off, match reset, health packs active.
+- `combat_demo`: playable combat pass. Easy bots, bot attacks on, timer auto-end off, match reset, health packs active.
+- `match_demo`: match-flow pass. Normal bots, bot attacks on, timer auto-end on, match reset, health packs active.
+- `debug_visual`: bounds/ghost/debug visual pass. Easy bots, bot attacks off, timer auto-end off, match reset.
+
+Manual debug buttons still exist for fine tuning after a preset, but changing difficulty, timer, or bot attacks turns the current preset state into a custom debug setup.
+
+## Demo Readiness Defaults
+
+The normal recording path should look like a game HUD, not a debug overlay:
+
+- Gameplay HUD layout enabled.
+- Debug HUD and controls help hidden.
+- Small server status visible.
+- Top 5 ranking visible.
+- Kill feed visible.
+- Combat event feed hidden by default.
+- Server projectile/tracer ghosts visible.
+- Legacy server target/core ghosts hidden.
+- Server arena bounds, bot area bounds, aim debug, muzzle debug, and shot debug disabled unless actively troubleshooting.
+- Browser raw snapshot logging off.
+
+Recommended preset choices:
+
+- Visual/model/HUD recording: `safe_visual`.
+- Combat recording: `combat_demo`.
+- Match-ending/winner recording: `match_demo`.
+
 ## Humanoid Visual Direction
 
 - Player and bots are planned to use humanoid Skeletal Mesh assets.
@@ -141,6 +173,9 @@ Safe demo mode applies easy difficulty, disables bot attacks, disables timer-bas
 
 - Kill goal: 20 kills.
 - Match duration: 5 minutes.
+- Match states are `waiting`, `countdown`, `in_progress`, and `game_over`. The current demo normally starts or restarts directly into `in_progress`, while the state model keeps room for a countdown flow.
+- If timer auto-end is disabled, the displayed time can reach zero without ending the match. Kill-goal wins can still end the match.
+- The winner is selected from connected player kill-race ranking only. Legacy target/core kills do not affect the winner.
 - Ranking sort:
   1. higher score / kills
   2. higher player kills
@@ -148,7 +183,9 @@ Safe demo mode applies easy difficulty, disables bot attacks, disables timer-bas
   4. fewer deaths
   5. lower server player ID
 
-The top-right HUD ranking and Tab scoreboard show up to 5 connected players when available. Bots never appear in the player ranking; bot kills only contribute to the owning player's total kills.
+If the match ends and every connected player has zero score, the result is a draw/no-winner state instead of `Winner: P0`.
+
+The top-right HUD ranking and Tab scoreboard show up to 5 connected players when available. Bots never appear in the player ranking; bot kills only contribute to the owning player's total kills. During `game_over`, final ranking remains visible while combat damage is blocked.
 
 ## Kill Log
 
@@ -170,7 +207,7 @@ The default demo HUD is gameplay-first instead of a large debug overlay:
 - Left side: recent 5 kill/death events.
 - Center: dynamic spread-based crosshair.
 - Small status: match time and local/remote server connection state.
-- Temporary center message priority: scoreboard overlay, server death with last killer and respawn countdown, post-respawn invincibility countdown, health-pack pickup, reload/empty status, server shot result, then game over.
+- Temporary center message priority: scoreboard overlay, game-over final result, server death with last killer and respawn countdown, post-respawn invincibility countdown, health-pack pickup, reload/empty status, then server shot result.
 
 Death UX examples:
 

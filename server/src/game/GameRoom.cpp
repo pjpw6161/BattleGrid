@@ -215,7 +215,8 @@ void SetBotCombatState(
     double distanceToTarget,
     bool bWantsToShoot,
     bool bAllowedToShoot,
-    int currentShootersForTarget
+    int currentShootersForTarget,
+    bool bVerboseBotStateLogs
 )
 {
     const bool bChanged =
@@ -232,7 +233,7 @@ void SetBotCombatState(
     bot.allowedToShoot = bAllowedToShoot;
     bot.currentShootersForTarget = currentShootersForTarget;
 
-    if (bChanged)
+    if (bChanged && bVerboseBotStateLogs)
     {
         std::ostringstream logMessage;
         logMessage
@@ -577,8 +578,17 @@ std::string GetShotResultTargetName(const std::string& targetType)
     return "none";
 }
 
-void LogShotResult(std::uint64_t shooterId, const HitscanHitResult& hit)
+void LogShotResult(
+    std::uint64_t shooterId,
+    const HitscanHitResult& hit,
+    bool bVerboseShotResultLogs
+)
 {
+    if (!bVerboseShotResultLogs)
+    {
+        return;
+    }
+
     std::ostringstream logMessage;
     logMessage
         << "Shot result shooter=" << shooterId
@@ -657,7 +667,7 @@ nlohmann::json BuildPlayerSnapshotJson(const PlayerState& player)
     playerJson["respawn_timer"] = player.respawnTimerSeconds;
     playerJson["invincible_timer"] = player.invincibleTimerSeconds;
     playerJson["score"] = CalculateKillRaceScore(player);
-    playerJson["kills"] = player.kills;
+    playerJson["kills"] = CalculateKillRaceScore(player);
     playerJson["deaths"] = player.deaths;
     playerJson["player_kills"] = player.playerKills;
     playerJson["target_kills"] = player.targetKills;
@@ -783,6 +793,7 @@ GameRoom::GameRoom(std::uint64_t inRoomId)
       serverTimeSeconds(0.0),
       bBotAttacksEnabled(true),
       botDifficulty("normal"),
+      currentDemoPreset("default"),
       bAutoEndMatchByTimer(true),
       bTargetsEnabled(false),
       botDetectRange(1600.0),
@@ -794,9 +805,11 @@ GameRoom::GameRoom(std::uint64_t inRoomId)
       botFireIntervalSeconds(0.75),
       botAimSpreadDegrees(13.0),
       bVerboseBotShotEvents(false),
+      bVerboseInputLogs(false),
       bEnableBot2DFallbackHit(true),
       Bot2DFallbackRadiusScale(0.75),
       bVerboseHitscanCandidateLogs(false),
+      bVerboseBotStateLogs(false),
       bUseClientFireOriginForHitscan(true),
       ClientFireOriginWarningDistance(300.0),
       MaxAcceptedClientFireOriginDistance(2000.0),
@@ -832,6 +845,7 @@ GameRoom::GameRoom(std::uint64_t inRoomId)
     }
     InitializeDefaultBots();
     InitializeDefaultHealthPacks();
+    AddCombatEvent("match_started", "Match started");
 }
 
 std::uint64_t GameRoom::GetRoomId() const
@@ -961,7 +975,7 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
 
                 if (distance <= acceptedStep || distance <= MaxClientPositionSnapDistance)
                 {
-                    if (distance > acceptedStep && tickNumber % 30 == 0)
+                    if (bVerboseInputLogs && distance > acceptedStep && tickNumber % 30 == 0)
                     {
                         std::ostringstream snapLog;
                         snapLog
@@ -1062,7 +1076,7 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
             player.lastProcessedFireSeq = input.seq;
         }
 
-        if (tickNumber % 60 == 0)
+        if (bVerboseInputLogs && tickNumber % 60 == 0)
         {
             std::ostringstream logMessage;
             logMessage
@@ -1106,6 +1120,7 @@ nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
     json["type"] = "snapshot";
     json["tick"] = tickNumber;
     json["room_id"] = roomId;
+    json["current_demo_preset"] = currentDemoPreset;
     json["arena"] = BuildArenaLayoutJson(true, bTargetsEnabled);
     json["bot_area_bounds"] = BuildBotAreaBoundsJson();
     json["match"] = matchState.ToJson();
@@ -1182,6 +1197,7 @@ nlohmann::json GameRoom::ToDebugJson() const
     json["bot_area_bounds"] = BuildBotAreaBoundsJson();
     json["bot_waypoints"] = BuildArenaPointsJson(BotWanderPoints, "waypoint_id");
     json["match"] = matchState.ToJson();
+    json["current_demo_preset"] = currentDemoPreset;
     json["scoreboard"] = BuildScoreboardJson();
     json["events"] = BuildEventsJson();
     json["player_count"] = players.size();
@@ -1207,9 +1223,11 @@ nlohmann::json GameRoom::ToDebugJson() const
     json["bot_shot_random_delay_max"] = BotShotRandomDelayMax;
     json["bot_recent_damage_grace_seconds"] = BotRecentDamageGraceSeconds;
     json["bot_shot_events_verbose"] = bVerboseBotShotEvents;
+    json["verbose_input_logs"] = bVerboseInputLogs;
     json["enable_bot_2d_fallback_hit"] = bEnableBot2DFallbackHit;
     json["bot_2d_fallback_radius_scale"] = Bot2DFallbackRadiusScale;
     json["verbose_hitscan_candidate_logs"] = bVerboseHitscanCandidateLogs;
+    json["verbose_bot_state_logs"] = bVerboseBotStateLogs;
     json["use_client_fire_origin_for_hitscan"] = bUseClientFireOriginForHitscan;
     json["client_fire_origin_warning_distance"] = ClientFireOriginWarningDistance;
     json["max_accepted_client_fire_origin_distance"] = MaxAcceptedClientFireOriginDistance;
@@ -1351,10 +1369,13 @@ nlohmann::json GameRoom::ToDebugJson() const
     return json;
 }
 
-std::uint64_t GameRoom::ResetMatch()
+std::uint64_t GameRoom::ResetRoomForDemoUnlocked(
+    const std::string& primaryEventType,
+    const std::string& primaryEventMessage,
+    bool bAddMatchRestartedEvent,
+    bool bAddMatchStartedEvent
+)
 {
-    std::lock_guard lock(mutex);
-
     const std::uint64_t nextMatchId = matchState.matchId + 1;
     matchState.Reset();
     matchState.matchId = nextMatchId;
@@ -1401,74 +1422,116 @@ std::uint64_t GameRoom::ResetMatch()
         AssignRespawnPosition(player);
     }
 
-    AddCombatEvent("match_restarted", "Match restarted");
-    Logger::Info("Match restarted match_id=" + std::to_string(matchState.matchId));
+    if (bAddMatchRestartedEvent)
+    {
+        AddCombatEvent("match_restarted", "Match restarted");
+    }
+    if (!primaryEventType.empty())
+    {
+        AddCombatEvent(primaryEventType, primaryEventMessage);
+    }
+    if (bAddMatchStartedEvent)
+    {
+        AddCombatEvent("match_started", "Match started");
+    }
+
     return matchState.matchId;
+}
+
+std::uint64_t GameRoom::ResetMatch()
+{
+    std::lock_guard lock(mutex);
+    const std::uint64_t matchId = ResetRoomForDemoUnlocked(
+        "",
+        "",
+        true,
+        true
+    );
+    Logger::Info("Match restarted match_id=" + std::to_string(matchId));
+    return matchId;
 }
 
 std::uint64_t GameRoom::ApplySafeDemoMode()
 {
     std::lock_guard lock(mutex);
-
     bBotAttacksEnabled = bSafeDemoBotAttacksEnabled;
     bAutoEndMatchByTimer = bSafeDemoAutoEndMatchByTimer;
+    bTargetsEnabled = false;
     ApplyBotDifficultyUnlocked(SafeDemoDifficulty);
+    currentDemoPreset = "safe_visual";
 
-    const std::uint64_t nextMatchId = matchState.matchId + 1;
-    matchState.Reset();
-    matchState.matchId = nextMatchId;
-    serverTimeSeconds = 0.0;
-    recentEvents.clear();
-    nextEventId = 1;
-
-    projectiles.clear();
-    nextProjectileId = 1;
-    healthPackRespawnCounter = 0;
-
-    targets.clear();
-    bots.clear();
-    healthPacks.clear();
-    targetsInitialized = false;
-    botsInitialized = false;
-    healthPacksInitialized = false;
-
-    if (bTargetsEnabled)
-    {
-        InitializeDefaultTargets();
-    }
-    InitializeDefaultBots();
-    InitializeDefaultHealthPacks();
-
-    for (auto& [playerId, player] : players)
-    {
-        static_cast<void>(playerId);
-
-        player.latestInput = PlayerInput();
-        player.alive = true;
-        player.invincible = false;
-        player.hp = player.maxHp;
-        player.score = 0;
-        player.deaths = 0;
-        player.kills = 0;
-        player.playerKills = 0;
-        player.targetKills = 0;
-        player.botKills = 0;
-        player.respawnTimerSeconds = 0.0;
-        player.invincibleTimerSeconds = 0.0;
-        player.botRecentDamageGraceTimerSeconds = 0.0;
-        player.lastProcessedFireSeq = 0;
-        AssignRespawnPosition(player);
-    }
-
-    AddCombatEvent("demo_mode_applied", "Safe demo mode applied");
+    const std::uint64_t matchId = ResetRoomForDemoUnlocked(
+        "demo_mode_applied",
+        "Safe demo mode applied",
+        false,
+        true
+    );
     Logger::Info("Safe demo mode applied.");
-    return matchState.matchId;
+    return matchId;
+}
+
+bool GameRoom::ApplyDemoPreset(const std::string& presetName)
+{
+    std::lock_guard lock(mutex);
+
+    std::string eventMessage;
+    if (presetName == "safe_visual")
+    {
+        bBotAttacksEnabled = false;
+        bAutoEndMatchByTimer = false;
+        bTargetsEnabled = false;
+        ApplyBotDifficultyUnlocked("easy");
+        eventMessage = "Safe visual demo preset applied";
+    }
+    else if (presetName == "combat_demo")
+    {
+        bBotAttacksEnabled = true;
+        bAutoEndMatchByTimer = false;
+        bTargetsEnabled = false;
+        ApplyBotDifficultyUnlocked("easy");
+        eventMessage = "Combat demo preset applied";
+    }
+    else if (presetName == "match_demo")
+    {
+        bBotAttacksEnabled = true;
+        bAutoEndMatchByTimer = true;
+        bTargetsEnabled = false;
+        ApplyBotDifficultyUnlocked("normal");
+        eventMessage = "Match demo preset applied";
+    }
+    else if (presetName == "debug_visual")
+    {
+        bBotAttacksEnabled = false;
+        bAutoEndMatchByTimer = false;
+        bTargetsEnabled = false;
+        ApplyBotDifficultyUnlocked("easy");
+        eventMessage = "Debug visual preset applied";
+    }
+    else
+    {
+        return false;
+    }
+
+    currentDemoPreset = presetName;
+    const std::uint64_t matchId = ResetRoomForDemoUnlocked(
+        "demo_preset_applied",
+        eventMessage,
+        false,
+        true
+    );
+
+    Logger::Info(
+        "Demo preset applied preset=" + presetName
+        + " match_id=" + std::to_string(matchId)
+    );
+    return true;
 }
 
 void GameRoom::SetBotAttacksEnabled(bool bEnabled)
 {
     std::lock_guard lock(mutex);
     bBotAttacksEnabled = bEnabled;
+    currentDemoPreset = "custom";
     Logger::Info(
         std::string("Bot attacks enabled=")
         + (bBotAttacksEnabled ? "true" : "false")
@@ -1486,6 +1549,7 @@ void GameRoom::ApplyBotDifficulty(const std::string& difficulty)
     std::lock_guard lock(mutex);
 
     ApplyBotDifficultyUnlocked(difficulty);
+    currentDemoPreset = "custom";
     Logger::Info("Bot difficulty set to " + botDifficulty);
 }
 
@@ -1554,6 +1618,7 @@ void GameRoom::SetAutoEndMatchByTimer(bool bEnabled)
 {
     std::lock_guard lock(mutex);
     bAutoEndMatchByTimer = bEnabled;
+    currentDemoPreset = "custom";
     Logger::Info(
         std::string("Auto end match by timer=")
         + (bAutoEndMatchByTimer ? "true" : "false")
@@ -2067,15 +2132,18 @@ void GameRoom::ProcessBotShot(BotState& bot, PlayerState& targetPlayer)
     hitEvent.hitZ = hitPoint.z;
     AddCombatEvent(hitEvent);
 
-    std::ostringstream hitLogMessage;
-    hitLogMessage
-        << "Bot shot hit bot_id=" << bot.botId
-        << " player_id=" << targetPlayer.playerId
-        << " damage=" << damage
-        << " headshot=" << (bHeadshot ? "true" : "false")
-        << " hp=" << targetPlayer.hp
-        << "/" << targetPlayer.maxHp;
-    Logger::Info(hitLogMessage.str());
+    if (bVerboseInputLogs || bHeadshot)
+    {
+        std::ostringstream hitLogMessage;
+        hitLogMessage
+            << "Bot shot hit bot_id=" << bot.botId
+            << " player_id=" << targetPlayer.playerId
+            << " damage=" << damage
+            << " headshot=" << (bHeadshot ? "true" : "false")
+            << " hp=" << targetPlayer.hp
+            << "/" << targetPlayer.maxHp;
+        Logger::Info(hitLogMessage.str());
+    }
 
     if (targetPlayer.hp > 0 || !targetPlayer.alive)
     {
@@ -2292,7 +2360,8 @@ void GameRoom::UpdateBotAI(double deltaSeconds)
                     distance,
                     bWantsToShoot,
                     false,
-                    shootingCounts[targetPlayer->playerId]
+                    shootingCounts[targetPlayer->playerId],
+                    bVerboseBotStateLogs
                 );
                 bot.x = ClampBotX(bot.x);
                 bot.y = ClampBotY(bot.y);
@@ -2367,7 +2436,8 @@ void GameRoom::UpdateBotAI(double deltaSeconds)
                     distance,
                     bWantsToShoot,
                     bAllowedToShoot,
-                    currentShootersForTarget
+                    currentShootersForTarget,
+                    bVerboseBotStateLogs
                 );
 
                 if (distance <= bot.preferredCombatRange)
@@ -2388,7 +2458,8 @@ void GameRoom::UpdateBotAI(double deltaSeconds)
                     distance,
                     false,
                     false,
-                    shootingCounts[targetPlayer->playerId]
+                    shootingCounts[targetPlayer->playerId],
+                    bVerboseBotStateLogs
                 );
             }
 
@@ -2415,7 +2486,8 @@ void GameRoom::UpdateBotAI(double deltaSeconds)
                 0.0,
                 false,
                 false,
-                0
+                0,
+                bVerboseBotStateLogs
             );
             const double deltaX = bot.wanderTargetX - bot.x;
             const double deltaY = bot.wanderTargetY - bot.y;
@@ -2608,7 +2680,16 @@ void GameRoom::AddCombatEvent(const CombatEvent& event)
         recentEvents.pop_front();
     }
 
-    Logger::Info("Event: " + storedEvent.message);
+    const bool bNoisyShotEvent =
+        storedEvent.type == "shot_miss"
+        || storedEvent.type == "bot_shot_miss"
+        || storedEvent.type == "shot_hit_bot"
+        || storedEvent.type == "shot_hit_player"
+        || storedEvent.type == "bot_shot_hit_player";
+    if (bVerboseInputLogs || !bNoisyShotEvent)
+    {
+        Logger::Info("Event: " + storedEvent.message);
+    }
 }
 
 nlohmann::json GameRoom::BuildEventsJson() const
@@ -2624,25 +2705,9 @@ nlohmann::json GameRoom::BuildEventsJson() const
 
 void GameRoom::CheckMatchEndCondition()
 {
-    if (matchState.IsGameOver())
+    if (matchState.matchEndedEventEmitted)
     {
-        if (matchState.winnerPlayerId != 0)
-        {
-            return;
-        }
-
-        const bool bNoWinnerEventAlreadyAdded = std::any_of(
-            recentEvents.begin(),
-            recentEvents.end(),
-            [](const CombatEvent& event)
-            {
-                return event.type == "match_ended" && event.actorPlayerId == 0;
-            }
-        );
-        if (bNoWinnerEventAlreadyAdded)
-        {
-            return;
-        }
+        return;
     }
 
     bool bShouldEndMatch = matchState.IsGameOver();
@@ -2665,30 +2730,44 @@ void GameRoom::CheckMatchEndCondition()
         return;
     }
 
-    const std::uint64_t winnerPlayerId = DetermineWinnerPlayerId();
-    const auto winner = players.find(winnerPlayerId);
-    const std::string winnerNickname = winner != players.end()
+    const std::uint64_t selectedWinnerPlayerId = DetermineWinnerPlayerId();
+    const auto winner = players.find(selectedWinnerPlayerId);
+    const int winnerScore = winner != players.end()
+        ? CalculateKillRaceScore(winner->second)
+        : 0;
+    const bool bHasRealWinner = selectedWinnerPlayerId != 0 && winnerScore > 0;
+    const std::uint64_t winnerPlayerId = bHasRealWinner ? selectedWinnerPlayerId : 0;
+    const std::string winnerNickname = bHasRealWinner && winner != players.end()
         ? winner->second.nickname
         : std::string();
-    const int winnerScore = winner != players.end() ? CalculateKillRaceScore(winner->second) : 0;
+    const int winnerKills = bHasRealWinner ? winnerScore : 0;
 
-    matchState.EndMatch(winnerPlayerId, winnerNickname);
+    matchState.EndMatch(
+        winnerPlayerId,
+        winnerNickname,
+        bHasRealWinner ? winnerScore : 0,
+        winnerKills,
+        !bHasRealWinner
+    );
 
     std::ostringstream logMessage;
     logMessage
-        << "Match ended winner=" << winnerPlayerId
+        << "Match ended result="
+        << (bHasRealWinner ? "winner" : "draw")
+        << " winner=" << winnerPlayerId
         << " nickname=" << winnerNickname
-        << " score=" << winnerScore;
+        << " score=" << (bHasRealWinner ? winnerScore : 0);
     Logger::Info(logMessage.str());
 
     CombatEvent event;
     event.type = "match_ended";
-    event.message = winnerPlayerId == 0 || winnerScore <= 0
-        ? "Match ended. No winner"
+    event.message = !bHasRealWinner
+        ? "Match ended. Draw"
         : "Match ended. Winner: "
             + (winnerNickname.empty() ? std::string("P") + std::to_string(winnerPlayerId) : winnerNickname);
     event.actorPlayerId = winnerPlayerId;
     AddCombatEvent(event);
+    matchState.matchEndedEventEmitted = true;
 }
 
 std::uint64_t GameRoom::DetermineWinnerPlayerId() const
@@ -2821,6 +2900,7 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
 
     if (matchState.IsGameOver())
     {
+        CheckMatchEndCondition();
         return;
     }
 
@@ -2857,16 +2937,19 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
 
     const Vec3 direction = BuildShotDirection(input);
 
-    std::ostringstream fireLogMessage;
-    fireLogMessage
-        << "Fire origin player=" << shooter.playerId
-        << " source=" << originSource
-        << " seq=" << input.seq
-        << " origin=(" << origin.x << "," << origin.y << "," << origin.z << ")"
-        << " dir=(" << direction.x << "," << direction.y << "," << direction.z << ")"
-        << " ads=" << (input.ads ? "true" : "false")
-        << " spread=" << input.spreadDegrees;
-    Logger::Info(fireLogMessage.str());
+    if (bVerboseInputLogs)
+    {
+        std::ostringstream fireLogMessage;
+        fireLogMessage
+            << "Fire origin player=" << shooter.playerId
+            << " source=" << originSource
+            << " seq=" << input.seq
+            << " origin=(" << origin.x << "," << origin.y << "," << origin.z << ")"
+            << " dir=(" << direction.x << "," << direction.y << "," << direction.z << ")"
+            << " ads=" << (input.ads ? "true" : "false")
+            << " spread=" << input.spreadDegrees;
+        Logger::Info(fireLogMessage.str());
+    }
 
     HitscanHitResult selectedHit;
 
@@ -3087,7 +3170,7 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         considerHit(playerHit);
     }
 
-    if (selectedHit.hit)
+    if (bVerboseInputLogs && selectedHit.hit)
     {
         std::ostringstream selectedLogMessage;
         selectedLogMessage
@@ -3098,7 +3181,7 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
             << " damage=" << selectedHit.damage;
         Logger::Info(selectedLogMessage.str());
     }
-    else
+    else if (bVerboseInputLogs)
     {
         Logger::Info(
             "Hitscan selected shooter=" + std::to_string(shooter.playerId)
@@ -3146,7 +3229,7 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         shotEvent.hitY = selectedHit.hitY;
         shotEvent.hitZ = selectedHit.hitZ;
         AddCombatEvent(shotEvent);
-        LogShotResult(shooter.playerId, selectedHit);
+        LogShotResult(shooter.playerId, selectedHit, bVerboseInputLogs);
 
         if (!target->second.IsAlive())
         {
@@ -3182,16 +3265,19 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         BotState& hitBot = bot->second;
         hitBot.ApplyDamage(selectedHit.damage);
 
-        std::ostringstream hitLogMessage;
-        hitLogMessage
-            << "Hitscan bot hit shooter=" << shooter.playerId
-            << " bot=" << hitBot.botId
-            << " group=" << selectedHit.hitGroup
-            << " damage=" << selectedHit.damage
-            << " hp=" << hitBot.hp
-            << "/" << hitBot.maxHp
-            << " dir=(" << direction.x << "," << direction.y << "," << direction.z << ")";
-        Logger::Info(hitLogMessage.str());
+        if (bVerboseInputLogs || selectedHit.headshot)
+        {
+            std::ostringstream hitLogMessage;
+            hitLogMessage
+                << "Hitscan bot hit shooter=" << shooter.playerId
+                << " bot=" << hitBot.botId
+                << " group=" << selectedHit.hitGroup
+                << " damage=" << selectedHit.damage
+                << " hp=" << hitBot.hp
+                << "/" << hitBot.maxHp
+                << " dir=(" << direction.x << "," << direction.y << "," << direction.z << ")";
+            Logger::Info(hitLogMessage.str());
+        }
 
         if (selectedHit.hitGroup == "fallback_body")
         {
@@ -3203,7 +3289,10 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
                 << " hp=" << hitBot.hp
                 << "/" << hitBot.maxHp
                 << " radius_scale=" << Bot2DFallbackRadiusScale;
-            Logger::Info(fallbackLogMessage.str());
+            if (bVerboseInputLogs || bVerboseHitscanCandidateLogs)
+            {
+                Logger::Info(fallbackLogMessage.str());
+            }
         }
 
         CombatEvent shotEvent;
@@ -3228,7 +3317,7 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         shotEvent.hitY = selectedHit.hitY;
         shotEvent.hitZ = selectedHit.hitZ;
         AddCombatEvent(shotEvent);
-        LogShotResult(shooter.playerId, selectedHit);
+        LogShotResult(shooter.playerId, selectedHit, bVerboseInputLogs);
 
         if (!hitBot.IsAlive())
         {
@@ -3271,15 +3360,18 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         PlayerState& victimPlayer = victim->second;
         victimPlayer.hp = std::max(0, victimPlayer.hp - selectedHit.damage);
 
-        std::ostringstream hitLogMessage;
-        hitLogMessage
-            << "Hitscan player hit shooter=" << shooter.playerId
-            << " victim=" << victimPlayer.playerId
-            << " damage=" << selectedHit.damage
-            << " headshot=" << (selectedHit.headshot ? "true" : "false")
-            << " hp=" << victimPlayer.hp
-            << "/" << victimPlayer.maxHp;
-        Logger::Info(hitLogMessage.str());
+        if (bVerboseInputLogs || selectedHit.headshot)
+        {
+            std::ostringstream hitLogMessage;
+            hitLogMessage
+                << "Hitscan player hit shooter=" << shooter.playerId
+                << " victim=" << victimPlayer.playerId
+                << " damage=" << selectedHit.damage
+                << " headshot=" << (selectedHit.headshot ? "true" : "false")
+                << " hp=" << victimPlayer.hp
+                << "/" << victimPlayer.maxHp;
+            Logger::Info(hitLogMessage.str());
+        }
 
         CombatEvent shotEvent;
         shotEvent.type = "shot_hit_player";
@@ -3303,7 +3395,7 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         shotEvent.hitY = selectedHit.hitY;
         shotEvent.hitZ = selectedHit.hitZ;
         AddCombatEvent(shotEvent);
-        LogShotResult(shooter.playerId, selectedHit);
+        LogShotResult(shooter.playerId, selectedHit, bVerboseInputLogs);
 
         if (victimPlayer.hp <= 0)
         {
@@ -3345,14 +3437,17 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         return;
     }
 
-    Logger::Info(
-        "Hitscan missed shooter=" + std::to_string(shooter.playerId)
-        + " seq=" + std::to_string(input.seq)
-        + " dir=(" + std::to_string(direction.x)
-        + "," + std::to_string(direction.y)
-        + "," + std::to_string(direction.z)
-        + ")"
-    );
+    if (bVerboseInputLogs)
+    {
+        Logger::Info(
+            "Hitscan missed shooter=" + std::to_string(shooter.playerId)
+            + " seq=" + std::to_string(input.seq)
+            + " dir=(" + std::to_string(direction.x)
+            + "," + std::to_string(direction.y)
+            + "," + std::to_string(direction.z)
+            + ")"
+        );
+    }
 
     CombatEvent missEvent;
     missEvent.type = "shot_miss";
@@ -3369,7 +3464,7 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
     missEvent.hitY = origin.y;
     missEvent.hitZ = origin.z;
     AddCombatEvent(missEvent);
-    LogShotResult(shooter.playerId, selectedHit);
+    LogShotResult(shooter.playerId, selectedHit, bVerboseInputLogs);
 }
 
 void GameRoom::UpdateProjectiles(double deltaSeconds)

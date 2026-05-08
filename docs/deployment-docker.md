@@ -69,8 +69,9 @@ netstat -ano | findstr :7777
 4. Click `Connect`.
 5. Click `Send Ping` and verify `pong`.
 6. Click `Send Join` and verify `join_ok`.
-7. Click `Send Debug Room` and verify Room 1 targets.
-8. Click `Send Fire Input` or `Start Moving Right` and watch snapshots.
+7. Click `Apply Safe Visual Demo` or `Apply Combat Demo`.
+8. Click `Send Debug Room` and verify preset, players, bots, health packs, and match state.
+9. Click `Fire 5 Shots At Nearest Bot` and watch server shot events.
 
 ## Test With Unreal
 

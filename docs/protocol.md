@@ -137,6 +137,7 @@ Expected response:
 {
   "type": "room_state",
   "room_id": 1,
+  "current_demo_preset": "combat_demo",
   "arena": {
     "bounds": {
       "min_x": -5000.0,
@@ -182,9 +183,12 @@ Expected response:
   "bot_shot_random_delay_min": 0.1,
   "bot_shot_random_delay_max": 0.35,
   "bot_recent_damage_grace_seconds": 0.15,
+  "bot_shot_events_verbose": false,
+  "verbose_input_logs": false,
   "enable_bot_2d_fallback_hit": true,
   "bot_2d_fallback_radius_scale": 0.75,
   "verbose_hitscan_candidate_logs": false,
+  "verbose_bot_state_logs": false,
   "use_client_fire_origin_for_hitscan": true,
   "client_fire_origin_warning_distance": 300.0,
   "max_accepted_client_fire_origin_distance": 2000.0,
@@ -215,6 +219,8 @@ Expected response:
 `debug_room` is intended for browser testing and inspection.
 
 Primary PvPvE kill race snapshots use `players`, `bots`, `health_packs`, `projectiles`, `match`, `scoreboard`, and `events`. `targets` is legacy/debug-only and is empty by default while `targets_enabled=false`.
+
+`current_demo_preset` reports the last named preset applied. Manual difficulty, bot attack, or timer changes can switch it to `custom`.
 
 `arena.bounds` exposes the server-authoritative clamp rectangle. Unreal can draw this rectangle for debugging because correction can pull the local pawn back when the server position reaches those bounds.
 
@@ -264,6 +270,39 @@ Rules:
   - bot attacks disabled
   - timer-based match ending disabled
 - A recent combat event is added with message `Safe demo mode applied`.
+- This legacy convenience command is equivalent to the safe visual preset for normal demo setup.
+
+### `debug_apply_demo_preset`
+
+```json
+{ "type": "debug_apply_demo_preset", "preset": "combat_demo" }
+```
+
+Supported presets:
+
+- `safe_visual`: reset match, easy bots, bot attacks off, timer auto-end off, players/bots/health packs reset, projectiles cleared.
+- `combat_demo`: reset match, easy bots, bot attacks on, timer auto-end off, players/bots/health packs reset, projectiles cleared.
+- `match_demo`: reset match, normal bots, bot attacks on, timer auto-end on, players/bots/health packs reset, projectiles cleared.
+- `debug_visual`: reset match, easy bots, bot attacks off, timer auto-end off, players/bots/health packs reset, projectiles cleared, intended for bounds/ghost/visual inspection.
+
+Expected response:
+
+```json
+{ "type": "debug_ok", "message": "demo preset applied: combat_demo" }
+```
+
+Invalid preset response:
+
+```json
+{ "type": "error", "message": "invalid demo preset" }
+```
+
+Rules:
+
+- Presets are debug/demo commands, not authenticated production admin commands.
+- Every preset clears stale `game_over`, winner fields, recent events, projectiles, player scores, bot state, and health pack state.
+- Targets/cores remain disabled/debug-only.
+- The server adds one preset event such as `Combat demo preset applied`, followed by `Match started`.
 
 ### `debug_set_bot_attacks`
 
@@ -360,6 +399,7 @@ When disabled, the match timer can reach zero without forcing `game_over`. The k
 {
   "type": "room_state",
   "room_id": 1,
+  "current_demo_preset": "combat_demo",
   "arena": {
     "bounds": {
       "min_x": -5000.0,
@@ -386,9 +426,12 @@ When disabled, the match timer can reach zero without forcing `game_over`. The k
   "max_bots_targeting_one_player": 8,
   "max_bots_shooting_one_player": 3,
   "respawn_invincible_seconds": 2.0,
+  "bot_shot_events_verbose": false,
+  "verbose_input_logs": false,
   "enable_bot_2d_fallback_hit": true,
   "bot_2d_fallback_radius_scale": 0.75,
   "verbose_hitscan_candidate_logs": false,
+  "verbose_bot_state_logs": false,
   "auto_end_match_by_timer": true,
   "health_pack_heal_amount": 35,
   "health_pack_pickup_radius": 120.0,
@@ -404,6 +447,10 @@ When disabled, the match timer can reach zero without forcing `game_over`. The k
     "game_over": false,
     "winner_player_id": 0,
     "winner_nickname": "",
+    "winner_score": 0,
+    "winner_kills": 0,
+    "is_draw": false,
+    "no_winner": false,
     "match_id": 1
   },
   "scoreboard": [
@@ -545,7 +592,7 @@ This is sent in response to `debug_restart_match`.
 }
 ```
 
-This is sent for successful debug/demo control messages such as `debug_apply_demo_mode`, `debug_set_bot_attacks`, `debug_set_bot_difficulty`, and `debug_set_match_timer`.
+This is sent for successful debug/demo control messages such as `debug_apply_demo_mode`, `debug_apply_demo_preset`, `debug_set_bot_attacks`, `debug_set_bot_difficulty`, and `debug_set_match_timer`.
 
 ### `snapshot`
 
@@ -556,6 +603,7 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
   "type": "snapshot",
   "tick": 30,
   "room_id": 1,
+  "current_demo_preset": "combat_demo",
   "arena": {
     "bounds": {
       "min_x": -5000.0,
@@ -572,6 +620,10 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
     "game_over": false,
     "winner_player_id": 0,
     "winner_nickname": "",
+    "winner_score": 0,
+    "winner_kills": 0,
+    "is_draw": false,
+    "no_winner": false,
     "match_id": 1
   },
   "scoreboard": [
@@ -681,15 +733,23 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
 }
 ```
 
+Top-level snapshot/debug field:
+
+- `current_demo_preset`: currently applied named demo preset, such as `safe_visual`, `combat_demo`, `match_demo`, `debug_visual`, `custom`, or `default`.
+
 Match fields:
 
-- `state`: current match state, currently `in_progress` or `game_over`.
+- `state`: current match state: `waiting`, `countdown`, `in_progress`, or `game_over`.
 - `time_left`: seconds remaining in the match.
 - `duration`: configured match duration in seconds.
 - `target_score`: kill goal needed for immediate win.
 - `game_over`: true after score or timer win condition is reached.
-- `winner_player_id`: server player ID of the winner, or `0` while in progress or when a timer-ended match has no kill winner.
+- `winner_player_id`: server player ID of the winner, or `0` while in progress or when the match has no real kill-race winner.
 - `winner_nickname`: winner display name, or empty while in progress or when there is no winner.
+- `winner_score`: winning kill-race score, or `0` when there is no winner.
+- `winner_kills`: winning kill count, currently the same value as `winner_score`.
+- `is_draw`: true when the match ended without a real nonzero-score winner.
+- `no_winner`: true when the server intentionally reports no winner instead of inventing `P0`.
 - `match_id`: process-local match counter.
 
 Scoreboard fields:
@@ -744,8 +804,10 @@ Current event types:
 - `bot_killed_player`
 - `player_respawned`
 - `health_pack_picked`
+- `match_started`
 - `match_ended`
 - `match_restarted`
+- `demo_mode_applied`
 
 Shot result events are emitted once per processed player `fire=true` input sequence while the match is not `game_over`. They are intended for browser/Unreal hit confirmation and do not replace the scoreboard or kill events. A bot headshot can produce both a `shot_hit_bot` event and, if HP reaches zero, a later `bot_killed` event in the same snapshot event feed.
 
@@ -906,6 +968,7 @@ Mismatched player ID:
 - The match ends when any connected player reaches the kill goal or when the timer reaches zero.
 - `debug_set_match_timer` can disable timer-based `game_over` for development while keeping kill-goal wins.
 - Winner tie breakers are highest score, higher player kills, higher bot kills, fewer deaths, then lower player ID.
+- If every connected player has zero kill-race score when the match ends, the server reports `winner_player_id=0`, `winner_score=0`, `is_draw=true`, and `no_winner=true`; clients should display `Draw` / no winner and must not display `Winner: P0`.
 - After game over, snapshots continue, but new combat score changes are stopped.
 
 ## Current Limitations

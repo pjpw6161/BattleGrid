@@ -20,9 +20,10 @@ Responsibilities:
 - Tracks local HP, local score, target score, victory, and restart for offline/debug mode.
 - Stores local/remote server profile settings.
 - Applies optional safe demo mode on join.
+- Applies optional named demo presets on join.
 - Converts server 2D coordinates to Unreal world coordinates.
 - Auto-calibrates server snapshot origin so SERVER ECHO aligns with the local pawn.
-- Spawns and updates server player, projectile, core, bot, and health pack ghost actors.
+- Spawns and updates server player, projectile, bot, health pack, and optional legacy target ghost actors.
 - Calculates local-to-server position error.
 - Optionally corrects the local pawn toward the server snapshot position.
 - Reads own server life state to block movement/fire while the server says the player is dead.
@@ -105,7 +106,7 @@ Responsibilities:
 - Destroys itself at 0 HP.
 - Awards local score to the attacking player controller.
 
-Local targets are separate from server cores in the current prototype.
+Local targets are an offline/debug layer. The connected PvPvE demo does not use core/target objectives.
 
 ### `ABattleGridHazardActor`
 
@@ -126,8 +127,8 @@ The widget currently shows:
 
 - Server HP as the primary health readout while connected/joined.
 - Server score, goal score, K/D, and ammo.
-- Profile, server connection, match time, world counts, and controls.
-- Recent server combat event feed.
+- Compact server connection and match time.
+- Top 5 ranking and left-side kill feed.
 - Temporary server shot result text such as `SERVER HIT BOT-3 -20` or `SERVER MISS`.
 - Server death/respawn state when the server says the player is dead.
 - Tab scoreboard text from server snapshot data.
@@ -136,10 +137,11 @@ The widget currently shows:
 Display priority:
 
 1. Scoreboard overlay.
-2. Server dead/respawn message.
-3. Recent server shot result.
-4. Server combat event feed.
-5. Local combat/victory message.
+2. Game-over final result.
+3. Server dead/respawn message.
+4. Invincibility / health pickup / reload status.
+5. Recent server shot result.
+6. Local combat/victory message.
 
 ## Network Subsystem
 
@@ -151,10 +153,22 @@ Responsibilities:
 - Sends `ping`, `join`, `input`, and demo/debug commands.
 - Parses `pong`, `join_ok`, `input_ack`, `error`, `debug_ok`, `match_restarted`, and `snapshot`.
 - Stores connection state, player ID, room ID, nickname, last error, and last debug message.
-- Stores latest snapshots for players, projectiles, cores, bots, health packs, match, scoreboard, and combat events.
+- Stores latest snapshots for players, projectiles/tracers, bots, health packs, match, scoreboard, combat events, and optional legacy targets.
 - Deduplicates combat events by `event_id`.
 - Stores recent server shot result text for timed HUD display.
 - Provides server summary, scoreboard, event feed, and world count helpers for the HUD.
+
+Final recording defaults:
+
+- `bApplyDemoPresetOnJoin=true`
+- `DemoPresetOnJoin=safe_visual` for visual passes, `combat_demo` for combat passes.
+- `bUseGameplayHudLayout=true`
+- `bShowDebugHud=false`
+- `bShowControlsHelp=false`
+- `bShowServerTargetGhosts=false`
+- `bShowServerProjectileGhosts=true`
+- `bVerboseBattleGridLogs=false`
+- `bVerboseNetworkLogs=false`, `bVerboseSnapshotLogs=false`, and `bVerboseInputLogs=false`
 
 The game remains playable if the server is not running.
 
@@ -178,11 +192,11 @@ Visualizes server projectiles/tracers.
 
 ### `ABattleGridServerTargetGhostActor`
 
-Visualizes server cores.
+Visualizes legacy server targets only when target debug mode is enabled.
 
 - Uses a mesh and label.
 - Labels targets as `CORE-*`.
-- Shows HP or destroyed state.
+- Hidden by default for the main PvPvE Kill Race demo.
 
 ### `ABattleGridServerBotGhostActor`
 
@@ -226,7 +240,7 @@ Correction is disabled by default for clean demo control. Respawn snapping is se
 
 - Server ghosts are prototype visualization, not final production player/bot/core art.
 - Local projectile visuals and server hitscan damage are separate layers.
-- Local targets and server cores are separate layers.
+- Local targets and legacy server targets are separate debug/offline layers.
 - No production remote player mesh or animation state.
 - No full prediction history or input replay.
 - Text HUD/scoreboard/event feed should be replaced with dedicated UMG widgets later.

@@ -13,6 +13,11 @@ void MatchState::Reset()
     gameOver = false;
     winnerPlayerId = 0;
     winnerNickname.clear();
+    winnerScore = 0;
+    winnerKills = 0;
+    isDraw = false;
+    noWinner = false;
+    matchEndedEventEmitted = false;
 }
 
 void MatchState::Tick(double deltaSeconds, bool bAutoEndByTimer)
@@ -37,13 +42,27 @@ bool MatchState::IsGameOver() const
 
 void MatchState::EndMatch(
     std::uint64_t inWinnerPlayerId,
-    const std::string& inWinnerNickname
+    const std::string& inWinnerNickname,
+    int inWinnerScore,
+    int inWinnerKills,
+    bool bNoWinner
 )
 {
     gameOver = true;
     state = "game_over";
     winnerPlayerId = inWinnerPlayerId;
     winnerNickname = inWinnerNickname;
+    winnerScore = std::max(0, inWinnerScore);
+    winnerKills = std::max(0, inWinnerKills);
+    noWinner = bNoWinner || winnerPlayerId == 0 || winnerScore <= 0;
+    isDraw = noWinner;
+    if (noWinner)
+    {
+        winnerPlayerId = 0;
+        winnerNickname.clear();
+        winnerScore = 0;
+        winnerKills = 0;
+    }
 }
 
 nlohmann::json MatchState::ToJson() const
@@ -56,6 +75,10 @@ nlohmann::json MatchState::ToJson() const
     json["game_over"] = gameOver;
     json["winner_player_id"] = winnerPlayerId;
     json["winner_nickname"] = winnerNickname;
+    json["winner_score"] = winnerScore;
+    json["winner_kills"] = winnerKills;
+    json["is_draw"] = isDraw;
+    json["no_winner"] = noWinner;
     json["match_id"] = matchId;
     return json;
 }

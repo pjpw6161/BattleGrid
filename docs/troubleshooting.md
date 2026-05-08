@@ -482,7 +482,7 @@ The player arena bounds are intentionally wide for the demo, but bots use a smal
 
 Check:
 
-- Click `Apply Safe Demo Mode` so bots reset to the current demo spawn list.
+- Click `Apply Safe Visual Demo` so bots reset to the current demo spawn list.
 - `debug_room.bot_area_bounds` should read approximately `x=-1500..1500`, `y=-900..900`.
 - `debug_room.bot_waypoints` should contain 13 fixed waypoints.
 - Bot spawns should be the eight symmetric demo positions from `BOT-1 (-900,500)` through `BOT-8 (900,-500)`.
@@ -582,10 +582,22 @@ Check:
 For a clean demo recording, use the PlayerController Blueprint defaults:
 
 - Set `bDemoMode` to true.
+- Keep `bVerboseBattleGridLogs=false`.
 - Keep `bVerboseNetworkLogs`, `bVerboseSnapshotLogs`, and `bVerboseInputLogs` false.
 - Keep `SnapshotLogInterval` and `InputAckLogInterval` at `60` or higher.
 
-Important logs such as server profile, connect, connection error, join, ghost spawns, victory, and respawn should still appear. Repetitive input, input ack, snapshot, coordinate conversion, and server position error logs are throttled.
+Important logs such as server profile, connect, connection error, join, preset-on-join, victory, respawn, reload start/finish, and actual errors should still appear. Repetitive input, input ack, snapshot, coordinate conversion, client-position sync, fire-origin, and server position error logs are hidden unless verbose logging or a specific debug draw flag is enabled.
+
+## Too Many Server Logs
+
+The demo server defaults keep repetitive logs quiet:
+
+- `verbose_input_logs=false`
+- `verbose_hitscan_candidate_logs=false`
+- `verbose_bot_state_logs=false`
+- `bot_shot_events_verbose=false`
+
+Use `Send Debug Room` in the browser to confirm these values. Important logs such as server startup, room bounds, joins, preset application, match restart, kills, deaths, health pickups, invalid JSON, and warnings still appear. Per-input logs, input acknowledgements, selected hitscan candidate logs, normal body-shot spam, and bot combat-state transition spam are hidden by default.
 
 ## Blueprint Class Variables Not Visible
 
@@ -708,9 +720,9 @@ In the current demo tuning, easy mode uses `MaxBotsTargetingOnePlayer=8` so near
 
 This usually means the previous server match reached the kill goal or the timer expired. For demo iteration:
 
-1. Click `Apply Safe Demo Mode`.
+1. Click `Apply Safe Visual Demo`, `Apply Combat Demo`, or `Apply Match Demo`.
 2. Click `Send Debug Room`.
-3. Confirm `match.state=in_progress`, `match.game_over=false`, `bot_attacks_enabled=false`, `bot_difficulty=easy`, and `auto_end_match_by_timer=false`.
+3. Confirm `match.state=in_progress`, `match.game_over=false`, and `current_demo_preset` matches the button you clicked. For `safe_visual`, bot attacks and timer auto-end should be false; for `combat_demo`, bot attacks should be true and timer auto-end false; for `match_demo`, both bot attacks and timer auto-end should be true.
 
 If you want to preserve existing debug settings instead:
 
@@ -730,6 +742,34 @@ The equivalent JSON commands are:
 ```
 
 Disabling the match timer only disables timer-based `game_over`. A player can still end the match by reaching the kill goal.
+
+## Too Many Manual Debug Buttons
+
+Use one-click demo presets instead of manually combining Safe Demo Mode, bot attack toggles, difficulty, timer, and restart:
+
+- `safe_visual`: visual/HUD/model pass, bot attacks off.
+- `combat_demo`: playable bot combat pass, bot attacks on, timer off.
+- `match_demo`: match-flow pass, bot attacks on, timer on.
+- `debug_visual`: bounds/ghost visual debug pass, bot attacks off.
+
+In the browser, click the matching preset button and then `Send Debug Room`. In Unreal, use `BattleGrid|Demo > bApplyDemoPresetOnJoin=true` and set `DemoPresetOnJoin` to the desired preset.
+
+## Winner P0
+
+`Winner: P0` means an old server/client path invented a winner when no real connected player had a nonzero kill-race score.
+
+Expected behavior after the match-flow cleanup:
+
+- A real winner shows `GAME OVER`, `Winner: player*`, and `Score: N`.
+- If everyone has zero kills, the server sends `winner_player_id=0`, `winner_score=0`, `is_draw=true`, and `no_winner=true`.
+- Browser and Unreal should display `Draw` / no winner, not `Winner: P0`.
+
+Fix:
+
+1. Rebuild/restart the server container so the new match fields are active.
+2. Rebuild the Unreal client C++ so `GetGameOverText()` parses `is_draw` / `no_winner`.
+3. Click a demo preset button or `Debug Restart Match`.
+4. Click `Send Debug Room` and confirm `match_id` changed and `game_over=false`.
 
 ## Browser Freezes After `Send Join`
 
@@ -767,28 +807,34 @@ For a GCP demo, check `bUseRemoteServer=true`, `RemoteServerUrl=ws://<GCP_EXTERN
 
 ## Scoreboard Stays Visible
 
-The scoreboard auto-shows when the server match is `game_over`. This can happen if an old server session reached the kill goal or the timer expired.
+The Tab scoreboard can be held manually at any time. It only auto-shows on `game_over` if the active PlayerController has `BattleGrid|HUD > bAutoShowScoreboardOnGameOver=true`; the default is false so the center game-over result and top-right ranking stay readable.
+
+If the scoreboard appears stuck, an old server session may still be in `game_over`, or the auto-show setting may be enabled.
 
 Fix:
 
 1. Open `tools/websocket-test.html`.
-2. Click `Apply Safe Demo Mode`.
+2. Click `Apply Safe Visual Demo`.
 3. Click `Send Debug Room`.
 4. Confirm `match.state=in_progress` and `game_over=false`.
 
-For Unreal-only recording, enable `bApplySafeDemoModeOnJoin` in the active PlayerController Blueprint so the server is reset after `join_ok`.
+For Unreal-only recording, enable `bApplyDemoPresetOnJoin` in the active PlayerController Blueprint and set `DemoPresetOnJoin=safe_visual` or `combat_demo` so the server is reset after `join_ok`.
 
 ## How To Use Demo/Debug Controls
 
 Open `tools/websocket-test.html`, connect to the same server Unreal uses, then send debug commands before starting the Unreal demo or immediately after joining:
 
-- `Apply Safe Demo Mode`: resets the match, respawns players, resets bots/health packs, sets bot difficulty to easy, disables bot attacks, and disables timer-based game over.
+- `Apply Safe Visual Demo`: one-click visual preset with easy bots, bot attacks off, timer off, full reset.
+- `Apply Combat Demo`: one-click combat preset with easy bots, bot attacks on, timer off, full reset.
+- `Apply Match Demo`: one-click match-flow preset with normal bots, bot attacks on, timer on, full reset.
+- `Apply Debug Visual Demo`: one-click bounds/ghost inspection preset with easy bots, bot attacks off, timer off.
+- `Apply Safe Demo Mode`: legacy convenience reset. Prefer the named preset buttons for recording.
 - `Bot Difficulty Easy`: lowers bot shot cadence, range, speed, and accuracy.
 - `Disable Bot Attacks`: keeps bot movement/ghosts active but prevents bot shooting and player damage.
 - `Disable Match Timer`: prevents timer-based `game_over` during long recordings.
 - `Send Debug Restart Match`: clears game-over state while preserving the current demo/debug settings.
 
-In Unreal, enable `bApplySafeDemoModeOnJoin` on the active PlayerController Blueprint to apply the full stable demo reset automatically after `join_ok`. Use `bApplyDemoServerSettingsOnJoin` only when you want to apply the older individual demo settings instead.
+In Unreal, enable `bApplyDemoPresetOnJoin` on the active PlayerController Blueprint and set `DemoPresetOnJoin` to `safe_visual`, `combat_demo`, or `match_demo`. Use `bApplySafeDemoModeOnJoin` or `bApplyDemoServerSettingsOnJoin` only when testing the older compatibility paths.
 
 ## Server Bot HP Does Not Decrease
 
@@ -797,7 +843,7 @@ Server bot damage comes from server hitscan, not from local Unreal projectile ov
 Use `tools/websocket-test.html`:
 
 1. Connect and send `Join`.
-2. Click `Apply Safe Demo Mode`.
+2. Click `Apply Safe Visual Demo`.
 3. Click `Send Debug Room`.
 4. Confirm the combat tuning panel shows body/head damage `20/40`, bot difficulty `easy`, bot attacks disabled, timer auto-end disabled, and kill score values `1/1`.
 5. Wait for a snapshot with `bots=8/8`.
@@ -813,7 +859,7 @@ Expected server logs:
 [BattleGridServer] Hitscan bot hit shooter=1 bot=... group=body damage=20 hp=80/100 dir=(...)
 ```
 
-The browser page now also shows a `Shot Result` summary. A valid server hit should show `SERVER HIT BOT-* -20` or `SERVER HEADSHOT BOT-* -40`. If the match is `game_over`, click `Apply Safe Demo Mode` before testing shots; fire inputs can still be acknowledged, but server combat is disabled while the match is over.
+The browser page now also shows a `Shot Result` summary. A valid server hit should show `SERVER HIT BOT-* -20` or `SERVER HEADSHOT BOT-* -40`. If the match is `game_over`, click `Apply Combat Demo` or `Apply Safe Visual Demo` before testing shots; fire inputs can still be acknowledged, but server combat is disabled while the match is over.
 
 For prototype aiming, bot hitscan uses 3D head/body spheres and a forgiving 2D body fallback. The fallback is only for bot hit testing, and it should not override a valid headshot. Disabling bot attacks does not make bots invulnerable.
 
@@ -830,11 +876,11 @@ If Unreal shots against the visible bot head still deal only 20:
 
 ## Bot Shots Do Not Appear
 
-Safe demo mode intentionally sets `bot_attacks_enabled=false`. Bots still move, but they will not fire. To test Bot Shooter AI v2:
+Safe visual/demo mode intentionally sets `bot_attacks_enabled=false`. Bots still move, but they will not fire. To test Bot Shooter AI v2:
 
-1. Click `Apply Safe Demo Mode`.
-2. Click `Enable Bot Attacks`.
-3. Click `Bot Difficulty Easy`.
+1. Click `Apply Combat Demo`.
+2. Click `Send Debug Room`.
+3. Confirm `current_demo_preset=combat_demo`, `bot_attacks_enabled=true`, and `bot_difficulty=easy`.
 4. Stand within a bot attack range and watch for `BOT-* hit player* -10`, `BOT-* headshot player* -20`, or `BOT-* killed player*` events.
 
 If no bot shots appear, click `Send Debug Room` and confirm `bot_attacks_enabled=true`, `bot_fire_interval` is nonzero, and at least one player is alive and not invincible.
@@ -924,7 +970,7 @@ This is expected during the transition from local prototype gameplay to server-a
 - By default, the HUD prioritizes `SERVER HP` and `SERVER Kills`.
 - Enable `bShowLocalDebugHud` in the active PlayerController Blueprint only when you need to compare local/offline state with server state.
 
-If the server says the player is dead, local movement/fire can be locked even if the local pawn still appears alive. Use `Apply Safe Demo Mode` if the server state needs to be reset for testing.
+If the server says the player is dead, local movement/fire can be locked even if the local pawn still appears alive. Use `Apply Safe Visual Demo` or `Apply Combat Demo` if the server state needs to be reset for testing.
 
 ## I Die But No Respawn Message Appears
 
@@ -967,7 +1013,7 @@ The gameplay HUD therefore shows server state first:
 - Top 5 ranking in the top-right HUD area.
 - Kill feed on the left side.
 - Match/server status in small status text.
-- Temporary death/respawn, invincibility, health pickup, reload/empty, and server shot results such as `SERVER HIT BOT-3 -20` in the message area.
+- Temporary game-over result, death/respawn, invincibility, health pickup, reload/empty, and server shot results such as `SERVER HIT BOT-3 -20` in the message area.
 
 Local HP/score remains available for offline debugging, but it should not be used to explain server bot damage, match scoring, or winner state.
 
@@ -982,6 +1028,11 @@ For a clean recording, set:
 - `bShowControlsHelp=false`
 - `bShowCombatEventFeed=false`
 - `bShowLocalDebugHud=false`
+- `bShowServerTargetGhosts=false`
+- `bDrawServerArenaBounds=false`
+- `bDrawServerBotAreaBounds=false`
+- `bShowServerShotDebug=false`
+- `bShowAimDebug=false`
 
 If a large block still appears, check whether the active widget is missing optional gameplay bindings. Without `RankingText`, `KillFeedLine1-5`, `AmmoText`, `MatchText`, or `SmallServerStatusText`, the C++ fallback may place compact fallback text into `ControlsText`.
 

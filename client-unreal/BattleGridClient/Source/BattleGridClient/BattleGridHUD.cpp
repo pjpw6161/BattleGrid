@@ -152,6 +152,7 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		bHasServerOwnPlayerSnapshot,
 		bServerInvincible,
 		bServerGameOver,
+		BattleGridController->GetMatchGameOverHudText(),
 		BattleGridController->UseServerAuthoritativeHud(),
 		BattleGridController->ShowLocalDebugHud(),
 		BattleGridController->ShowCombatEventFeed(),
@@ -328,7 +329,8 @@ void ABattleGridHUD::DrawHUD()
 		);
 	}
 	else if (
-		BattleGridController->IsServerDead()
+		!BattleGridController->GetMatchGameOverHudText().IsEmpty()
+		|| BattleGridController->IsServerDead()
 		|| BattleGridController->IsServerInvincible()
 		|| !BattleGridController->GetRecentServerHealText().IsEmpty()
 		|| !BattleGridController->GetWeaponStatusHudText().IsEmpty()
@@ -337,13 +339,18 @@ void ABattleGridHUD::DrawHUD()
 		|| BattleGridController->HasWon()
 	)
 	{
+		const FString GameOverText = BattleGridController->GetMatchGameOverHudText();
 		const FString ServerDeathRespawnText =
 			BattleGridController->GetServerDeathRespawnHudText();
 		const FString ServerHealText = BattleGridController->GetRecentServerHealText();
 		const FString WeaponStatusText = BattleGridController->GetWeaponStatusHudText();
 		const FString ServerShotResultText = BattleGridController->GetRecentServerShotResultText();
 		FString CombatDisplayMessage;
-		if (!ServerDeathRespawnText.IsEmpty())
+		if (!GameOverText.IsEmpty())
+		{
+			CombatDisplayMessage = GameOverText;
+		}
+		else if (!ServerDeathRespawnText.IsEmpty())
 		{
 			CombatDisplayMessage = ServerDeathRespawnText;
 		}

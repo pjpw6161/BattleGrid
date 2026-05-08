@@ -10,15 +10,24 @@ This project exists to demonstrate both Unreal gameplay programming and custom r
 
 Coming soon.
 
+## Demo Status
+
+- Local Docker server: ready for the portfolio demo.
+- Unreal client: playable third-person PvPvE client.
+- Main loop: kill-race combat against humanoid shooter bots.
+- Combat: server-authoritative hitscan with server tracer/projectile ghosts.
+- HUD: HP, ammo, dynamic crosshair, top 5 ranking, kill feed, death/respawn, health pickup feedback.
+- Demo setup: one-click presets in `tools/websocket-test.html` and optional preset-on-join from Unreal.
+
 ## Why This Project Matters
 
 BattleGrid shows the path from a playable Unreal prototype to a server-authoritative multiplayer architecture:
 
 - Unreal gameplay programming: third-person controls, ADS, sprint, jump, weapon state, HUD, local feedback, and prototype combat visuals.
 - Custom C++ server programming: Boost.Beast WebSocket sessions, JSON protocol dispatch, fixed-rate room tick, authoritative game state, bots, pickups, match state, and snapshot broadcast.
-- Server-authoritative design: server-owned HP, deaths, respawn, bot/core/health-pack state, scoreboard, and hit result events.
+- Server-authoritative design: server-owned HP, deaths, respawn, bots, health packs, scoreboard, match flow, and hit result events.
 - Deployment workflow: local Docker Compose server and documented GCP VM Docker deployment.
-- Debugging workflow: browser protocol test page, safe demo mode, compact snapshot summaries, shot result events, ghost actors, and troubleshooting docs.
+- Debugging workflow: browser protocol test page, one-click demo presets, compact snapshot summaries, shot result events, ghost actors, and troubleshooting docs.
 
 ## Current Demo Features
 
@@ -29,11 +38,11 @@ BattleGrid shows the path from a playable Unreal prototype to a server-authorita
 | Unreal client | Ammo / reload / automatic fire | Implemented |
 | Networking | WebSocket JSON connection | Implemented |
 | Networking | Local/remote server profiles | Implemented |
-| Demo tooling | Safe demo mode | Implemented |
+| Demo tooling | One-click demo presets | Implemented |
 | Server state | Snapshot broadcast | Implemented |
 | Visualization | Server player ghost / SERVER ECHO | Implemented |
 | Visualization | Server bot ghosts | Implemented |
-| Visualization | Server core/target ghosts | Implemented |
+| Visualization | Legacy server target ghosts | Debug-only |
 | Visualization | Server health pack ghosts | Implemented |
 | Combat | Server hitscan shot feedback | Implemented |
 | PvE | Bot damage, death, respawn, score | Implemented |
@@ -66,7 +75,7 @@ Expanded view:
 
 The current demo intentionally keeps two layers visible:
 
-- Server-authoritative PvPvE layer: server player HP, bots, cores, health packs, match state, scoreboard, combat events, and shot results.
+- Server-authoritative PvPvE layer: server player HP, bots, health packs, match state, scoreboard, combat events, and shot results.
 - Local Unreal prototype layer: local projectile visuals, local target tests, local hazards, and offline gameplay fallback.
 
 The server layer is the primary portfolio demo path. The local layer remains useful for offline testing and incremental client work.
@@ -81,6 +90,15 @@ docs/            Architecture, protocol, deployment, demo, and troubleshooting d
 ```
 
 ## Build And Run
+
+### Quick Local Demo
+
+```powershell
+cd C:\dev\BattleGrid
+docker compose up -d --build battlegrid-server
+```
+
+Then open `tools/websocket-test.html`, click `Connect`, `Send Join`, and either `Apply Safe Visual Demo` or `Apply Combat Demo`. In Unreal, build `BattleGridClientEditor` with `Development Editor | Win64`, press Play, and verify the clean gameplay HUD.
 
 ### Docker Server
 
@@ -154,7 +172,8 @@ Server profile settings live in the active PlayerController Blueprint defaults:
 
 - Local Docker server: `bUseRemoteServer = false`, `LocalServerUrl = ws://127.0.0.1:7777`.
 - GCP server: `bUseRemoteServer = true`, `RemoteServerUrl = ws://<GCP_EXTERNAL_IP>:7777`.
-- Demo startup: enable `bApplySafeDemoModeOnJoin` for stable recording.
+- Visual recording startup: `bApplyDemoPresetOnJoin = true`, `DemoPresetOnJoin = safe_visual`.
+- Combat recording startup: use `DemoPresetOnJoin = combat_demo`, or click `Apply Combat Demo` in the browser page.
 
 Unreal assets such as Input Actions, Mapping Contexts, Blueprints, maps, materials, and Widget Blueprints are created or adjusted manually in Unreal Editor.
 
@@ -162,26 +181,25 @@ Unreal assets such as Input Actions, Mapping Contexts, Blueprints, maps, materia
 
 1. Start the server with Docker Compose.
 2. Open `tools/websocket-test.html`.
-3. Connect, send join, and apply safe demo mode.
-4. Use `Fire 5 Shots At Nearest Bot` to verify `SERVER HIT` events and bot HP changes.
+3. Connect, send join, and click `Apply Safe Visual Demo` or `Apply Combat Demo`.
+4. Use `Fire 5 Shots At Nearest Bot` to verify server shot events and bot HP changes.
 5. Open Unreal and press Play.
-6. Verify the HUD shows server HP/score as primary.
+6. Verify the HUD shows HP, ammo, top 5 ranking, kill feed, and center crosshair.
 7. Move, ADS, sprint, jump, and fire.
-8. Show SERVER ECHO, bot ghosts, core ghosts, health pack ghosts, and server shot result text.
-9. Hold Tab to show the server scoreboard.
+8. Show humanoid bot ghosts, health pack ghosts, server tracer ghosts, and server shot result text.
+9. Hold Tab to show the server scoreboard if needed.
 10. Stop the server and confirm local offline gameplay still exists.
 
 See [demo checklist](docs/demo-checklist.md) and [demo script](docs/demo-script.md) for a recording-ready sequence.
 
 ## Current Limitations
 
-- Local projectile visuals and server hitscan damage are still separate layers.
-- Local offline targets and server cores are still separate.
-- Server ghost actors are prototype visualization, not final player/bot/core presentation.
+- Legacy local projectile/target gameplay is still present for offline testing, but it is not the connected demo path.
+- Server ghost actors are prototype visualization, not final player/bot presentation.
 - No production matchmaking or lobby flow.
 - No database or persistence.
 - No advanced lag compensation, rollback, or anti-cheat.
-- Placeholder visuals use Unreal built-in shapes and local materials.
+- Some placeholder visuals still use Unreal built-in shapes and local materials.
 - No final character, weapon, animation, audio, or VFX assets yet.
 - GCP deployment is documented and manual, not fully automated infrastructure.
 - Networking is not production-ready.

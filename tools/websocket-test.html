@@ -43,6 +43,35 @@
       margin: 16px 0;
     }
 
+    .primary-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0;
+      padding: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #ffffff;
+    }
+
+    .debug-controls {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background: #ffffff;
+    }
+
+    .debug-controls summary {
+      cursor: pointer;
+      font-weight: 700;
+      color: #374151;
+    }
+
+    .debug-control-group {
+      margin-top: 12px;
+    }
+
     .summary {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -102,49 +131,62 @@
   </p>
 
   <div class="controls">
-    <button id="connect">Connect</button>
-    <button id="sendPing">Send Ping</button>
-    <button id="sendJoin">Send Join</button>
-    <button id="sendInput">Send Input</button>
-    <button id="sendFireInput">Send Fire Input</button>
-    <button id="sendBodyShot">Send Body Shot</button>
-    <button id="sendHeadshot">Send Headshot At Nearest Bot</button>
-    <button id="sendFireAtBot1">Send Fire At Bot 1</button>
-    <button id="sendFireAtNearestBot">Send Fire At Nearest Bot</button>
-    <button id="fireFiveAtNearestBot">Fire 5 Shots At Nearest Bot</button>
-    <button id="startFiring">Start Firing</button>
-    <button id="stopFiring">Stop Firing</button>
-    <button id="startMovingRight">Start Moving Right</button>
-    <button id="startMovingToHealthPack1">Start Moving To HPack 1</button>
-    <button id="stopMoving">Stop Moving</button>
-    <button id="sendDebugRoom">Send Debug Room</button>
-    <button id="sendDebugRestartMatch">Send Debug Restart Match</button>
-    <button id="applySafeDemoMode">Apply Safe Demo Mode</button>
-    <button id="disableBotAttacks">Disable Bot Attacks</button>
-    <button id="enableBotAttacks">Enable Bot Attacks</button>
-    <button id="botDifficultyEasy">Bot Difficulty Easy</button>
-    <button id="botDifficultyNormal">Bot Difficulty Normal</button>
-    <button id="botDifficultyHard">Bot Difficulty Hard</button>
-    <button id="disableMatchTimer">Disable Match Timer</button>
-    <button id="enableMatchTimer">Enable Match Timer</button>
-    <button id="sendInvalid">Send Invalid JSON</button>
-    <button id="close">Close</button>
-  </div>
+    <div class="primary-controls" aria-label="Primary demo controls">
+      <button id="connect">Connect</button>
+      <button id="applySafeVisualDemo">Apply Safe Visual Demo</button>
+      <button id="applyCombatDemo">Apply Combat Demo</button>
+      <button id="applyMatchDemo">Apply Match Demo</button>
+      <button id="sendJoin">Send Join</button>
+      <button id="sendDebugRoom">Send Debug Room</button>
+      <button id="fireFiveAtNearestBot">Fire 5 Shots At Nearest Bot</button>
+      <button id="close">Close</button>
+    </div>
 
-  <div class="log-controls">
-    <label>
-      <input id="logRawSnapshots" type="checkbox">
-      Log Raw Snapshots
-    </label>
-    <label>
-      <input id="pauseSnapshotLog" type="checkbox">
-      Pause Snapshot Log
-    </label>
-    <label>
-      Snapshot Summary Interval
-      <input id="snapshotSummaryInterval" type="number" min="1" step="1" value="30">
-    </label>
-    <button id="clearLog">Clear Log</button>
+    <details class="debug-controls">
+      <summary>Secondary / Debug Controls</summary>
+      <div class="debug-control-group">
+        <button id="sendPing">Send Ping</button>
+        <button id="sendInput">Send Input</button>
+        <button id="sendFireInput">Send Fire Input</button>
+        <button id="sendBodyShot">Send Body Shot</button>
+        <button id="sendHeadshot">Send Headshot At Nearest Bot</button>
+        <button id="sendFireAtBot1">Send Fire At Bot 1</button>
+        <button id="sendFireAtNearestBot">Send Fire At Nearest Bot</button>
+        <button id="startFiring">Start Firing</button>
+        <button id="stopFiring">Stop Firing</button>
+        <button id="startMovingRight">Start Moving Right</button>
+        <button id="startMovingToHealthPack1">Start Moving To HPack 1</button>
+        <button id="stopMoving">Stop Moving</button>
+      </div>
+      <div class="debug-control-group">
+        <button id="sendDebugRestartMatch">Send Debug Restart Match</button>
+        <button id="applySafeDemoMode">Apply Safe Demo Mode</button>
+        <button id="applyDebugVisualDemo">Apply Debug Visual Demo</button>
+        <button id="disableBotAttacks">Disable Bot Attacks</button>
+        <button id="enableBotAttacks">Enable Bot Attacks</button>
+        <button id="botDifficultyEasy">Bot Difficulty Easy</button>
+        <button id="botDifficultyNormal">Bot Difficulty Normal</button>
+        <button id="botDifficultyHard">Bot Difficulty Hard</button>
+        <button id="disableMatchTimer">Disable Match Timer</button>
+        <button id="enableMatchTimer">Enable Match Timer</button>
+        <button id="sendInvalid">Send Invalid JSON</button>
+      </div>
+      <div class="log-controls">
+        <label>
+          <input id="logRawSnapshots" type="checkbox">
+          Log Raw Snapshots
+        </label>
+        <label>
+          <input id="pauseSnapshotLog" type="checkbox">
+          Pause Snapshot Log
+        </label>
+        <label>
+          Snapshot Summary Interval
+          <input id="snapshotSummaryInterval" type="number" min="1" step="1" value="30">
+        </label>
+        <button id="clearLog">Clear Log</button>
+      </div>
+    </details>
   </div>
 
   <section class="summary" aria-label="Latest server state summary">
@@ -231,6 +273,19 @@
       return `${minutes}:${seconds}`;
     }
 
+    function formatMatchWinner(match) {
+      if (!match || !match.game_over) {
+        return "winner=-";
+      }
+
+      if (match.no_winner || match.is_draw || !match.winner_player_id || Number(match.winner_score ?? 0) <= 0) {
+        return "result=Draw";
+      }
+
+      const winnerName = match.winner_nickname || `P${match.winner_player_id}`;
+      return `winner=${winnerName} score=${match.winner_score ?? 0}`;
+    }
+
     function send(message) {
       if (!socket || socket.readyState !== WebSocket.OPEN) {
         log("Cannot send: socket is not connected.");
@@ -239,6 +294,20 @@
 
       socket.send(message);
       log(`sent: ${message}`);
+    }
+
+    function sendDemoPreset(preset) {
+      send(JSON.stringify({ type: "debug_apply_demo_preset", preset }));
+    }
+
+    function getCurrentDemoPreset() {
+      if (latestSnapshot && latestSnapshot.current_demo_preset) {
+        return latestSnapshot.current_demo_preset;
+      }
+      if (latestDebugRoom && latestDebugRoom.current_demo_preset) {
+        return latestDebugRoom.current_demo_preset;
+      }
+      return "-";
     }
 
     function sendInput(moveX, moveY, fire, options = {}) {
@@ -611,6 +680,7 @@
       }
 
       return (
+        `Preset=${latestDebugRoom.current_demo_preset ?? getCurrentDemoPreset()}\n` +
         `Damage body/head=${latestDebugRoom.body_damage ?? 20}/${latestDebugRoom.headshot_damage ?? 40}\n` +
         `Bot shots body/head=${latestDebugRoom.bot_body_damage ?? latestDebugRoom.bot_attack_damage ?? 10}/${latestDebugRoom.bot_headshot_damage ?? 20}\n` +
         `Difficulty=${latestDebugRoom.bot_difficulty ?? "normal"} attacks=${latestDebugRoom.bot_attacks_enabled ?? true}\n` +
@@ -680,6 +750,8 @@
       return (
         `snapshot tick=${snapshot.tick ?? "-"} ` +
         `match=${match.state ?? "-"} time=${formatTime(match.time_left)} ` +
+        `preset=${snapshot.current_demo_preset ?? "-"} ` +
+        `${match.game_over ? formatMatchWinner(match) + " " : ""}` +
         `players=${players.length} bots=${aliveBots}/${bots.length} ` +
         `hpacks=${activeHealthPacks}/${healthPacks.length} ` +
         `projectiles=${projectiles.length}`
@@ -718,11 +790,11 @@
       const healthPacks = Array.isArray(latestSnapshot.health_packs) ? latestSnapshot.health_packs : [];
       const projectiles = Array.isArray(latestSnapshot.projectiles) ? latestSnapshot.projectiles : [];
 
-      const winner = match.winner_nickname || (match.winner_player_id ? `P${match.winner_player_id}` : "-");
       setText(
         "matchSummary",
         `${match.state ?? "-"} | ${formatTime(match.time_left)} | kill_goal=${match.target_score ?? "-"}\n` +
-        `game_over=${match.game_over ?? false} winner=${winner} match=${match.match_id ?? "-"}`
+        `match=${match.match_id ?? "-"} game_over=${match.game_over ?? false} ${formatMatchWinner(match)}\n` +
+        `preset=${getCurrentDemoPreset()}`
       );
       setText("scoreboardSummary", summarizeScoreboard(scoreboard));
 
@@ -895,7 +967,10 @@
           log(`match_restarted match_id=${message.match_id}`);
           break;
         case "debug_ok":
-          if (message.message === "safe demo mode applied") {
+          if (
+            message.message === "safe demo mode applied"
+            || String(message.message || "").startsWith("demo preset applied:")
+          ) {
             seenEventIds.clear();
             recentEventMessages.length = 0;
             latestShotResultMessage = "-";
@@ -904,7 +979,7 @@
             latestPlayers = [];
             latestBots = [];
             snapshotCount = 0;
-            log("safe demo mode applied");
+            log(`${message.message}; click Send Debug Room to verify state.`);
           } else {
             log(`debug_ok ${message.message}`);
           }
@@ -912,14 +987,21 @@
         case "room_state":
           latestDebugRoom = message;
           updateLatestRoomEntities(message);
+          const debugMatch = message.match || {};
           log(
             `room_state players=${message.player_count ?? 0} ` +
+            `preset=${message.current_demo_preset ?? "-"} ` +
             `bots=${message.bot_count ?? 0} targets_debug=${message.targets_debug_count ?? 0} ` +
             `bot_attacks=${message.bot_attacks_enabled ?? true} ` +
             `difficulty=${message.bot_difficulty ?? "normal"} ` +
             `auto_timer=${message.auto_end_match_by_timer ?? true} ` +
             `health_packs=${message.active_health_pack_count ?? 0}/${message.health_pack_count ?? 0} ` +
             `projectiles=${message.projectile_count ?? 0}`
+          );
+          log(
+            `match id=${debugMatch.match_id ?? "-"} state=${debugMatch.state ?? "-"} ` +
+            `time=${formatTime(debugMatch.time_left)} game_over=${debugMatch.game_over ?? false} ` +
+            `${formatMatchWinner(debugMatch)}`
           );
           log(
             `bot_config damage=${message.bot_attack_damage ?? 20} ` +
@@ -1139,6 +1221,22 @@
 
     document.getElementById("applySafeDemoMode").addEventListener("click", () => {
       send(JSON.stringify({ type: "debug_apply_demo_mode" }));
+    });
+
+    document.getElementById("applySafeVisualDemo").addEventListener("click", () => {
+      sendDemoPreset("safe_visual");
+    });
+
+    document.getElementById("applyCombatDemo").addEventListener("click", () => {
+      sendDemoPreset("combat_demo");
+    });
+
+    document.getElementById("applyMatchDemo").addEventListener("click", () => {
+      sendDemoPreset("match_demo");
+    });
+
+    document.getElementById("applyDebugVisualDemo").addEventListener("click", () => {
+      sendDemoPreset("debug_visual");
     });
 
     document.getElementById("disableBotAttacks").addEventListener("click", () => {

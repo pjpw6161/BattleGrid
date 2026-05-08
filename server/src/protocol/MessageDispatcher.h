@@ -37,6 +37,7 @@ private:
     std::string HandleDebugRoom();
     std::string HandleDebugRestartMatch();
     std::string HandleDebugApplyDemoMode();
+    std::string HandleDebugApplyDemoPreset(const nlohmann::json& message);
     std::string HandleDebugSetBotAttacks(const nlohmann::json& message);
     std::string HandleDebugSetBotDifficulty(const nlohmann::json& message);
     std::string HandleDebugSetMatchTimer(const nlohmann::json& message);
@@ -44,5 +45,6 @@ private:
     SessionState& sessionState;
     std::shared_ptr<RoomManager> roomManager;
     std::function<std::uint64_t()> allocatePlayerId;
+    bool bVerboseInputLogs;
 };
 }

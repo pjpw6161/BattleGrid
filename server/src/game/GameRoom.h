@@ -38,6 +38,7 @@ public:
     nlohmann::json ToDebugJson() const;
     std::uint64_t ResetMatch();
     std::uint64_t ApplySafeDemoMode();
+    bool ApplyDemoPreset(const std::string& presetName);
     void SetBotAttacksEnabled(bool bEnabled);
     bool AreBotAttacksEnabled() const;
     void ApplyBotDifficulty(const std::string& difficulty);
@@ -82,6 +83,12 @@ private:
     void CheckMatchEndCondition();
     std::uint64_t DetermineWinnerPlayerId() const;
     nlohmann::json BuildScoreboardJson() const;
+    std::uint64_t ResetRoomForDemoUnlocked(
+        const std::string& primaryEventType,
+        const std::string& primaryEventMessage,
+        bool bAddMatchRestartedEvent,
+        bool bAddMatchStartedEvent
+    );
     void ApplyBotDifficultyUnlocked(const std::string& difficulty);
     void UpdateProjectiles(double deltaSeconds);
     void UpdateProjectileTargetCollisions();
@@ -103,6 +110,7 @@ private:
     double serverTimeSeconds;
     bool bBotAttacksEnabled;
     std::string botDifficulty;
+    std::string currentDemoPreset;
     bool bAutoEndMatchByTimer;
     bool bTargetsEnabled;
     double botDetectRange;
@@ -114,9 +122,11 @@ private:
     double botFireIntervalSeconds;
     double botAimSpreadDegrees;
     bool bVerboseBotShotEvents;
+    bool bVerboseInputLogs;
     bool bEnableBot2DFallbackHit;
     double Bot2DFallbackRadiusScale;
     bool bVerboseHitscanCandidateLogs;
+    bool bVerboseBotStateLogs;
     bool bUseClientFireOriginForHitscan;
     double ClientFireOriginWarningDistance;
     double MaxAcceptedClientFireOriginDistance;

@@ -264,6 +264,18 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerMatchSnapshot
 	FString WinnerNickname;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	int32 WinnerScore = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	int32 WinnerKills = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	bool bIsDraw = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
+	bool bNoWinner = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Match")
 	int32 MatchId = 1;
 };
 
@@ -401,6 +413,7 @@ public:
 	void SendJoin();
 	void SendDebugRestartMatch();
 	void SendDebugApplyDemoMode();
+	void SendDebugApplyDemoPreset(const FString& PresetName);
 	void SendDebugSetBotAttacks(bool bEnabled);
 	void SendDebugSetBotDifficulty(const FString& Difficulty);
 	void SendDebugSetMatchTimer(bool bEnabled);
@@ -491,6 +504,9 @@ public:
 	int32 GetOwnServerHP() const;
 	FString GetServerPrimaryStatusText() const;
 	FString GetServerMatchStatusText() const;
+	bool IsMatchGameOver() const;
+	FString GetMatchStatusText() const;
+	FString GetGameOverText() const;
 	FString GetServerOwnPlayerStatusText() const;
 	FString GetServerWorldCountsText() const;
 	FString GetServerScoreboardCompactText() const;
@@ -521,6 +537,7 @@ private:
 	FString LastServerMessage;
 	FString LastError;
 	FString LastDebugMessage;
+	FString CurrentDemoPreset;
 	int32 LastSnapshotTick = 0;
 	int32 LastSnapshotRoomId = 0;
 	FBattleGridServerArenaBoundsSnapshot LatestArenaBounds;

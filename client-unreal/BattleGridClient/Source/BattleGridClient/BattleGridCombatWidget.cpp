@@ -32,6 +32,7 @@ void UBattleGridCombatWidget::UpdateHud(
 	bool bHasServerOwnPlayerSnapshot,
 	bool bServerInvincible,
 	bool bServerGameOver,
+	const FString& ServerGameOverText,
 	bool bUseServerAuthoritativeHud,
 	bool bShowLocalDebugHud,
 	bool bShowCombatEventFeed,
@@ -243,6 +244,12 @@ void UBattleGridCombatWidget::UpdateHud(
 		{
 			DisplayMessage = ToGamePrototypeHudText(ScoreboardText);
 		}
+		else if (bServerGameOver)
+		{
+			DisplayMessage = ServerGameOverText.IsEmpty()
+				? FString(TEXT("GAME OVER"))
+				: ServerGameOverText;
+		}
 		else if (bServerDead)
 		{
 			DisplayMessage = ServerLifeStateText;
@@ -262,10 +269,6 @@ void UBattleGridCombatWidget::UpdateHud(
 		else if (!ServerShotResultText.IsEmpty())
 		{
 			DisplayMessage = ServerShotResultText;
-		}
-		else if (bServerGameOver)
-		{
-			DisplayMessage = TEXT("SERVER GAME OVER");
 		}
 		else if (bHasWon && !bUseServerAuthoritativeHud)
 		{

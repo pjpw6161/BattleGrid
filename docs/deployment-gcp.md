@@ -70,7 +70,7 @@ The Compose file runs:
 docker compose logs -f battlegrid-server
 ```
 
-Expected logs include startup, listening, accepted sessions, join, input, and snapshot messages.
+Expected logs include startup, listening, accepted sessions, join, preset application, kills/deaths, warnings, and errors. Repetitive input and snapshot diagnostics are quiet by default for recordings.
 
 ## Stop
 
@@ -96,8 +96,8 @@ docker compose logs -f battlegrid-server
    ```
 
 3. Click `Connect`.
-4. Send `Ping`, `Join`, and `Debug Room`.
-5. Verify snapshots include players, projectiles, and targets.
+4. Send `Ping`, `Join`, and `Apply Safe Visual Demo` or `Apply Combat Demo`.
+5. Send `Debug Room` and verify snapshots include players, bots, health packs, projectiles/tracers, match state, ranking, and recent events.
 
 ## Test From Unreal
 

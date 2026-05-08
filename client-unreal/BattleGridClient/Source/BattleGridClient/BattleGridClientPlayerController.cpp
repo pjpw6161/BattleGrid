@@ -84,6 +84,7 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	ViewPitchMin = -55.0f;
 	ViewPitchMax = 35.0f;
 	bDemoMode = true;
+	bVerboseBattleGridLogs = false;
 	bVerboseNetworkLogs = false;
 	bVerboseSnapshotLogs = false;
 	bVerboseInputLogs = false;
@@ -91,17 +92,20 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	InputAckLogInterval = 60;
 	bApplyDemoServerSettingsOnJoin = false;
 	bApplySafeDemoModeOnJoin = false;
+	bApplyDemoPresetOnJoin = true;
+	DemoPresetOnJoin = TEXT("safe_visual");
 	bDemoBotAttacksEnabled = false;
 	DemoBotDifficulty = TEXT("easy");
 	bDemoAutoEndMatchByTimer = false;
 	bScoreboardToggleMode = false;
+	bAutoShowScoreboardOnGameOver = false;
 	bUseServerAuthoritativeHud = true;
 	bUseGameplayHudLayout = true;
 	bShowDebugHud = false;
 	bShowControlsHelp = false;
 	bShowSmallServerStatus = true;
 	bShowLocalDebugHud = false;
-	bShowServerDebugDetails = true;
+	bShowServerDebugDetails = false;
 	bShowCombatEventFeed = false;
 	bShowTopFiveRanking = true;
 	bShowKillFeed = true;
@@ -124,8 +128,11 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bScoreboardVisible = false;
 	bDemoServerSettingsAppliedForJoin = false;
 	bSafeDemoModeAppliedForJoin = false;
+	bDemoPresetAppliedForJoin = false;
+	bLoggedDemoPresetConflictWarning = false;
 	LastDemoSettingsPlayerId = 0;
 	LastSafeDemoModePlayerId = 0;
+	LastDemoPresetPlayerId = 0;
 	ShotSequence = 0;
 	LastShotDirectionServer = FVector2D::ZeroVector;
 	LastShotDirectionServerZ = 0.0f;
@@ -149,7 +156,7 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	ServerPlayerGhostZOffset = 0.0f;
 	bUseLocalPawnZForOwnServerGhost = false;
 	bAutoCalibrateServerSnapshotOrigin = true;
-	bShowServerPositionError = true;
+	bShowServerPositionError = false;
 	bUseServerPositionCorrection = false;
 	ServerCorrectionStrength = 8.0f;
 	ServerCorrectionSnapDistance = 500.0f;
@@ -487,6 +494,11 @@ bool ABattleGridClientPlayerController::ShouldShowScoreboard() const
 	if (bScoreboardHeld || bScoreboardVisible)
 	{
 		return true;
+	}
+
+	if (!bAutoShowScoreboardOnGameOver)
+	{
+		return false;
 	}
 
 	if (const UGameInstance* GameInstance = GetGameInstance())
@@ -1241,6 +1253,51 @@ FString ABattleGridClientPlayerController::GetServerDeathRespawnHudText() const
 	return FString();
 }
 
+FString ABattleGridClientPlayerController::GetMatchGameOverHudText() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetGameOverText();
+		}
+	}
+
+	return FString();
+}
+
+bool ABattleGridClientPlayerController::IsMatchAcceptingCombatInput() const
+{
+	if (!IsServerAuthoritativeFireMode())
+	{
+		return true;
+	}
+
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			if (!NetworkSubsystem->HasMatchSnapshot())
+			{
+				return true;
+			}
+
+			const FBattleGridServerMatchSnapshot MatchSnapshot =
+				NetworkSubsystem->GetLatestMatchSnapshot();
+			if (MatchSnapshot.bGameOver)
+			{
+				return false;
+			}
+
+			return MatchSnapshot.State.Equals(TEXT("in_progress"), ESearchCase::IgnoreCase);
+		}
+	}
+
+	return true;
+}
+
 void ABattleGridClientPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
@@ -1297,7 +1354,7 @@ void ABattleGridClientPlayerController::BeginPlay()
 
 				UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Server profile: %s"), *ServerProfileLabel);
 				UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Connecting to server: %s"), *ResolvedServerUrl);
-				const bool bUseVerboseDefaults = !bDemoMode;
+				const bool bUseVerboseDefaults = bVerboseBattleGridLogs || !bDemoMode;
 				NetworkSubsystem->ConfigureDemoLogging(
 					bVerboseNetworkLogs || bUseVerboseDefaults,
 					bVerboseSnapshotLogs || bUseVerboseDefaults,
@@ -1892,6 +1949,14 @@ void ABattleGridClientPlayerController::TryFireWeapon()
 		return;
 	}
 
+	if (!IsMatchAcceptingCombatInput())
+	{
+		SetWeaponStatusMessage(TEXT("GAME OVER"), 1.0f);
+		LogFireBlocked(TEXT("match_over"));
+		bPendingFireInput = false;
+		return;
+	}
+
 	if (WeaponComponent->IsReloading())
 	{
 		SetWeaponStatusMessage(TEXT("RELOADING..."), 0.8f);
@@ -2075,8 +2140,7 @@ void ABattleGridClientPlayerController::TryFireWeapon()
 	bPendingFireInput = true;
 	SendInputToServer(true);
 
-	const int32 InputLogInterval = FMath::Max(1, InputAckLogInterval);
-	if (bVerboseInputLogs || !bDemoMode || ShotSequence <= 3 || ShotSequence % InputLogInterval == 0)
+	if (bVerboseBattleGridLogs || bVerboseInputLogs || !bDemoMode)
 	{
 		UE_LOG(
 			LogTemp,
@@ -2091,7 +2155,7 @@ void ABattleGridClientPlayerController::TryFireWeapon()
 		);
 	}
 
-	if (bShowAimDebug || bShowServerShotDebug || bVerboseInputLogs || !bDemoMode)
+	if (bShowAimDebug || bShowServerShotDebug || bVerboseBattleGridLogs || bVerboseInputLogs || !bDemoMode)
 	{
 		UE_LOG(
 			LogTemp,
@@ -2513,6 +2577,14 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 		return;
 	}
 
+	if (bPendingFireInput && !IsMatchAcceptingCombatInput())
+	{
+		bPendingFireInput = false;
+		bLastFireOriginWorldValid = false;
+		bLastFireOriginServerValid = false;
+		LogFireBlocked(TEXT("match_over"));
+	}
+
 	const bool bHasMovementInput =
 		!FMath::IsNearlyZero(CurrentMoveForward)
 		|| !FMath::IsNearlyZero(CurrentMoveRight);
@@ -2656,7 +2728,10 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 	}
 
 	const int32 InputLogInterval = FMath::Max(1, InputAckLogInterval);
-	if ((bVerboseInputLogs || !bDemoMode) && (bFire || bReload || InputSequence % InputLogInterval == 0))
+	if (
+		(bVerboseBattleGridLogs || bVerboseInputLogs || !bDemoMode)
+		&& (bFire || bReload || InputSequence % InputLogInterval == 0)
+	)
 	{
 		UE_LOG(
 			LogTemp,
@@ -2685,10 +2760,9 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 	if (
 		bHasClientPosition
 		&& (
-			bVerboseInputLogs
+			bVerboseBattleGridLogs
+			|| bVerboseInputLogs
 			|| !bDemoMode
-			|| InputSequence <= 3
-			|| InputSequence % InputLogInterval == 0
 		)
 	)
 	{
@@ -2712,7 +2786,7 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 		);
 	}
 
-	if (bFire)
+	if (bFire && (bShowAimDebug || bShowServerShotDebug || bVerboseBattleGridLogs || bVerboseInputLogs || !bDemoMode))
 	{
 		UE_LOG(
 			LogTemp,
@@ -2791,12 +2865,19 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 
 void ABattleGridClientPlayerController::ApplyDemoServerSettingsIfNeeded()
 {
-	if (!bApplyDemoServerSettingsOnJoin && !bApplySafeDemoModeOnJoin)
+	if (
+		!bApplyDemoServerSettingsOnJoin
+		&& !bApplySafeDemoModeOnJoin
+		&& !bApplyDemoPresetOnJoin
+	)
 	{
 		bDemoServerSettingsAppliedForJoin = false;
 		bSafeDemoModeAppliedForJoin = false;
+		bDemoPresetAppliedForJoin = false;
 		LastDemoSettingsPlayerId = 0;
 		LastSafeDemoModePlayerId = 0;
+		LastDemoPresetPlayerId = 0;
+		bLoggedDemoPresetConflictWarning = false;
 		return;
 	}
 
@@ -2812,8 +2893,10 @@ void ABattleGridClientPlayerController::ApplyDemoServerSettingsIfNeeded()
 	{
 		bDemoServerSettingsAppliedForJoin = false;
 		bSafeDemoModeAppliedForJoin = false;
+		bDemoPresetAppliedForJoin = false;
 		LastDemoSettingsPlayerId = 0;
 		LastSafeDemoModePlayerId = 0;
+		LastDemoPresetPlayerId = 0;
 		return;
 	}
 
@@ -2822,6 +2905,42 @@ void ABattleGridClientPlayerController::ApplyDemoServerSettingsIfNeeded()
 	{
 		return;
 	}
+
+	if (bApplyDemoPresetOnJoin)
+	{
+		if ((bApplySafeDemoModeOnJoin || bApplyDemoServerSettingsOnJoin) && !bLoggedDemoPresetConflictWarning)
+		{
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("[BattleGrid] Both legacy demo-on-join and DemoPresetOnJoin enabled; using DemoPresetOnJoin.")
+			);
+			bLoggedDemoPresetConflictWarning = true;
+		}
+
+		if (
+			!bDemoPresetAppliedForJoin
+			|| LastDemoPresetPlayerId != CurrentServerPlayerId
+		)
+		{
+			const FString PresetToSend = DemoPresetOnJoin.IsEmpty()
+				? FString(TEXT("safe_visual"))
+				: DemoPresetOnJoin.ToLower();
+			UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Applying demo preset on join: %s"), *PresetToSend);
+			NetworkSubsystem->SendDebugApplyDemoPreset(PresetToSend);
+			bDemoPresetAppliedForJoin = true;
+			LastDemoPresetPlayerId = CurrentServerPlayerId;
+		}
+
+		bSafeDemoModeAppliedForJoin = true;
+		bDemoServerSettingsAppliedForJoin = true;
+		LastSafeDemoModePlayerId = CurrentServerPlayerId;
+		LastDemoSettingsPlayerId = CurrentServerPlayerId;
+		return;
+	}
+
+	bDemoPresetAppliedForJoin = false;
+	LastDemoPresetPlayerId = 0;
 
 	if (bApplySafeDemoModeOnJoin)
 	{

@@ -14,7 +14,7 @@ The BattleGrid server is a C++20 CMake application that accepts WebSocket JSON c
 - `MessageDispatcher`: handles parsed JSON messages and mutates session/room state.
 - `RoomManager`: owns the fixed default Room 1.
 - `GameRoom`: thread-safe state container and simulation for Room 1.
-- `MatchState`: current match timer, kill goal, game-over flag, winner, and match ID.
+- `MatchState`: current match timer, kill goal, state, game-over flag, winner score/kills, draw/no-winner flags, match-ended event guard, and match ID.
 - `CombatEvent`: compact recent server event for kill feed and demo feedback.
 - `PlayerState`: player identity, nickname, connected flag, latest input, position, speed, HP, score, and processed fire sequence.
 - `PlayerInput`: latest input packet fields.
@@ -256,13 +256,24 @@ Winner selection:
 4. Fewer deaths.
 5. Lower player ID.
 
-If a timer-ended match has no connected player with any kill score, the server ends with `winner_player_id=0` and emits `Match ended. No winner` instead of inventing a winner from a zero-score scoreboard.
+If a match ends with no connected player holding a nonzero kill-race score, the server ends with `winner_player_id=0`, `winner_score=0`, `is_draw=true`, and `no_winner=true`, then emits `Match ended. Draw` instead of inventing `Winner: P0`.
 
 Snapshots include a `match` object and a sorted `scoreboard` array. The scoreboard is sorted by the same tie breaker rules, so clients can show a concise top-player list without recomputing rank order.
 
 `debug_restart_match` is available for browser and demo testing. It resets match state, player scores and combat counters, projectiles, legacy targets, bots, and health packs, then increments `matchId`. It is not a production rematch/lobby system.
 
 Debug restart preserves current demo settings such as bot difficulty, bot attacks enabled, and timer auto-end.
+
+Named demo presets are available through `debug_apply_demo_preset`:
+
+- `safe_visual`: easy, bot attacks off, timer auto-end off, reset players/bots/health packs/projectiles.
+- `combat_demo`: easy, bot attacks on, timer auto-end off, reset players/bots/health packs/projectiles.
+- `match_demo`: normal, bot attacks on, timer auto-end on, reset players/bots/health packs/projectiles.
+- `debug_visual`: easy, bot attacks off, timer auto-end off, reset for bounds/ghost/visual inspection.
+
+`debug_room` and snapshots expose `current_demo_preset`. Manual debug changes to bot attacks, difficulty, or match timer mark the preset as `custom`.
+
+For final demo recordings, verbose server flags default to false: `verbose_input_logs`, `verbose_hitscan_candidate_logs`, `verbose_bot_state_logs`, and `bot_shot_events_verbose`. This keeps input ticks, normal body-shot spam, candidate traces, and bot state transitions out of the terminal while preserving startup, join, preset, kill/death, health pickup, warning, and error logs.
 
 ## Combat Events
 
@@ -292,7 +303,9 @@ Events are generated when:
 - a player respawns
 - a player picks up a health pack
 - a match ends
+- a match starts
 - a match restarts
+- safe demo mode is applied
 - a processed fire input hits or misses
 
 Snapshots and `debug_room` include the recent `events` array. Unreal deduplicates by `event_id` and displays the last few messages in the existing HUD as a simple kill feed.

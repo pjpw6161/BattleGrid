@@ -118,7 +118,8 @@ MessageDispatcher::MessageDispatcher(
 )
     : sessionState(inSessionState),
       roomManager(std::move(inRoomManager)),
-      allocatePlayerId(std::move(inAllocatePlayerId))
+      allocatePlayerId(std::move(inAllocatePlayerId)),
+      bVerboseInputLogs(false)
 {
 }
 
@@ -169,6 +170,11 @@ std::string MessageDispatcher::DispatchParsedMessage(const nlohmann::json& messa
     if (*type == "debug_apply_demo_mode")
     {
         return HandleDebugApplyDemoMode();
+    }
+
+    if (*type == "debug_apply_demo_preset")
+    {
+        return HandleDebugApplyDemoPreset(message);
     }
 
     if (*type == "debug_set_bot_attacks")
@@ -317,7 +323,7 @@ std::string MessageDispatcher::HandleInput(const nlohmann::json& message)
         return JsonProtocol::Error("player not in room");
     }
 
-    if (fire || reload || sequence <= 3 || sequence % 60 == 0)
+    if (bVerboseInputLogs)
     {
         std::ostringstream logMessage;
         logMessage
@@ -391,6 +397,28 @@ std::string MessageDispatcher::HandleDebugApplyDemoMode()
 
     room->ApplySafeDemoMode();
     return JsonProtocol::DebugOk("safe demo mode applied");
+}
+
+std::string MessageDispatcher::HandleDebugApplyDemoPreset(const nlohmann::json& message)
+{
+    if (!roomManager)
+    {
+        return JsonProtocol::Error("room unavailable");
+    }
+
+    std::shared_ptr<GameRoom> room = roomManager->GetDefaultRoom();
+    if (!room)
+    {
+        return JsonProtocol::Error("room unavailable");
+    }
+
+    const std::string presetName = ReadString(message, "preset", "");
+    if (!room->ApplyDemoPreset(presetName))
+    {
+        return JsonProtocol::Error("invalid demo preset");
+    }
+
+    return JsonProtocol::DebugOk("demo preset applied: " + presetName);
 }
 
 std::string MessageDispatcher::HandleDebugSetBotAttacks(const nlohmann::json& message)

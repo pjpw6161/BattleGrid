@@ -150,6 +150,7 @@ void UBattleGridNetworkSubsystem::Connect(const FString& InServerUrl, const FStr
 	LatestHealthPackSnapshots.Empty();
 	LatestScoreboard.Empty();
 	LatestMatchSnapshot = FBattleGridServerMatchSnapshot();
+	CurrentDemoPreset.Empty();
 	RecentCombatEvents.Empty();
 	SeenCombatEventIds.Empty();
 	LastShotResultMessage.Empty();
@@ -200,6 +201,7 @@ void UBattleGridNetworkSubsystem::Disconnect()
 	LatestHealthPackSnapshots.Empty();
 	LatestScoreboard.Empty();
 	LatestMatchSnapshot = FBattleGridServerMatchSnapshot();
+	CurrentDemoPreset.Empty();
 	RecentCombatEvents.Empty();
 	SeenCombatEventIds.Empty();
 	LastShotResultMessage.Empty();
@@ -244,6 +246,18 @@ void UBattleGridNetworkSubsystem::SendDebugApplyDemoMode()
 	JsonObject->SetStringField(TEXT("type"), TEXT("debug_apply_demo_mode"));
 
 	SendJsonObject(JsonObject, TEXT("Apply safe demo mode sent"));
+}
+
+void UBattleGridNetworkSubsystem::SendDebugApplyDemoPreset(const FString& PresetName)
+{
+	TSharedRef<FJsonObject> JsonObject = MakeShared<FJsonObject>();
+	JsonObject->SetStringField(TEXT("type"), TEXT("debug_apply_demo_preset"));
+	JsonObject->SetStringField(
+		TEXT("preset"),
+		PresetName.IsEmpty() ? FString(TEXT("safe_visual")) : PresetName
+	);
+
+	SendJsonObject(JsonObject, TEXT("Apply demo preset sent"));
 }
 
 void UBattleGridNetworkSubsystem::SendDebugSetBotAttacks(bool bEnabled)
@@ -340,12 +354,7 @@ void UBattleGridNetworkSubsystem::SendInput(
 	if (SendJsonObject(JsonObject, nullptr))
 	{
 		++InputSendLogCounter;
-		const int32 EffectiveInputLogInterval = FMath::Max(1, InputAckLogInterval);
-		if (
-			bVerboseInputLogs
-			|| InputSendLogCounter <= 3
-			|| InputSendLogCounter % EffectiveInputLogInterval == 0
-		)
+		if (bVerboseInputLogs)
 		{
 			UE_LOG(
 				LogTemp,
@@ -484,20 +493,83 @@ FString UBattleGridNetworkSubsystem::GetServerMatchStatusText() const
 
 	if (LatestMatchSnapshot.bGameOver)
 	{
-		const FString WinnerText = LatestMatchSnapshot.WinnerNickname.IsEmpty()
-			? FString::Printf(TEXT("P%d"), LatestMatchSnapshot.WinnerPlayerId)
-			: LatestMatchSnapshot.WinnerNickname;
-		return FString::Printf(TEXT("SERVER GAME OVER | Winner: %s"), *WinnerText);
+		return GetGameOverText().Replace(TEXT("\n"), TEXT(" | "));
+	}
+
+	const FString StateText = LatestMatchSnapshot.State.Equals(TEXT("waiting"), ESearchCase::IgnoreCase)
+		? FString(TEXT("Waiting"))
+		: (LatestMatchSnapshot.State.Equals(TEXT("countdown"), ESearchCase::IgnoreCase)
+			? FString(TEXT("Starting"))
+			: FString(TEXT("In Progress")));
+	const int32 TotalSeconds = FMath::Max(0, FMath::RoundToInt(LatestMatchSnapshot.TimeLeft));
+	const int32 Minutes = TotalSeconds / 60;
+	const int32 Seconds = TotalSeconds % 60;
+	return FString::Printf(
+		TEXT("Match %02d:%02d | Kill Goal %d | %s"),
+		Minutes,
+		Seconds,
+		LatestMatchSnapshot.TargetScore,
+		*StateText
+	);
+}
+
+bool UBattleGridNetworkSubsystem::IsMatchGameOver() const
+{
+	return bHasMatchSnapshot && LatestMatchSnapshot.bGameOver;
+}
+
+FString UBattleGridNetworkSubsystem::GetMatchStatusText() const
+{
+	if (!bIsConnected || !bHasJoined || !bHasMatchSnapshot)
+	{
+		return TEXT("Waiting for match...");
+	}
+
+	if (LatestMatchSnapshot.bGameOver)
+	{
+		return GetGameOverText();
+	}
+
+	if (LatestMatchSnapshot.State.Equals(TEXT("waiting"), ESearchCase::IgnoreCase))
+	{
+		return TEXT("Waiting for match...");
+	}
+
+	if (LatestMatchSnapshot.State.Equals(TEXT("countdown"), ESearchCase::IgnoreCase))
+	{
+		return TEXT("Match starting...");
 	}
 
 	const int32 TotalSeconds = FMath::Max(0, FMath::RoundToInt(LatestMatchSnapshot.TimeLeft));
 	const int32 Minutes = TotalSeconds / 60;
 	const int32 Seconds = TotalSeconds % 60;
+	return FString::Printf(TEXT("Match %02d:%02d"), Minutes, Seconds);
+}
+
+FString UBattleGridNetworkSubsystem::GetGameOverText() const
+{
+	if (!bHasMatchSnapshot || !LatestMatchSnapshot.bGameOver)
+	{
+		return FString();
+	}
+
+	if (
+		LatestMatchSnapshot.bNoWinner
+		|| LatestMatchSnapshot.bIsDraw
+		|| LatestMatchSnapshot.WinnerPlayerId <= 0
+		|| LatestMatchSnapshot.WinnerScore <= 0
+	)
+	{
+		return TEXT("GAME OVER\nDraw");
+	}
+
+	const FString WinnerText = LatestMatchSnapshot.WinnerNickname.IsEmpty()
+		? FString::Printf(TEXT("P%d"), LatestMatchSnapshot.WinnerPlayerId)
+		: LatestMatchSnapshot.WinnerNickname;
 	return FString::Printf(
-		TEXT("Match %02d:%02d | Kill Goal %d | In Progress"),
-		Minutes,
-		Seconds,
-		LatestMatchSnapshot.TargetScore
+		TEXT("GAME OVER\nWinner: %s\nScore: %d"),
+		*WinnerText,
+		LatestMatchSnapshot.WinnerScore
 	);
 }
 
@@ -641,6 +713,16 @@ FString UBattleGridNetworkSubsystem::GetGameplayMatchText() const
 		return TEXT("GAME OVER");
 	}
 
+	if (LatestMatchSnapshot.State.Equals(TEXT("waiting"), ESearchCase::IgnoreCase))
+	{
+		return TEXT("Waiting");
+	}
+
+	if (LatestMatchSnapshot.State.Equals(TEXT("countdown"), ESearchCase::IgnoreCase))
+	{
+		return TEXT("Starting");
+	}
+
 	const int32 TotalSeconds = FMath::Max(0, FMath::RoundToInt(LatestMatchSnapshot.TimeLeft));
 	const int32 Minutes = TotalSeconds / 60;
 	const int32 Seconds = TotalSeconds % 60;
@@ -685,7 +767,12 @@ FString UBattleGridNetworkSubsystem::GetSmallServerStatusText() const
 		return TEXT("Server: Disconnected");
 	}
 
-	return bHasJoined ? TEXT("Connected") : TEXT("Connected | Joining...");
+	const FString PresetSuffix = CurrentDemoPreset.IsEmpty()
+		? FString()
+		: FString::Printf(TEXT(" | Preset: %s"), *CurrentDemoPreset);
+	return bHasJoined
+		? FString::Printf(TEXT("Connected%s"), *PresetSuffix)
+		: FString::Printf(TEXT("Connected | Joining%s"), *PresetSuffix);
 }
 
 FString UBattleGridNetworkSubsystem::GetDebugHudText() const
@@ -697,6 +784,10 @@ FString UBattleGridNetworkSubsystem::GetDebugHudText() const
 		RoomId,
 		LastSnapshotTick
 	));
+	if (!CurrentDemoPreset.IsEmpty())
+	{
+		Lines.Add(FString::Printf(TEXT("Preset %s"), *CurrentDemoPreset));
+	}
 
 	if (bHasMatchSnapshot)
 	{
@@ -959,14 +1050,7 @@ FString UBattleGridNetworkSubsystem::GetMatchHeaderText() const
 
 	if (LatestMatchSnapshot.bGameOver)
 	{
-		const FString WinnerText = LatestMatchSnapshot.WinnerNickname.IsEmpty()
-			? FString::Printf(TEXT("P%d"), LatestMatchSnapshot.WinnerPlayerId)
-			: LatestMatchSnapshot.WinnerNickname;
-		return FString::Printf(
-			TEXT("SERVER GAME OVER | Winner: %s | Kill Goal: %d"),
-			*WinnerText,
-			LatestMatchSnapshot.TargetScore
-		);
+		return GetGameOverText().Replace(TEXT("\n"), TEXT(" | "));
 	}
 
 	const int32 TotalSeconds = FMath::Max(0, FMath::RoundToInt(LatestMatchSnapshot.TimeLeft));
@@ -1284,10 +1368,7 @@ FString UBattleGridNetworkSubsystem::GetServerScoreboardSummaryText() const
 
 	if (LatestMatchSnapshot.bGameOver)
 	{
-		const FString WinnerText = LatestMatchSnapshot.WinnerNickname.IsEmpty()
-			? FString::Printf(TEXT("P%d"), LatestMatchSnapshot.WinnerPlayerId)
-			: LatestMatchSnapshot.WinnerNickname;
-		return FString::Printf(TEXT("SERVER GAME OVER | Winner: %s | Press Restart"), *WinnerText);
+		return GetGameOverText().Replace(TEXT("\n"), TEXT(" | "));
 	}
 
 	const int32 TotalSeconds = FMath::Max(0, FMath::RoundToInt(LatestMatchSnapshot.TimeLeft));
@@ -1508,7 +1589,10 @@ void UBattleGridNetworkSubsystem::HandleMessage(const FString& Message)
 		FString DebugMessage;
 		JsonObject->TryGetStringField(TEXT("message"), DebugMessage);
 		LastDebugMessage = DebugMessage.IsEmpty() ? FString(TEXT("debug ok")) : DebugMessage;
-		if (LastDebugMessage == TEXT("safe demo mode applied"))
+		if (
+			LastDebugMessage == TEXT("safe demo mode applied")
+			|| LastDebugMessage.StartsWith(TEXT("demo preset applied:"))
+		)
 		{
 			LastShotResultMessage.Empty();
 			LastShotResultTimestampSeconds = -1000.0;
@@ -1533,12 +1617,7 @@ void UBattleGridNetworkSubsystem::HandleMessage(const FString& Message)
 		double SequenceValue = 0.0;
 		JsonObject->TryGetNumberField(TEXT("seq"), SequenceValue);
 		++InputAckLogCounter;
-		const int32 EffectiveInputLogInterval = FMath::Max(1, InputAckLogInterval);
-		if (
-			bVerboseInputLogs
-			|| InputAckLogCounter <= 3
-			|| InputAckLogCounter % EffectiveInputLogInterval == 0
-		)
+		if (bVerboseInputLogs)
 		{
 			UE_LOG(
 				LogTemp,
@@ -1570,6 +1649,10 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 	double SnapshotRoomIdValue = 0.0;
 	JsonObject->TryGetNumberField(TEXT("tick"), SnapshotTickValue);
 	JsonObject->TryGetNumberField(TEXT("room_id"), SnapshotRoomIdValue);
+	if (!JsonObject->TryGetStringField(TEXT("current_demo_preset"), CurrentDemoPreset))
+	{
+		CurrentDemoPreset.Empty();
+	}
 
 	const int32 SnapshotTick = static_cast<int32>(SnapshotTickValue);
 	const int32 SnapshotRoomId = static_cast<int32>(SnapshotRoomIdValue);
@@ -1654,8 +1737,12 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		double DurationValue = 0.0;
 		double TargetScoreValue = 0.0;
 		double WinnerPlayerIdValue = 0.0;
+		double WinnerScoreValue = 0.0;
+		double WinnerKillsValue = 0.0;
 		double MatchIdValue = 0.0;
 		bool bGameOverValue = false;
+		bool bIsDrawValue = false;
+		bool bNoWinnerValue = false;
 
 		MatchObject->TryGetStringField(TEXT("state"), LatestMatchSnapshot.State);
 		MatchObject->TryGetNumberField(TEXT("time_left"), TimeLeftValue);
@@ -1664,6 +1751,10 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		MatchObject->TryGetBoolField(TEXT("game_over"), bGameOverValue);
 		MatchObject->TryGetNumberField(TEXT("winner_player_id"), WinnerPlayerIdValue);
 		MatchObject->TryGetStringField(TEXT("winner_nickname"), LatestMatchSnapshot.WinnerNickname);
+		MatchObject->TryGetNumberField(TEXT("winner_score"), WinnerScoreValue);
+		MatchObject->TryGetNumberField(TEXT("winner_kills"), WinnerKillsValue);
+		MatchObject->TryGetBoolField(TEXT("is_draw"), bIsDrawValue);
+		MatchObject->TryGetBoolField(TEXT("no_winner"), bNoWinnerValue);
 		MatchObject->TryGetNumberField(TEXT("match_id"), MatchIdValue);
 
 		LatestMatchSnapshot.TimeLeft = static_cast<float>(TimeLeftValue);
@@ -1671,6 +1762,10 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 		LatestMatchSnapshot.TargetScore = static_cast<int32>(TargetScoreValue);
 		LatestMatchSnapshot.bGameOver = bGameOverValue;
 		LatestMatchSnapshot.WinnerPlayerId = static_cast<int32>(WinnerPlayerIdValue);
+		LatestMatchSnapshot.WinnerScore = static_cast<int32>(WinnerScoreValue);
+		LatestMatchSnapshot.WinnerKills = static_cast<int32>(WinnerKillsValue);
+		LatestMatchSnapshot.bIsDraw = bIsDrawValue;
+		LatestMatchSnapshot.bNoWinner = bNoWinnerValue;
 		LatestMatchSnapshot.MatchId = static_cast<int32>(MatchIdValue);
 		bHasMatchSnapshot = true;
 	}

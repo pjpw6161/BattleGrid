@@ -20,14 +20,14 @@ BattleGrid is a third-person PvPvE arena shooter prototype built with an Unreal 
 ## What I Implemented
 
 - Third-person shooter controls with movement, ADS, sprint, jump, ammo, reload, and automatic fire.
-- Local Unreal prototype gameplay for movement, projectiles, hazards, targets, HP, score, and restart.
+- Local Unreal prototype gameplay for movement, projectiles, hazards, debug targets, HP, score, and restart.
 - Custom C++20 WebSocket server with sessions, join state, room state, player input, fixed tick, and snapshot broadcast.
-- Server-owned PvPvE state: players, bots, cores, health packs, projectiles/tracers, match state, scoreboard, and combat events.
-- Server hitscan combat against bots, cores, and players using body/head damage rules.
-- Safe demo/debug controls for bot difficulty, bot attacks, timer behavior, and full room reset.
+- Server-owned PvPvE state: players, humanoid shooter bots, health packs, projectiles/tracers, match state, scoreboard, and combat events.
+- Server hitscan combat against bots and players using body/head damage rules.
+- One-click demo presets for visual, combat, match-flow, and debug recording states.
 - Browser WebSocket test page for protocol validation, snapshot summaries, and server shot tests.
-- Unreal server ghost actors for SERVER ECHO, bots, cores, health packs, and projectiles.
-- Server-centric HUD with HP, score, world counts, match state, combat event feed, hit result text, and Tab scoreboard.
+- Unreal server ghost actors for SERVER ECHO, bots, health packs, projectiles, and optional legacy targets.
+- Gameplay HUD with HP, ammo, top 5 ranking, kill feed, crosshair, hit result text, death/respawn, health pickup feedback, and Tab scoreboard.
 - Local Docker deployment and documented GCP Docker deployment flow.
 
 ## Server Architecture Highlights
@@ -36,9 +36,9 @@ BattleGrid is a third-person PvPvE arena shooter prototype built with an Unreal 
 - `MessageDispatcher` parses JSON protocol messages such as `join`, `input`, `debug_room`, and demo/debug controls.
 - `RoomManager` owns the fixed Room 1 used by the prototype.
 - `GameRoom` owns authoritative room state and runs the simulation tick.
-- `PlayerState`, `BotState`, `TargetState`, `HealthPackState`, `ProjectileState`, `MatchState`, and `CombatEvent` model the current server game state.
-- Snapshots include match, scoreboard, events, players, bots, cores, health packs, projectiles, and arena layout.
-- Safe demo mode resets the server into a repeatable portfolio recording state.
+- `PlayerState`, `BotState`, `HealthPackState`, `ProjectileState`, `MatchState`, `CombatEvent`, and legacy `TargetState` model the current server/debug state.
+- Snapshots include match, scoreboard, events, players, bots, health packs, projectiles, arena layout, and empty/legacy targets for compatibility.
+- Demo presets reset the server into repeatable portfolio recording states.
 
 ## Unreal Client Highlights
 
@@ -59,7 +59,7 @@ BattleGrid is a third-person PvPvE arena shooter prototype built with an Unreal 
 
 ## Debugging And Troubleshooting Highlights
 
-- Safe demo mode prevents stale `game_over`, bot pressure, and respawn confusion during recording.
+- Demo presets prevent stale `game_over`, bot pressure, and respawn confusion during recording.
 - Raw snapshot logging is disabled by default in the browser to avoid slowdown.
 - Server shot result events distinguish authoritative hits from local projectile overlap logs.
 - SERVER ECHO origin auto-calibration aligns server arena coordinates with the local Unreal pawn.

@@ -2,6 +2,49 @@
 
 Use this checklist to run the current portfolio demo.
 
+## Final Recording Sanity Checklist
+
+Before recording:
+
+- Docker Desktop is running.
+- If server code changed, run `docker compose up -d --build battlegrid-server`.
+- Unreal builds as `BattleGridClientEditor` with `Development Editor | Win64`.
+- Browser `Log Raw Snapshots` is unchecked.
+- Unreal debug HUD is off: `bShowDebugHud=false`.
+- Controls help is off: `bShowControlsHelp=false`.
+- Server target ghosts are off: `bShowServerTargetGhosts=false`.
+- Server projectile ghosts are on: `bShowServerProjectileGhosts=true`.
+- Arena/bot bounds and shot/aim debug are off unless you are recording a debugging segment.
+- Apply `Safe Visual Demo` for a visual/HUD pass or `Combat Demo` for the main combat pass.
+
+Visual demo checklist:
+
+- Player model is visible.
+- Bot models are visible.
+- HP/ammo HUD is visible.
+- Top 5 ranking is visible.
+- Kill feed is visible.
+- Crosshair is centered.
+- SERVER ECHO is not distracting, or is hidden if the take does not need it.
+- No core/target labels appear in normal gameplay.
+
+Combat demo checklist:
+
+- Apply `Combat Demo`.
+- Confirm `bot_attacks_enabled=true`.
+- Shoot a bot and see `SERVER HIT` or `SERVER HEADSHOT`.
+- Kill a bot and verify ranking increases.
+- Let a bot damage the player.
+- Verify death/respawn message appears if the player dies.
+- Pick up a health pack and verify HP increases.
+- Verify ammo decreases, reload blocks fire, and ammo refills.
+
+After recording:
+
+- Stop the server with `docker compose down` if the demo is finished.
+- Review docs/code changes before committing.
+- Export the video or GIF artifact.
+
 ## Before Recording
 
 - Docker Desktop is running.
@@ -13,10 +56,18 @@ Use this checklist to run the current portfolio demo.
 
 - `tools/websocket-test.html` has `Log Raw Snapshots` unchecked.
 - Browser test page has a fresh connection to `ws://127.0.0.1:7777` or `ws://<GCP_EXTERNAL_IP>:7777`.
-- Click `Apply Safe Demo Mode`.
+- Prefer one-click presets before manual debug buttons:
+  - `Apply Safe Visual Demo`: visual/model/HUD pass, bot attacks off.
+  - `Apply Combat Demo`: playable bot combat pass, bot attacks on, timer off.
+  - `Apply Match Demo`: match-flow pass, bot attacks on, timer on.
+  - `Apply Debug Visual Demo`: bounds/ghost inspection pass, bot attacks off.
+- Click `Apply Safe Visual Demo` for a clean visual take, or `Apply Combat Demo` for a combat take.
 - Click `Send Debug Room` and confirm:
+  - `current_demo_preset=safe_visual` when using Safe Demo Mode or Safe Visual Demo.
   - `match.state=in_progress`
   - `game_over=false`
+  - `winner_player_id=0`
+  - `no_winner=false`
   - `bot_attacks_enabled=false`
   - `bot_difficulty=easy`
   - `auto_end_match_by_timer=false`
@@ -28,7 +79,10 @@ Use this checklist to run the current portfolio demo.
 - `bot_attacks_enabled=false` means bots still move but do not shoot players.
 - Active Unreal PlayerController Blueprint defaults:
   - `bUseRemoteServer=false` for a local Docker demo.
-  - `bApplySafeDemoModeOnJoin=true`.
+  - `bApplySafeDemoModeOnJoin=false`.
+  - `bApplyDemoPresetOnJoin=true` and `DemoPresetOnJoin=safe_visual` for visual recordings.
+  - Use `DemoPresetOnJoin=combat_demo` for combat recordings and `DemoPresetOnJoin=match_demo` for match-ending tests.
+  - If both preset-on-join and legacy safe-demo-on-join are enabled, the preset path wins.
   - `bUseServerAuthoritativeHud=true`.
   - `bUseGameplayHudLayout=true`.
   - `bShowDebugHud=false`.
@@ -39,6 +93,7 @@ Use this checklist to run the current portfolio demo.
   - `bShowTopFiveRanking=true`.
   - `bShowKillFeed=true`.
   - `bShowHealthPackPickupMessages=true`.
+  - `bAutoShowScoreboardOnGameOver=false` unless you specifically want Tab scoreboard to open automatically at match end.
   - `bUseServerPositionCorrection=false`.
   - `bUseGentleServerPositionCorrection=false` unless you are testing optional smoothing.
   - `bDrawServerArenaBounds=false` for recording; enable only while verifying invisible-wall/correction issues.
@@ -56,6 +111,12 @@ Use this checklist to run the current portfolio demo.
   - `ServerPlayerGhostZOffset=0`.
   - `bUseLocalPawnZForOwnServerGhost=false` unless you are debugging server Z lag.
   - `bShowServerProjectileGhosts=true`.
+  - `bShowServerTargetGhosts=false`.
+  - `bShowAimDebug=false`.
+  - `bShowServerShotDebug=false`.
+  - `bShowProjectileGhostDebug=false`.
+  - `bVerboseBattleGridLogs=false`.
+  - `bVerboseNetworkLogs=false`, `bVerboseSnapshotLogs=false`, and `bVerboseInputLogs=false`.
   - `bUseServerAuthoritativeFireVisuals=true`.
   - `bSpawnLegacyLocalProjectileWhenConnected=false`.
   - `bAllowLegacyLocalProjectileDamageWhenConnected=false`.
@@ -95,6 +156,7 @@ Use this checklist to run the current portfolio demo.
 ## During Recording
 
 - Show the browser test page applying safe demo mode.
+- For a combat take, use `Apply Combat Demo` instead of manually pressing Safe Demo Mode, Enable Bot Attacks, Bot Difficulty Easy, and Disable Match Timer.
 - Show `Fire 5 Shots At Nearest Bot` and verify `SERVER HIT` / bot HP changes.
 - Show Unreal connected with `Profile: Local` or `Profile: Remote`.
 - Show SERVER ECHO, bot ghosts, and HPACK ghosts. If debugging bot placement, briefly enable `bDrawServerBotAreaBounds` and verify bots are inside the green bot-area rectangle.
@@ -116,7 +178,33 @@ Use this checklist to run the current portfolio demo.
 - Stand on any available ramp or raised platform and verify SERVER ECHO height follows.
 - If SERVER ECHO is visibly offset from the local pawn, shoot a clearly selected bot and verify the server log uses `Fire origin ... source=client`.
 - Hold Tab to show the server scoreboard.
+- Match flow pass: if testing match end, enable the match timer or reach the kill goal, then verify the center HUD shows `GAME OVER` with either a real winner and score or `Draw`. It should never show `Winner: P0`.
+- Click `Debug Restart Match` or a demo preset button and verify `match_id` increments, `game_over=false`, and ranking/scores reset.
 - Mention that connected PvPvE fire feedback is server-authoritative: server tracer ghosts plus `SERVER HIT` / `SERVER MISS`. The old local sphere projectile is kept for offline testing only.
+
+## One-Click Preset Flows
+
+Visual demo:
+
+1. Start the server.
+2. Open Unreal.
+3. Click `Apply Safe Visual Demo` in the browser test page, or use `DemoPresetOnJoin=safe_visual`.
+4. Verify HUD, humanoid models, ghost actors, health packs, crosshair, and labels with bot attacks off.
+
+Combat demo:
+
+1. Start the server.
+2. Click `Apply Combat Demo`.
+3. Verify `bot_attacks_enabled=true`, `bot_difficulty=easy`, and `auto_end_match_by_timer=false`.
+4. Kill a bot and verify ranking/kill feed.
+5. Let a bot damage the player, then pick up a health pack and verify HP feedback.
+
+Match demo:
+
+1. Click `Apply Match Demo`.
+2. Verify `bot_attacks_enabled=true`, `bot_difficulty=normal`, and `auto_end_match_by_timer=true`.
+3. Kill bots or let the timer/game-over path run.
+4. Verify final winner/draw HUD text and no `Winner: P0`.
 
 ## After Recording
 
@@ -142,9 +230,9 @@ Use this checklist to run the current portfolio demo.
 2. Open `tools/websocket-test.html`.
 3. Connect to `ws://<GCP_EXTERNAL_IP>:7777`.
 4. Click `Send Join`.
-5. Click `Apply Safe Demo Mode`.
+5. Click `Apply Safe Visual Demo`.
 6. Click `Send Debug Room`.
-7. Confirm the browser output shows `match.state=in_progress`, `game_over=false`, `bot_attacks_enabled=false`, `bot_difficulty=easy`, `auto_end_match_by_timer=false`, `targets_enabled=false`, `bots=8`, and `health_packs=3`.
+7. Confirm the browser output shows `current_demo_preset=safe_visual`, `match.state=in_progress`, `game_over=false`, `bot_attacks_enabled=false`, `bot_difficulty=easy`, `auto_end_match_by_timer=false`, `targets_enabled=false`, `bots=8`, and `health_packs=3`.
 8. Keep `Log Raw Snapshots` unchecked so the page shows compact summaries without freezing.
 9. Click `Fire 5 Shots At Nearest Bot` and verify BOT HP decreases or a bot kill event appears.
 10. Open Unreal Editor.
@@ -207,7 +295,7 @@ Use this checklist to run the current portfolio demo.
 5. Connect to `ws://127.0.0.1:7777`.
 6. Click `Send Ping` and verify `pong`.
 7. Click `Send Join` and verify `join_ok`.
-8. Click `Apply Safe Demo Mode`.
+8. Click `Apply Safe Visual Demo`.
 9. Click `Send Debug Room` and verify Room 1, player state, bots, health packs, and `targets_enabled=false`.
 10. Confirm `match.state=in_progress`, `game_over=false`, `bot_attacks_enabled=false`, `bot_difficulty=easy`, and `auto_end_match_by_timer=false`.
 11. Confirm `use_client_fire_origin_for_hitscan=true`, `client_fire_origin_warning_distance=300`, and `max_accepted_client_fire_origin_distance=2000`.
@@ -242,7 +330,7 @@ Use this checklist to run the current portfolio demo.
 4. Click `Connect`.
 5. Click `Send Ping` and verify `pong`.
 6. Click `Send Join` and verify `join_ok`.
-7. Click `Apply Safe Demo Mode`.
+7. Click `Apply Safe Visual Demo`.
 8. Click `Send Debug Room` and verify Room 1, player state, bots, health packs, and `targets_enabled=false`.
 9. Verify the arena bounds and server entity positions from snapshots match `docs/arena-layout.md`.
 
@@ -381,16 +469,26 @@ Use this checklist to run the current portfolio demo.
    - health pack ghosts appear near outer lanes
 45. Switch from local mode to remote mode and show the HUD profile label changing.
 46. Show server ghosts driven by the remote GCP server.
-47. Hold Tab and verify the detailed server scoreboard overlay appears. It should also show automatically when the server match is `game_over`.
+47. Hold Tab and verify the detailed server scoreboard overlay appears. On `game_over`, the center result message and top-right final ranking remain visible; scoreboard auto-open only happens if `bAutoShowScoreboardOnGameOver=true`.
 48. Toggle optional server position correction in the PlayerController Blueprint defaults if needed, then compare error behavior.
 49. Stop the server and verify local offline gameplay still works.
 
-## Victory And Restart
+## Server Match End And Restart
 
-1. Place enough local damageable targets for the configured local `TargetScore`.
-2. Destroy local targets.
-3. Verify local victory message.
-4. Press R to restart the level.
+1. Apply `Safe Visual Demo`, `Combat Demo`, or `Match Demo` and verify the server starts in `in_progress` or the configured countdown flow.
+2. Kill a bot and verify the ranking score increases from kill-race kills only.
+3. If testing timer game-over, enable the match timer and wait for the timer to expire, or temporarily reduce the duration in code for a local test.
+4. Verify the HUD shows `GAME OVER` with either `Winner: player*` / `Score: N` or `Draw`.
+5. Verify no client or browser summary displays `Winner: P0`.
+6. Click `Debug Restart Match` and verify `match_id` increments, `game_over=false`, `winner_player_id=0`, scores reset, and a `match_restarted` / `match_started` event appears.
+
+## Legacy Local Victory And Restart
+
+1. Use offline/local test mode only.
+2. Place enough local damageable targets for the configured local `TargetScore`.
+3. Destroy local targets.
+4. Verify local victory message.
+5. Press R to restart the level.
 
 ## Demo Talking Points
 

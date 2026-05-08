@@ -34,6 +34,7 @@ public:
 		bool bHasServerOwnPlayerSnapshot,
 		bool bServerInvincible,
 		bool bServerGameOver,
+		const FString& ServerGameOverText,
 		bool bUseServerAuthoritativeHud,
 		bool bShowLocalDebugHud,
 		bool bShowCombatEventFeed,

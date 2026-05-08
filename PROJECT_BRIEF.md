@@ -31,7 +31,7 @@ Third-person PvPvE arena shooter.
 The current project is a hybrid local/server portfolio prototype:
 
 - Unreal provides playable third-person movement, local feedback, weapon state, HUD, and prototype visuals.
-- The C++ server owns the PvPvE state layer: players, bots, cores, health packs, hitscan combat, score, match state, scoreboard, and combat events.
+- The C++ server owns the PvPvE state layer: players, humanoid shooter bots, health packs, hitscan combat, score, match state, scoreboard, and combat events.
 - Unreal renders server snapshots through ghost actors so authoritative state remains visible and debuggable.
 
 The server-authoritative layer is the main demo focus. The local Unreal gameplay layer remains available for offline fallback and incremental feature development.
@@ -45,7 +45,7 @@ The server-authoritative layer is the main demo focus. The local Unreal gameplay
 - UMG HUD with server-centric status.
 - WebSocket connection through a `UGameInstanceSubsystem`.
 - JSON message sending and snapshot parsing.
-- Server player, projectile, core, bot, and health pack ghost visualization.
+- Server player, projectile/tracer, bot, health pack, and optional legacy target ghost visualization.
 - Server shot result display and combat event feed.
 - Server scoreboard overlay.
 - Local/remote server profile selection.
@@ -64,11 +64,11 @@ The server-authoritative layer is the main demo focus. The local Unreal gameplay
 - Server projectile/tracer spawn and lifetime.
 - Server hitscan combat with body/head damage.
 - Server bots with simple movement, attack, death, respawn, and invincibility.
-- Fixed server cores with HP.
+- Legacy server targets/cores retained only for debug/offline comparison.
 - Server health packs with pickup and respawn.
 - Server score, match timer, winner, and scoreboard.
 - Recent combat event queue and snapshot broadcast.
-- Safe demo/debug controls.
+- One-click demo presets and debug controls.
 
 ## Technology Stack
 
@@ -102,10 +102,10 @@ Deployment and tooling:
 - Local weapon state with ammo, reload, automatic fire, and spread configuration.
 - WebSocket JSON server and protocol.
 - Join/input/snapshot/debug protocol messages.
-- Server-side room, players, bots, cores, health packs, projectiles/tracers, match state, scoreboard, and combat events.
-- Server hitscan combat against bots, cores, and players.
+- Server-side room, players, bots, health packs, projectiles/tracers, match state, scoreboard, and combat events.
+- Server hitscan combat against bots and players.
 - Bot kill/respawn and score updates.
-- Safe demo mode for stable recording.
+- One-click demo presets for stable recording.
 - Browser protocol test page with compact summaries and server shot tests.
 - Unreal visualization of server state through ghost actors.
 - Server-centric HUD and Tab scoreboard.

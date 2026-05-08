@@ -96,6 +96,8 @@ public:
 	FString GetLastDeathCauseText() const;
 	FString GetServerLifeStateText() const;
 	FString GetServerDeathRespawnHudText() const;
+	FString GetMatchGameOverHudText() const;
+	bool IsMatchAcceptingCombatInput() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputMappingContext> BattleGridMappingContext;
@@ -217,6 +219,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
 	bool bDemoMode;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Debug")
+	bool bVerboseBattleGridLogs;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
 	bool bVerboseNetworkLogs;
 
@@ -239,6 +244,12 @@ public:
 	bool bApplySafeDemoModeOnJoin;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
+	bool bApplyDemoPresetOnJoin;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
+	FString DemoPresetOnJoin;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
 	bool bDemoBotAttacksEnabled;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Demo")
@@ -249,6 +260,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
 	bool bScoreboardToggleMode;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
+	bool bAutoShowScoreboardOnGameOver;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
 	bool bUseServerAuthoritativeHud;
@@ -523,8 +537,11 @@ private:
 	bool bScoreboardVisible;
 	bool bDemoServerSettingsAppliedForJoin;
 	bool bSafeDemoModeAppliedForJoin;
+	bool bDemoPresetAppliedForJoin;
+	bool bLoggedDemoPresetConflictWarning;
 	int32 LastDemoSettingsPlayerId;
 	int32 LastSafeDemoModePlayerId;
+	int32 LastDemoPresetPlayerId;
 	int32 ShotSequence;
 	FVector2D LastShotDirectionServer;
 	float LastShotDirectionServerZ;
