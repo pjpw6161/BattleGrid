@@ -6,8 +6,10 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Animation/AnimationAsset.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
+#include "DrawDebugHelpers.h"
 #include "UObject/ConstructorHelpers.h"
 
 ABattleGridServerBotGhostActor::ABattleGridServerBotGhostActor()
@@ -25,21 +27,48 @@ ABattleGridServerBotGhostActor::ABattleGridServerBotGhostActor()
 	BotWeaponRelativeRotation = FRotator::ZeroRotator;
 	BotWeaponRelativeScale = FVector(1.0f, 1.0f, 1.0f);
 	MuzzleSocketName = TEXT("Muzzle");
-	MuzzleFallbackOffset = FVector(80.0f, 20.0f, 100.0f);
+	MuzzleFallbackOffset = FVector(100.0f, 25.0f, 100.0f);
+	bShowMuzzleDebug = false;
+	MuzzleDebugSphereRadius = 8.0f;
 	HumanoidAliveScale = 1.0f;
 	HumanoidDeadScale = 0.35f;
 	HumanoidLabelHeight = 190.0f;
+	HumanoidMeshRelativeLocation = FVector::ZeroVector;
+	HumanoidMeshRelativeRotation = FRotator::ZeroRotator;
+	HumanoidMeshRelativeScale3D = FVector(1.0f, 1.0f, 1.0f);
+	bFaceMovementDirection = true;
+	bUseServerYawWhenNotMoving = true;
+	RotationInterpSpeed = 12.0f;
+	MovementFacingThreshold = 5.0f;
+	MeshForwardYawOffset = 0.0f;
+	bUseSimpleBotAnimationPlayback = false;
+	BotIdleAnimation = nullptr;
+	BotRunAnimation = nullptr;
+	BotDeathAnimation = nullptr;
+	BotRunSpeedThreshold = 20.0f;
+	bShowServerHitVolumes = false;
+	DebugHeadSphereRadius = 45.0f;
+	DebugBodySphereRadius = 90.0f;
+	DebugBodyHeight = 90.0f;
+	DebugHeadHeight = 160.0f;
 	BotId = 0;
 	TargetLocation = FVector::ZeroVector;
-	TargetYaw = 0.0f;
+	TargetActorYaw = 0.0f;
+	ConvertedServerYaw = 0.0f;
 	HP = 100;
 	MaxHP = 100;
 	bAlive = true;
 	bInvincible = false;
 	DefaultMaterial = nullptr;
 	bLoggedMissingWeaponSocketWarning = false;
+	bLoggedMissingMuzzleSocketWarning = false;
 	bLoggedWeaponAttachment = false;
 	bLoggedSkeletalMaterialPreservation = false;
+	bLoggedMovementFacing = false;
+	PreviousWorldLocation = FVector::ZeroVector;
+	bHasPreviousWorldLocation = false;
+	VisualSpeed = 0.0f;
+	CurrentAnimationState = TEXT("");
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
@@ -87,6 +116,9 @@ void ABattleGridServerBotGhostActor::BeginPlay()
 	{
 		DefaultMaterial = MeshComponent->GetMaterial(0);
 	}
+
+	PreviousWorldLocation = GetActorLocation();
+	bHasPreviousWorldLocation = true;
 }
 
 void ABattleGridServerBotGhostActor::Tick(float DeltaSeconds)
@@ -101,28 +133,129 @@ void ABattleGridServerBotGhostActor::Tick(float DeltaSeconds)
 	);
 	SetActorLocation(NewLocation);
 
-	const FRotator TargetRotation(0.0f, TargetYaw, 0.0f);
+	FVector MovementDelta = FVector::ZeroVector;
+	if (bHasPreviousWorldLocation)
+	{
+		MovementDelta = NewLocation - PreviousWorldLocation;
+		MovementDelta.Z = 0.0f;
+	}
+
+	if (DeltaSeconds > KINDA_SMALL_NUMBER && bHasPreviousWorldLocation)
+	{
+		VisualSpeed = MovementDelta.Size() / DeltaSeconds;
+	}
+	else
+	{
+		VisualSpeed = 0.0f;
+	}
+	PreviousWorldLocation = NewLocation;
+	bHasPreviousWorldLocation = true;
+
+	float DesiredYaw = GetActorRotation().Yaw;
+	if (bFaceMovementDirection && MovementDelta.Size() > MovementFacingThreshold)
+	{
+		DesiredYaw = MovementDelta.Rotation().Yaw;
+		if (!bLoggedMovementFacing)
+		{
+			UE_LOG(
+				LogTemp,
+				Log,
+				TEXT("[BattleGrid] Bot visual facing movement yaw=%.2f"),
+				DesiredYaw
+			);
+			bLoggedMovementFacing = true;
+		}
+	}
+	else if (bUseServerYawWhenNotMoving)
+	{
+		DesiredYaw = TargetActorYaw;
+	}
+
+	const FRotator TargetRotation(0.0f, DesiredYaw, 0.0f);
 	SetActorRotation(FMath::RInterpTo(
 		GetActorRotation(),
 		TargetRotation,
 		DeltaSeconds,
-		InterpSpeed
+		RotationInterpSpeed
 	));
+
+	UpdateSimpleAnimationPlayback(DeltaSeconds);
+
+	if (bShowMuzzleDebug)
+	{
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+		const FVector MuzzleLocation = GetApproximateMuzzleWorldLocation();
+		DrawDebugSphere(
+			GetWorld(),
+			MuzzleLocation,
+			MuzzleDebugSphereRadius,
+			12,
+			FColor::Orange,
+			false,
+			0.0f
+		);
+		DrawDebugLine(
+			GetWorld(),
+			MuzzleLocation,
+			MuzzleLocation + (GetActorForwardVector() * 120.0f),
+			FColor::Orange,
+			false,
+			0.0f,
+			0,
+			1.5f
+		);
+#endif
+	}
+
+	if (bShowServerHitVolumes)
+	{
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+		const FVector BaseLocation = GetActorLocation();
+		DrawDebugSphere(
+			GetWorld(),
+			BaseLocation + FVector(0.0f, 0.0f, DebugBodyHeight),
+			DebugBodySphereRadius,
+			16,
+			FColor::Cyan,
+			false,
+			0.0f,
+			0,
+			1.0f
+		);
+		DrawDebugSphere(
+			GetWorld(),
+			BaseLocation + FVector(0.0f, 0.0f, DebugHeadHeight),
+			DebugHeadSphereRadius,
+			16,
+			FColor::Magenta,
+			false,
+			0.0f,
+			0,
+			1.5f
+		);
+#endif
+	}
 }
 
 void ABattleGridServerBotGhostActor::SetSnapshotData(
 	const FBattleGridServerBotSnapshot& Snapshot,
-	const FVector& WorldLocation
+	const FVector& WorldLocation,
+	float ConvertedServerYawDegrees
 )
 {
 	BotId = Snapshot.BotId;
 	Name = Snapshot.Name;
 	TargetLocation = WorldLocation;
-	TargetYaw = Snapshot.Yaw;
+	ConvertedServerYaw = ConvertedServerYawDegrees;
+	TargetActorYaw = ConvertedServerYaw;
 	HP = Snapshot.HP;
 	MaxHP = Snapshot.MaxHP;
 	bAlive = Snapshot.bAlive;
 	bInvincible = Snapshot.bInvincible;
+	DebugBodySphereRadius = Snapshot.BodyRadius;
+	DebugHeadSphereRadius = Snapshot.HeadRadius;
+	DebugBodyHeight = Snapshot.BodyHeight;
+	DebugHeadHeight = Snapshot.HeadHeight;
 
 	ApplyVisualState(bAlive, bInvincible);
 
@@ -176,6 +309,37 @@ FVector ABattleGridServerBotGhostActor::GetApproximateMuzzleWorldLocation() cons
 	)
 	{
 		return SkeletalMeshComponent->GetSocketLocation(MuzzleSocketName);
+	}
+
+	if (
+		bUseSkeletalMeshVisual
+		&& SkeletalMeshComponent
+		&& SkeletalMeshComponent->GetSkeletalMeshAsset()
+	)
+	{
+		if (bShowMuzzleDebug && MuzzleSocketName != NAME_None && !bLoggedMissingMuzzleSocketWarning)
+		{
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("[BattleGrid] Bot muzzle socket %s not found. Using skeletal muzzle fallback offset."),
+				*MuzzleSocketName.ToString()
+			);
+			bLoggedMissingMuzzleSocketWarning = true;
+		}
+
+		return SkeletalMeshComponent->GetComponentTransform().TransformPosition(MuzzleFallbackOffset);
+	}
+
+	if (bShowMuzzleDebug && MuzzleSocketName != NAME_None && !bLoggedMissingMuzzleSocketWarning)
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("[BattleGrid] Bot muzzle socket %s not found. Using actor muzzle fallback offset."),
+			*MuzzleSocketName.ToString()
+		);
+		bLoggedMissingMuzzleSocketWarning = true;
 	}
 
 	return GetActorTransform().TransformPosition(MuzzleFallbackOffset);
@@ -232,7 +396,7 @@ void ABattleGridServerBotGhostActor::ApplyVisualState(bool bIsAlive, bool bIsInv
 	{
 		SkeletalMeshComponent->SetHiddenInGame(!bCanUseSkeletalVisual);
 		SkeletalMeshComponent->SetVisibility(bCanUseSkeletalVisual);
-		SkeletalMeshComponent->SetRelativeScale3D(FVector(DesiredHumanoidScale));
+		ApplyHumanoidMeshTransform(DesiredHumanoidScale);
 		if (bCanUseSkeletalVisual && !bLoggedSkeletalMaterialPreservation)
 		{
 			UE_LOG(
@@ -254,6 +418,66 @@ void ABattleGridServerBotGhostActor::ApplyVisualState(bool bIsAlive, bool bIsInv
 	}
 
 	AttachWeaponToSkeletalMesh();
+}
+
+void ABattleGridServerBotGhostActor::ApplyHumanoidMeshTransform(float StateScale)
+{
+	if (!SkeletalMeshComponent)
+	{
+		return;
+	}
+
+	SkeletalMeshComponent->SetRelativeLocation(HumanoidMeshRelativeLocation);
+	FRotator FinalRelativeRotation = HumanoidMeshRelativeRotation;
+	FinalRelativeRotation.Yaw += MeshForwardYawOffset;
+	SkeletalMeshComponent->SetRelativeRotation(FinalRelativeRotation);
+	SkeletalMeshComponent->SetRelativeScale3D(HumanoidMeshRelativeScale3D * StateScale);
+}
+
+void ABattleGridServerBotGhostActor::UpdateSimpleAnimationPlayback(float DeltaSeconds)
+{
+	static_cast<void>(DeltaSeconds);
+
+	const bool bCanUseSkeletalVisual =
+		bUseSkeletalMeshVisual
+		&& SkeletalMeshComponent
+		&& SkeletalMeshComponent->GetSkeletalMeshAsset();
+	if (!bCanUseSkeletalVisual || !bUseSimpleBotAnimationPlayback)
+	{
+		return;
+	}
+
+	FString DesiredState;
+	UAnimationAsset* DesiredAnimation = nullptr;
+	bool bLoopAnimation = true;
+
+	if (!bAlive)
+	{
+		DesiredState = TEXT("Dead");
+		DesiredAnimation = BotDeathAnimation.Get();
+		bLoopAnimation = false;
+	}
+	else if (VisualSpeed > BotRunSpeedThreshold)
+	{
+		DesiredState = TEXT("Run");
+		DesiredAnimation = BotRunAnimation.Get();
+	}
+	else
+	{
+		DesiredState = TEXT("Idle");
+		DesiredAnimation = BotIdleAnimation.Get();
+	}
+
+	if (CurrentAnimationState == DesiredState)
+	{
+		return;
+	}
+
+	CurrentAnimationState = DesiredState;
+	if (DesiredAnimation)
+	{
+		SkeletalMeshComponent->PlayAnimation(DesiredAnimation, bLoopAnimation);
+	}
 }
 
 void ABattleGridServerBotGhostActor::AttachWeaponToSkeletalMesh()

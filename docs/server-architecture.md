@@ -55,11 +55,23 @@ room_id = 1
 Arena bounds:
 
 ```text
-x = -1800..1800
-y = -1200..1200
+x = -5000..5000
+y = -5000..5000
+player z = -1000..5000
 ```
 
-These bounds are used by player movement, bot movement, bot wander target generation, and projectile expiry.
+These wide bounds keep the demo player state from clamping before the visible Unreal map does. They are used by fallback input-driven player movement and projectile expiry.
+
+Bot demo area bounds:
+
+```text
+x = -1500..1500
+y = -900..900
+```
+
+Bots spawn, wander, and chase inside this smaller area so they stay near the current visible demo map while player arena bounds remain wide enough for local Unreal collision tests.
+
+Bot wander uses fixed demo waypoints inside those bounds: `(-1200,0)`, `(-900,600)`, `(-900,-600)`, `(-300,700)`, `(-300,-700)`, `(300,700)`, `(300,-700)`, `(900,600)`, `(900,-600)`, `(1200,0)`, `(0,0)`, `(0,800)`, and `(0,-800)`.
 
 Player spawn points:
 
@@ -87,14 +99,14 @@ The C++ model remains `TargetState`, but the core/target objective is no longer 
 
 Default bots:
 
-1. BOT-1 `(-300, 300)`
-2. BOT-2 `(-300, -300)`
-3. BOT-3 `(300, 300)`
-4. BOT-4 `(300, -300)`
-5. BOT-5 `(1000, 0)`
-6. BOT-6 `(-1000, 0)`
-7. BOT-7 `(0, 700)`
-8. BOT-8 `(0, -700)`
+1. BOT-1 `(-900, 500)`
+2. BOT-2 `(-900, -500)`
+3. BOT-3 `(-300, 500)`
+4. BOT-4 `(-300, -500)`
+5. BOT-5 `(300, 500)`
+6. BOT-6 `(300, -500)`
+7. BOT-7 `(900, 500)`
+8. BOT-8 `(900, -500)`
 
 Each bot starts with:
 
@@ -135,7 +147,7 @@ On `input`:
 
 1. Dispatcher verifies the session is joined.
 2. Dispatcher verifies `player_id` matches the session player ID.
-3. Input fields are safely read with defaults.
+3. Input fields are safely read with defaults, including optional demo `has_client_position` / `client_x/y/z`.
 4. The latest input is stored in `PlayerState`.
 5. The server returns `input_ack`.
 
@@ -164,12 +176,15 @@ Each tick:
 
 If the match is already over, `GameRoom::Tick` stops new combat and score changes. Snapshots continue so clients can display the final scoreboard.
 
-Movement is intentionally simple:
+Movement is intentionally simple and demo-oriented:
 
-- Normalize move vector if length is greater than 1.
+- If Unreal sends `has_client_position=true`, `GameRoom` accepts the pawn position after sanity checks and writes it into `PlayerState`. This keeps `SERVER ECHO` aligned with Unreal collision.
+- Client-position sync includes Z. Server X/Y remain arena coordinates, while player Z currently preserves Unreal world height so the server snapshot and `SERVER ECHO` can follow jumps, ramps, and raised platforms.
+- The server clamps demo player Z to a broad prototype range of `-1000..5000`. It does not simulate terrain, gravity, floor contacts, or platform collision.
+- If no client position is available, normalize move vector if length is greater than 1.
 - Apply `speed * deltaSeconds`.
-- Clamp x to `-1800..1800`.
-- Clamp y to `-1200..1200`.
+- Clamp fallback input movement to `x=-5000..5000`, `y=-5000..5000`.
+- This is not production anti-cheat authoritative movement. A production version needs server-side map collision, navmesh, or stronger movement validation.
 
 ## Projectile, Hitscan, And Bot Simulation
 
@@ -186,7 +201,7 @@ Projectiles:
 On server hitscan fire:
 
 1. A visual-only tracer is spawned for snapshot visualization.
-2. A ray is cast from the shooter's server position.
+2. A ray is cast from the accepted client fire origin when available, otherwise from the shooter's server position.
 3. Alive non-invincible bots and other alive non-invincible players are tested. Legacy targets are tested only when `bTargetsEnabled=true`.
 4. Head spheres are checked before body spheres for bots and players.
 5. The closest hit receives damage immediately.
@@ -293,7 +308,9 @@ Each tick, bot logic is intentionally simple:
 5. In attack range, the bot fires low-accuracy hitscan shots when bot attacks are enabled and its weapon can fire.
 6. Bot weapons have 30-round magazines, infinite reserve ammo, 2.5 second reloads, and difficulty-controlled fire interval/spread.
 7. Bot body hits deal 10 damage and bot headshots deal 20 damage.
-8. If no player is found, the bot wanders toward deterministic arena points.
+8. If no player is found, the bot wanders through fixed waypoint points inside the smaller demo bot area.
+9. Bot chase movement is clamped to the bot area. If a player leaves the bot area, bots can still aim/shoot if the player is in range, but they do not walk outside their demo bounds.
+10. Basic stuck detection picks a new waypoint when a bot tries to move but has not moved meaningfully for about 2 seconds.
 
 `GameRoom::ApplyBotDifficulty` supports the current debug/demo profiles:
 
@@ -307,7 +324,7 @@ Each tick, bot logic is intentionally simple:
 
 Safe demo mode applies the easy profile, disables bot attacks, disables timer-based match ending, resets players/bots/health packs, clears projectiles, resets legacy targets internally if present, and restarts the match in `in_progress`. This is the recommended startup state for portfolio recording and local combat tests.
 
-There is no navmesh, cover, humanoid animation, weapon socket, or advanced target selection yet.
+There is no server NavMesh, obstacle collision, cover, humanoid animation, weapon socket, or advanced target selection yet. The bot area and waypoint list are prototype navigation constraints for the current demo map.
 
 Bot hitscan shots can kill players. Player death starts the same 8 second server respawn timer used by player-vs-player hitscan kills.
 
@@ -330,7 +347,7 @@ Bots ignore health packs in this step.
 
 Snapshots include:
 
-- arena bounds and fixed layout spawn lists
+- arena bounds, bot area bounds, fixed bot spawns, and bot waypoints
 - match
 - scoreboard
 - events
@@ -353,6 +370,8 @@ This avoids overlapping writes when protocol responses and server snapshot broad
 `debug_room` returns Room 1 state:
 
 - match state
+- arena bounds, bot area bounds, and bot waypoint count/list
+- client-position movement sync settings
 - scoreboard
 - recent combat events
 - player count
@@ -379,6 +398,7 @@ This is for browser testing.
 - No database.
 - No real matchmaking.
 - No binary protocol.
+- Demo player movement can trust client pawn position to match Unreal collision; this is not production movement validation or anti-cheat.
 - Bot AI is direct and deterministic for debugging, with hitscan shooting but no pathfinding, cover, or animation state.
 - Health packs are server snapshot entities only; no pickup effects, sounds, or production meshes yet.
 - Legacy targets/cores are disabled by default.

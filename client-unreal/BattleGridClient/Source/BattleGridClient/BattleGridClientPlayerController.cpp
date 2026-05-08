@@ -17,6 +17,7 @@
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "Camera/PlayerCameraManager.h"
+#include "DrawDebugHelpers.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
@@ -34,6 +35,21 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 
 	ProjectileSpawnDistance = 120.0f;
 	FireCooldownSeconds = 0.2f;
+	bUseServerAuthoritativeFireVisuals = true;
+	bSpawnLegacyLocalProjectileWhenConnected = false;
+	bAllowLegacyLocalProjectileDamageWhenConnected = false;
+	bSpawnLegacyLocalProjectileWhenOffline = true;
+	bSpawnLocalProjectileFromMuzzle = true;
+	bUseClientMuzzleForServerTracerStart = true;
+	AimTraceDistance = 20000.0f;
+	bShowAimDebug = false;
+	bShowServerShotDebug = false;
+	ServerShotDebugLength = 3000.0f;
+	bDrawServerArenaBounds = false;
+	ServerArenaBoundsDebugZ = 20.0f;
+	bDrawServerBotAreaBounds = false;
+	BotAreaBoundsDebugZ = 30.0f;
+	bShowProjectileGhostDebug = false;
 	LastFireTime = -100000.0f;
 
 	MaxPlayerHealth = 100.0f;
@@ -52,6 +68,14 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bServerDeathLocksInput = true;
 	bSnapLocalPawnOnServerRespawn = true;
 	bShowServerDeathStatus = true;
+	bSnapLocalPawnToServerOnJoin = true;
+	bSnapLocalPawnToServerOnRespawn = true;
+	JoinSnapDelaySeconds = 0.2f;
+	bSendClientPositionToServer = true;
+	bUseGentleServerPositionCorrection = false;
+	GentleCorrectionThreshold = 300.0f;
+	GentleCorrectionInterpSpeed = 2.0f;
+	HardCorrectionThreshold = 2500.0f;
 	NormalMoveSpeed = 600.0f;
 	SprintMoveSpeed = 850.0f;
 	ADSMoveSpeed = 400.0f;
@@ -98,6 +122,10 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	ShotSequence = 0;
 	LastShotDirectionServer = FVector2D::ZeroVector;
 	LastShotDirectionServerZ = 0.0f;
+	LastFireOriginWorld = FVector::ZeroVector;
+	LastFireOriginServer = FVector::ZeroVector;
+	bLastFireOriginWorldValid = false;
+	bLastFireOriginServerValid = false;
 	LastShotSpreadDegrees = 0.0f;
 	InputSequence = 0;
 	LastInputSendTime = 0.0f;
@@ -110,6 +138,9 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bShowOwnServerGhost = true;
 	ServerToUnrealScale = 1.0f;
 	ServerGhostHeight = 100.0f;
+	bUseSnapshotZForServerPlayerGhosts = true;
+	ServerPlayerGhostZOffset = 0.0f;
+	bUseLocalPawnZForOwnServerGhost = false;
 	bAutoCalibrateServerSnapshotOrigin = true;
 	bShowServerPositionError = true;
 	bUseServerPositionCorrection = false;
@@ -131,11 +162,18 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	LastCalibratedServerPlayerId = 0;
 	LastCalibrationSnapshotTick = 0;
 	LastCalibrationMatchId = 0;
+	bHasSnappedLocalPawnToServerOnJoin = false;
+	LastJoinSnapServerPlayerId = 0;
+	LastJoinSnapMatchId = 0;
+	JoinSnapTimer = 0.0f;
 	LastProcessedSnapshotTick = 0;
 	LastServerPositionError = 0.0f;
 	LastOwnServerWorldLocation = FVector::ZeroVector;
 	bHasOwnServerWorldLocation = false;
 	LastServerPositionErrorLogSnapshotTick = 0;
+	LastCorrectionObservedSnapshotTick = 0;
+	LastCorrectionObservedSnapshotWorldTime = 0.0f;
+	bLoggedBothCorrectionModesWarning = false;
 	bWasServerAlive = true;
 	bIsServerDead = false;
 	bWasServerInvincible = false;
@@ -460,20 +498,27 @@ FString ABattleGridClientPlayerController::GetServerPrimaryHudText() const
 
 				if (bShowServerDebugDetails)
 				{
-					const FString CorrectionText = IsUsingServerPositionCorrection()
-						? FString(TEXT("On"))
-						: FString(TEXT("Off"));
+					const FString CorrectionText = GetServerCorrectionModeText();
 					const FString ErrorText = bShowServerPositionError && HasOwnServerWorldLocation()
 						? FString::Printf(TEXT("%.1f"), GetLastServerPositionError())
 						: FString(TEXT("-"));
 					Lines.Add(FString::Printf(
-						TEXT("Snapshot %d | Error %s | Correction %s | ADS %s | Sprint %s"),
+						TEXT("Snapshot %d | Server Error %s | Correction %s | ADS %s | Sprint %s"),
 						NetworkSubsystem->GetLastSnapshotTick(),
 						*ErrorText,
 						*CorrectionText,
 						bIsADSActive ? TEXT("On") : TEXT("Off"),
 						bIsSprinting ? TEXT("On") : TEXT("Off")
 					));
+
+					if (bDrawServerArenaBounds)
+					{
+						Lines.Add(GetServerArenaBoundsDebugText());
+					}
+					if (bDrawServerBotAreaBounds)
+					{
+						Lines.Add(GetServerBotAreaBoundsDebugText());
+					}
 
 					if (!NetworkSubsystem->GetLastDebugMessage().IsEmpty())
 					{
@@ -497,23 +542,36 @@ FString ABattleGridClientPlayerController::GetServerPrimaryHudText() const
 
 FString ABattleGridClientPlayerController::GetLocalDebugHudText() const
 {
-	const FString CorrectionText = IsUsingServerPositionCorrection()
-		? FString(TEXT("On"))
-		: FString(TEXT("Off"));
+	const FString CorrectionText = GetServerCorrectionModeText();
 	const FString ErrorText = bShowServerPositionError && HasOwnServerWorldLocation()
 		? FString::Printf(TEXT("%.1f"), GetLastServerPositionError())
 		: FString(TEXT("-"));
+	const FString FireModeText = IsServerAuthoritativeFireMode()
+		? FString(TEXT("Server"))
+		: FString(TEXT("Local"));
 
-	return FString::Printf(
-		TEXT("LOCAL DEBUG | HP %.0f/%.0f | Score %d/%d | Error %s | Correction %s | Profile %s"),
+	FString DebugText = FString::Printf(
+		TEXT("LOCAL DEBUG | HP %.0f/%.0f | Score %d/%d | Fire %s | Server Error %s | Correction %s | Profile %s"),
 		GetCurrentPlayerHealth(),
 		GetMaxPlayerHealth(),
 		GetScore(),
 		GetTargetScore(),
+		*FireModeText,
 		*ErrorText,
 		*CorrectionText,
 		*ResolveServerProfileLabel()
 	);
+
+	if (bDrawServerArenaBounds)
+	{
+		DebugText += FString::Printf(TEXT(" | %s"), *GetServerArenaBoundsDebugText());
+	}
+	if (bDrawServerBotAreaBounds)
+	{
+		DebugText += FString::Printf(TEXT(" | %s"), *GetServerBotAreaBoundsDebugText());
+	}
+
+	return DebugText;
 }
 
 FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const
@@ -669,7 +727,135 @@ FVector ABattleGridClientPlayerController::GetLastOwnServerWorldLocation() const
 
 bool ABattleGridClientPlayerController::IsUsingServerPositionCorrection() const
 {
-	return bUseServerPositionCorrection;
+	return bUseServerPositionCorrection || bUseGentleServerPositionCorrection;
+}
+
+FString ABattleGridClientPlayerController::GetServerCorrectionModeText() const
+{
+	if (bUseGentleServerPositionCorrection)
+	{
+		return TEXT("Gentle");
+	}
+
+	if (bUseServerPositionCorrection)
+	{
+		return TEXT("Hard");
+	}
+
+	return TEXT("Off");
+}
+
+FString ABattleGridClientPlayerController::GetServerArenaBoundsDebugText() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetServerArenaBoundsText();
+		}
+	}
+
+	return TEXT("Arena: unavailable");
+}
+
+FString ABattleGridClientPlayerController::GetServerBotAreaBoundsDebugText() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetServerBotAreaBoundsText();
+		}
+	}
+
+	return TEXT("BotArea: unavailable");
+}
+
+void ABattleGridClientPlayerController::DrawServerArenaBoundsIfEnabled() const
+{
+	if (!bDrawServerArenaBounds)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = GetGameInstance();
+	if (!World || !GameInstance)
+	{
+		return;
+	}
+
+	const UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	if (!NetworkSubsystem || !NetworkSubsystem->HasArenaBounds())
+	{
+		return;
+	}
+
+	const FBattleGridServerArenaBoundsSnapshot Bounds =
+		NetworkSubsystem->GetLatestArenaBounds();
+	const float DebugZ = ServerArenaBoundsDebugZ;
+	const FVector MinMin = ConvertServerPositionToWorld(Bounds.MinX, Bounds.MinY, DebugZ);
+	const FVector MaxMin = ConvertServerPositionToWorld(Bounds.MaxX, Bounds.MinY, DebugZ);
+	const FVector MaxMax = ConvertServerPositionToWorld(Bounds.MaxX, Bounds.MaxY, DebugZ);
+	const FVector MinMax = ConvertServerPositionToWorld(Bounds.MinX, Bounds.MaxY, DebugZ);
+
+	constexpr float LifeTime = 0.0f;
+	constexpr float Thickness = 8.0f;
+	DrawDebugLine(World, MinMin, MaxMin, FColor::Cyan, false, LifeTime, 0, Thickness);
+	DrawDebugLine(World, MaxMin, MaxMax, FColor::Cyan, false, LifeTime, 0, Thickness);
+	DrawDebugLine(World, MaxMax, MinMax, FColor::Cyan, false, LifeTime, 0, Thickness);
+	DrawDebugLine(World, MinMax, MinMin, FColor::Cyan, false, LifeTime, 0, Thickness);
+
+	DrawDebugSphere(World, MinMin, 32.0f, 8, FColor::Blue, false, LifeTime);
+	DrawDebugSphere(World, MaxMin, 32.0f, 8, FColor::Blue, false, LifeTime);
+	DrawDebugSphere(World, MaxMax, 32.0f, 8, FColor::Blue, false, LifeTime);
+	DrawDebugSphere(World, MinMax, 32.0f, 8, FColor::Blue, false, LifeTime);
+}
+
+void ABattleGridClientPlayerController::DrawServerBotAreaBoundsIfEnabled() const
+{
+	if (!bDrawServerBotAreaBounds)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = GetGameInstance();
+	if (!World || !GameInstance)
+	{
+		return;
+	}
+
+	const UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	if (!NetworkSubsystem || !NetworkSubsystem->HasBotAreaBounds())
+	{
+		return;
+	}
+
+	const FBattleGridServerArenaBoundsSnapshot Bounds =
+		NetworkSubsystem->GetLatestBotAreaBounds();
+	const float DebugZ = BotAreaBoundsDebugZ;
+	const FVector MinMin = ConvertServerPositionToWorld(Bounds.MinX, Bounds.MinY, DebugZ);
+	const FVector MaxMin = ConvertServerPositionToWorld(Bounds.MaxX, Bounds.MinY, DebugZ);
+	const FVector MaxMax = ConvertServerPositionToWorld(Bounds.MaxX, Bounds.MaxY, DebugZ);
+	const FVector MinMax = ConvertServerPositionToWorld(Bounds.MinX, Bounds.MaxY, DebugZ);
+
+	constexpr float LifeTime = 0.0f;
+	constexpr float Thickness = 6.0f;
+	DrawDebugLine(World, MinMin, MaxMin, FColor::Green, false, LifeTime, 0, Thickness);
+	DrawDebugLine(World, MaxMin, MaxMax, FColor::Green, false, LifeTime, 0, Thickness);
+	DrawDebugLine(World, MaxMax, MinMax, FColor::Green, false, LifeTime, 0, Thickness);
+	DrawDebugLine(World, MinMax, MinMin, FColor::Green, false, LifeTime, 0, Thickness);
+
+	const FColor CornerColor(0, 220, 80);
+	DrawDebugSphere(World, MinMin, 24.0f, 8, CornerColor, false, LifeTime);
+	DrawDebugSphere(World, MaxMin, 24.0f, 8, CornerColor, false, LifeTime);
+	DrawDebugSphere(World, MaxMax, 24.0f, 8, CornerColor, false, LifeTime);
+	DrawDebugSphere(World, MinMax, 24.0f, 8, CornerColor, false, LifeTime);
 }
 
 bool ABattleGridClientPlayerController::IsAimingDownSights() const
@@ -1125,6 +1311,7 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 
 	ApplyMovementAndADSState();
 	CalibrateServerSnapshotOriginIfNeeded();
+	SnapLocalPawnToServerOnJoinIfNeeded(DeltaTime);
 	UpdateServerLifeStateFromSnapshot(DeltaTime);
 	ApplyDemoServerSettingsIfNeeded();
 	UpdateAimRotation();
@@ -1139,6 +1326,8 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 	UpdateServerBotGhostsFromSnapshot();
 	UpdateServerHealthPackGhostsFromSnapshot();
 	UpdateOwnServerPositionErrorAndCorrection(DeltaTime);
+	DrawServerArenaBoundsIfEnabled();
+	DrawServerBotAreaBoundsIfEnabled();
 }
 
 void ABattleGridClientPlayerController::MoveForward(const FInputActionValue& Value)
@@ -1444,52 +1633,211 @@ void ABattleGridClientPlayerController::TryFireWeapon()
 	);
 	LastShotSpreadDegrees = ShotSpread;
 
-	const FVector FireDirection = CalculateShotDirectionWithSpread(ShotSpread);
-	LastShotDirectionServer = ConvertUnrealDirectionToServerDirection(FireDirection);
-	LastShotDirectionServerZ = FireDirection.Z;
-
-	const FVector ProjectileSpawnLocation =
-		ControlledPawn->GetActorLocation()
-		+ FireDirection * ProjectileSpawnDistance
-		+ FVector(0.0f, 0.0f, 50.0f);
-	const FRotator SpawnRotation = FireDirection.Rotation();
-
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = ControlledPawn;
-	SpawnParameters.Instigator = ControlledPawn;
-	SpawnParameters.SpawnCollisionHandlingOverride =
-		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-	TSubclassOf<ABattleGridProjectile> ProjectileClassToSpawn = ProjectileClass;
-	if (!ProjectileClassToSpawn)
+	FVector CrosshairAimPoint = ControlledPawn->GetActorLocation()
+		+ GetControlRotation().Vector() * AimTraceDistance;
+	FVector CrosshairAimDirection = GetControlRotation().Vector();
+	if (!CrosshairAimDirection.Normalize())
 	{
-		ProjectileClassToSpawn = ABattleGridProjectile::StaticClass();
+		CrosshairAimDirection = FVector::ForwardVector;
+	}
+	GetCrosshairAimPoint(CrosshairAimPoint, CrosshairAimDirection);
+
+	const FVector MuzzleLocation =
+		(bSpawnLocalProjectileFromMuzzle && BattleGridCharacter)
+			? BattleGridCharacter->GetApproximateMuzzleWorldLocation()
+			: ControlledPawn->GetActorLocation()
+				+ CrosshairAimDirection * ProjectileSpawnDistance
+				+ FVector(0.0f, 0.0f, 50.0f);
+
+	FVector MuzzleToAimDirection = CrosshairAimPoint - MuzzleLocation;
+	if (
+		!MuzzleToAimDirection.Normalize()
+		|| FVector::DotProduct(MuzzleToAimDirection, CrosshairAimDirection) < 0.1f
+	)
+	{
+		MuzzleToAimDirection = CrosshairAimDirection;
 	}
 
-	if (World->SpawnActor<ABattleGridProjectile>(
-		ProjectileClassToSpawn,
-		ProjectileSpawnLocation,
-		SpawnRotation,
-		SpawnParameters
-	))
-	{
-		LastFireTime = World->GetTimeSeconds();
-		++ShotSequence;
-		bPendingFireInput = true;
-		SendInputToServer(true);
+	const FVector FireDirection = CalculateShotDirectionWithSpread(
+		ShotSpread,
+		MuzzleToAimDirection
+	);
+	const float SafeAimSignX = FMath::IsNearlyZero(ServerAimSignX) ? 1.0f : ServerAimSignX;
+	const float SafeAimSignY = FMath::IsNearlyZero(ServerAimSignY) ? 1.0f : ServerAimSignY;
+	LastShotDirectionServer = FVector2D(
+		FireDirection.Y * SafeAimSignX,
+		FireDirection.X * SafeAimSignY
+	);
+	LastShotDirectionServerZ = FireDirection.Z;
+	LastFireOriginWorld = MuzzleLocation;
+	bLastFireOriginWorldValid = true;
+	bLastFireOriginServerValid = ConvertWorldPositionToServerPosition(
+		MuzzleLocation,
+		LastFireOriginServer
+	);
 
-		const int32 InputLogInterval = FMath::Max(1, InputAckLogInterval);
-		if (bVerboseInputLogs || !bDemoMode || ShotSequence <= 3 || ShotSequence % InputLogInterval == 0)
+	const FVector ProjectileSpawnLocation = MuzzleLocation;
+	const FRotator SpawnRotation = MuzzleToAimDirection.Rotation();
+
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+	if (bShowAimDebug)
+	{
+		DrawDebugLine(
+			World,
+			MuzzleLocation,
+			CrosshairAimPoint,
+			FColor::Green,
+			false,
+			1.0f,
+			0,
+			1.5f
+		);
+	}
+
+	if (bShowServerShotDebug)
+	{
+		const FVector ShotDebugEnd =
+			MuzzleLocation + FireDirection * FMath::Max(100.0f, ServerShotDebugLength);
+		DrawDebugLine(
+			World,
+			MuzzleLocation,
+			ShotDebugEnd,
+			FColor::Purple,
+			false,
+			1.0f,
+			0,
+			2.0f
+		);
+		DrawDebugSphere(
+			World,
+			ShotDebugEnd,
+			10.0f,
+			12,
+			FColor::Purple,
+			false,
+			1.0f,
+			0,
+			1.5f
+		);
+	}
+#endif
+
+	const bool bServerFireMode = IsServerAuthoritativeFireMode();
+	const bool bShouldSpawnLegacyLocalProjectile = bServerFireMode
+		? bSpawnLegacyLocalProjectileWhenConnected
+		: bSpawnLegacyLocalProjectileWhenOffline;
+	const bool bLocalProjectileDamageEnabled =
+		!bServerFireMode || bAllowLegacyLocalProjectileDamageWhenConnected;
+	bool bLegacyLocalProjectileSpawned = false;
+
+	if (bShouldSpawnLegacyLocalProjectile)
+	{
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.Owner = ControlledPawn;
+		SpawnParameters.Instigator = ControlledPawn;
+		SpawnParameters.SpawnCollisionHandlingOverride =
+			ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+		TSubclassOf<ABattleGridProjectile> ProjectileClassToSpawn = ProjectileClass;
+		if (!ProjectileClassToSpawn)
 		{
-			UE_LOG(
-				LogTemp,
-				Log,
-				TEXT("[BattleGrid] Weapon fired. Ammo=%d/%d Spread=%.2f"),
-				WeaponComponent->GetCurrentAmmo(),
-				WeaponComponent->GetMagazineSize(),
-				ShotSpread
-			);
+			ProjectileClassToSpawn = ABattleGridProjectile::StaticClass();
 		}
+
+		if (ABattleGridProjectile* SpawnedProjectile = World->SpawnActor<ABattleGridProjectile>(
+			ProjectileClassToSpawn,
+			ProjectileSpawnLocation,
+			SpawnRotation,
+			SpawnParameters
+		))
+		{
+			SpawnedProjectile->SetDamageEnabled(bLocalProjectileDamageEnabled);
+			bLegacyLocalProjectileSpawned = true;
+		}
+	}
+	else if (bServerFireMode)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Server fire mode: skipped legacy local projectile."));
+	}
+
+	if (bShouldSpawnLegacyLocalProjectile && !bLegacyLocalProjectileSpawned && !bServerFireMode)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BattleGrid] Local fire mode: failed to spawn legacy local projectile."));
+		return;
+	}
+
+	LastFireTime = World->GetTimeSeconds();
+	++ShotSequence;
+	bPendingFireInput = true;
+	SendInputToServer(true);
+
+	const int32 InputLogInterval = FMath::Max(1, InputAckLogInterval);
+	if (bVerboseInputLogs || !bDemoMode || ShotSequence <= 3 || ShotSequence % InputLogInterval == 0)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Weapon fired. Ammo=%d/%d Spread=%.2f FireMode=%s LocalProjectile=%s LocalDamage=%s"),
+			WeaponComponent->GetCurrentAmmo(),
+			WeaponComponent->GetMagazineSize(),
+			ShotSpread,
+			bServerFireMode ? TEXT("Server") : TEXT("Local"),
+			bShouldSpawnLegacyLocalProjectile ? TEXT("true") : TEXT("false"),
+			bLocalProjectileDamageEnabled ? TEXT("true") : TEXT("false")
+		);
+	}
+
+	if (bShowAimDebug || bShowServerShotDebug || bVerboseInputLogs || !bDemoMode)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Fire aim point=(%.1f,%.1f,%.1f)"),
+			CrosshairAimPoint.X,
+			CrosshairAimPoint.Y,
+			CrosshairAimPoint.Z
+		);
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Fire muzzle=(%.1f,%.1f,%.1f)"),
+			MuzzleLocation.X,
+			MuzzleLocation.Y,
+			MuzzleLocation.Z
+		);
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Fire origin world=(%.1f,%.1f,%.1f)"),
+			MuzzleLocation.X,
+			MuzzleLocation.Y,
+			MuzzleLocation.Z
+		);
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Fire origin server=(%.1f,%.1f,%.1f) valid=%s"),
+			LastFireOriginServer.X,
+			LastFireOriginServer.Y,
+			LastFireOriginServer.Z,
+			bLastFireOriginServerValid ? TEXT("true") : TEXT("false")
+		);
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Fire visual dir=(%.3f,%.3f,%.3f)"),
+			MuzzleToAimDirection.X,
+			MuzzleToAimDirection.Y,
+			MuzzleToAimDirection.Z
+		);
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Fire server dir=(%.3f,%.3f,%.3f)"),
+			LastShotDirectionServer.X,
+			LastShotDirectionServer.Y,
+			LastShotDirectionServerZ
+		);
 	}
 }
 
@@ -1578,6 +1926,27 @@ bool ABattleGridClientPlayerController::IsControlledPawnFalling() const
 	return MovementComponent && MovementComponent->IsFalling();
 }
 
+bool ABattleGridClientPlayerController::IsServerAuthoritativeFireMode() const
+{
+	if (!bUseServerAuthoritativeFireVisuals)
+	{
+		return false;
+	}
+
+	const UGameInstance* GameInstance = GetGameInstance();
+	if (!GameInstance)
+	{
+		return false;
+	}
+
+	const UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	return NetworkSubsystem
+		&& NetworkSubsystem->IsConnected()
+		&& NetworkSubsystem->HasJoined()
+		&& NetworkSubsystem->GetPlayerId() > 0;
+}
+
 FVector ABattleGridClientPlayerController::GetCameraRelativeMovementDirection(
 	float ForwardAxis,
 	float RightAxis
@@ -1605,7 +1974,18 @@ FVector ABattleGridClientPlayerController::CalculateShotDirectionWithSpread(
 	float SpreadDegrees
 ) const
 {
-	FVector ShotDirection = GetControlRotation().Vector();
+	FVector AimPoint = FVector::ZeroVector;
+	FVector AimDirection = GetControlRotation().Vector();
+	GetCrosshairAimPoint(AimPoint, AimDirection);
+	return CalculateShotDirectionWithSpread(SpreadDegrees, AimDirection);
+}
+
+FVector ABattleGridClientPlayerController::CalculateShotDirectionWithSpread(
+	float SpreadDegrees,
+	const FVector& BaseDirection
+) const
+{
+	FVector ShotDirection = BaseDirection;
 	if (!ShotDirection.Normalize())
 	{
 		ShotDirection = FVector::ForwardVector;
@@ -1627,6 +2007,162 @@ FVector ABattleGridClientPlayerController::CalculateShotDirectionWithSpread(
 	}
 
 	return ShotDirection;
+}
+
+bool ABattleGridClientPlayerController::GetCrosshairAimPoint(
+	FVector& OutAimPoint,
+	FVector& OutAimDirection
+) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	int32 ViewportSizeX = 0;
+	int32 ViewportSizeY = 0;
+	GetViewportSize(ViewportSizeX, ViewportSizeY);
+	if (ViewportSizeX <= 0 || ViewportSizeY <= 0)
+	{
+		OutAimDirection = GetControlRotation().Vector();
+		if (!OutAimDirection.Normalize())
+		{
+			OutAimDirection = FVector::ForwardVector;
+		}
+		OutAimPoint = PlayerCameraManager
+			? PlayerCameraManager->GetCameraLocation() + OutAimDirection * AimTraceDistance
+			: OutAimDirection * AimTraceDistance;
+		return false;
+	}
+
+	const float ScreenX = static_cast<float>(ViewportSizeX) * 0.5f;
+	const float ScreenY = static_cast<float>(ViewportSizeY) * 0.5f;
+	FVector DeprojectWorldLocation = FVector::ZeroVector;
+	FVector DeprojectWorldDirection = FVector::ForwardVector;
+	if (!DeprojectScreenPositionToWorld(
+		ScreenX,
+		ScreenY,
+		DeprojectWorldLocation,
+		DeprojectWorldDirection
+	))
+	{
+		OutAimDirection = GetControlRotation().Vector();
+		if (!OutAimDirection.Normalize())
+		{
+			OutAimDirection = FVector::ForwardVector;
+		}
+		OutAimPoint = PlayerCameraManager
+			? PlayerCameraManager->GetCameraLocation() + OutAimDirection * AimTraceDistance
+			: DeprojectWorldLocation + OutAimDirection * AimTraceDistance;
+		return false;
+	}
+
+	if (!DeprojectWorldDirection.Normalize())
+	{
+		DeprojectWorldDirection = GetControlRotation().Vector();
+		if (!DeprojectWorldDirection.Normalize())
+		{
+			DeprojectWorldDirection = FVector::ForwardVector;
+		}
+	}
+
+	FVector CameraLocation = DeprojectWorldLocation;
+	FRotator CameraRotation = GetControlRotation();
+	GetPlayerViewPoint(CameraLocation, CameraRotation);
+
+	const float TraceDistance = FMath::Max(100.0f, AimTraceDistance);
+	const FVector TraceEnd = CameraLocation + DeprojectWorldDirection * TraceDistance;
+
+	FCollisionQueryParams QueryParams(FName(TEXT("BattleGridCrosshairAim")), true);
+	if (const APawn* ControlledPawn = GetPawn())
+	{
+		QueryParams.AddIgnoredActor(ControlledPawn);
+	}
+	QueryParams.AddIgnoredActor(this);
+
+	FHitResult HitResult;
+	const bool bHit = World->LineTraceSingleByChannel(
+		HitResult,
+		CameraLocation,
+		TraceEnd,
+		ECC_Visibility,
+		QueryParams
+	);
+
+	OutAimDirection = DeprojectWorldDirection;
+	OutAimPoint = bHit ? HitResult.ImpactPoint : TraceEnd;
+
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+	if (bShowAimDebug)
+	{
+		DrawDebugLine(
+			World,
+			CameraLocation,
+			OutAimPoint,
+			bHit ? FColor::Yellow : FColor::Silver,
+			false,
+			1.0f,
+			0,
+			1.0f
+		);
+		DrawDebugSphere(
+			World,
+			OutAimPoint,
+			10.0f,
+			12,
+			bHit ? FColor::Yellow : FColor::Silver,
+			false,
+			1.0f
+		);
+	}
+#endif
+
+	return true;
+}
+
+bool ABattleGridClientPlayerController::GetCurrentFireOriginAndDirectionForServer(
+	FVector& OutFireOriginWorld,
+	FVector& OutShotDirectionWorld
+) const
+{
+	const APawn* ControlledPawn = GetPawn();
+	if (!ControlledPawn)
+	{
+		return false;
+	}
+
+	FVector AimPoint = ControlledPawn->GetActorLocation()
+		+ GetControlRotation().Vector() * AimTraceDistance;
+	FVector AimDirection = GetControlRotation().Vector();
+	if (!AimDirection.Normalize())
+	{
+		AimDirection = FVector::ForwardVector;
+	}
+	GetCrosshairAimPoint(AimPoint, AimDirection);
+
+	if (const ABattleGridClientCharacter* BattleGridCharacter =
+		Cast<ABattleGridClientCharacter>(ControlledPawn))
+	{
+		OutFireOriginWorld = BattleGridCharacter->GetApproximateMuzzleWorldLocation();
+	}
+	else
+	{
+		OutFireOriginWorld = ControlledPawn->GetActorLocation()
+			+ AimDirection * ProjectileSpawnDistance
+			+ FVector(0.0f, 0.0f, 50.0f);
+	}
+
+	OutShotDirectionWorld = AimPoint - OutFireOriginWorld;
+	if (
+		!OutShotDirectionWorld.Normalize()
+		|| FVector::DotProduct(OutShotDirectionWorld, AimDirection) < 0.1f
+	)
+	{
+		OutShotDirectionWorld = AimDirection;
+	}
+
+	return true;
 }
 
 void ABattleGridClientPlayerController::SendInputToServerIfNeeded()
@@ -1698,8 +2234,17 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 	float AimX = 0.0f;
 	float AimY = 0.0f;
 	FVector UnrealAimDirection = FVector::ForwardVector;
-	const FRotator AimYawRotation(0.0f, GetControlRotation().Yaw, 0.0f);
-	UnrealAimDirection = AimYawRotation.Vector();
+	FVector CrosshairAimPoint = FVector::ZeroVector;
+	FVector CrosshairAimDirection = GetControlRotation().Vector();
+	if (GetCrosshairAimPoint(CrosshairAimPoint, CrosshairAimDirection))
+	{
+		UnrealAimDirection = CrosshairAimDirection;
+	}
+	else
+	{
+		const FRotator AimYawRotation(0.0f, GetControlRotation().Yaw, 0.0f);
+		UnrealAimDirection = AimYawRotation.Vector();
+	}
 	UnrealAimDirection.Z = 0.0f;
 	if (!UnrealAimDirection.Normalize())
 	{
@@ -1730,6 +2275,24 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 		}
 	}
 
+	bool bHasClientPosition = false;
+	FVector ClientPositionWorld = FVector::ZeroVector;
+	FVector ClientPositionServer = FVector::ZeroVector;
+	if (
+		bSendClientPositionToServer
+		&& (!bAutoCalibrateServerSnapshotOrigin || bServerSnapshotOriginCalibrated)
+	)
+	{
+		if (const APawn* ControlledPawn = GetPawn())
+		{
+			ClientPositionWorld = ControlledPawn->GetActorLocation();
+			bHasClientPosition = ConvertWorldPositionToServerPosition(
+				ClientPositionWorld,
+				ClientPositionServer
+			);
+		}
+	}
+
 	constexpr float InputChangeThreshold = 0.01f;
 	const bool bMovementChanged =
 		!bHasLastSentInput
@@ -1744,6 +2307,7 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 		&& !bHasMovementInput
 		&& !bPendingFireInput
 		&& !bPendingReloadInput
+		&& !bHasClientPosition
 		&& !bMovementChanged
 		&& !bAimChanged
 	)
@@ -1757,9 +2321,50 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 	++InputSequence;
 	LastInputSendTime = CurrentTime;
 
+	bool bHasFireOrigin = false;
+	FVector FireOriginWorld = FVector::ZeroVector;
+	FVector FireOriginServer = FVector::ZeroVector;
+	if (bFire)
+	{
+		if (bLastFireOriginWorldValid && bLastFireOriginServerValid)
+		{
+			bHasFireOrigin = true;
+			FireOriginWorld = LastFireOriginWorld;
+			FireOriginServer = LastFireOriginServer;
+		}
+		else
+		{
+			FVector FallbackShotDirectionWorld = FVector::ForwardVector;
+			if (
+				GetCurrentFireOriginAndDirectionForServer(
+					FireOriginWorld,
+					FallbackShotDirectionWorld
+				)
+				&& ConvertWorldPositionToServerPosition(
+					FireOriginWorld,
+					FireOriginServer
+				)
+			)
+			{
+				bHasFireOrigin = true;
+			}
+		}
+	}
+
 	const int32 InputLogInterval = FMath::Max(1, InputAckLogInterval);
 	if ((bVerboseInputLogs || !bDemoMode) && (bFire || bReload || InputSequence % InputLogInterval == 0))
 	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Move send local_axes=(%.2f,%.2f) server_move=(%.2f,%.2f) sprint=%s ads=%s"),
+			CurrentMoveForward,
+			CurrentMoveRight,
+			ServerMoveX,
+			ServerMoveY,
+			bIsSprinting ? TEXT("true") : TEXT("false"),
+			bIsADSActive ? TEXT("true") : TEXT("false")
+		);
 		UE_LOG(
 			LogTemp,
 			Log,
@@ -1773,17 +2378,65 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 		);
 	}
 
+	if (
+		bHasClientPosition
+		&& (
+			bVerboseInputLogs
+			|| !bDemoMode
+			|| InputSequence <= 3
+			|| InputSequence % InputLogInterval == 0
+		)
+	)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Client position sync world=(%.1f,%.1f,%.1f) server=(%.1f,%.1f,%.1f)"),
+			ClientPositionWorld.X,
+			ClientPositionWorld.Y,
+			ClientPositionWorld.Z,
+			ClientPositionServer.X,
+			ClientPositionServer.Y,
+			ClientPositionServer.Z
+		);
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Client position sync z world=%.1f server=%.1f"),
+			ClientPositionWorld.Z,
+			ClientPositionServer.Z
+		);
+	}
+
 	if (bFire)
 	{
 		UE_LOG(
 			LogTemp,
 			Log,
-			TEXT("[BattleGrid] Fire input shot_dir_server=(%.2f,%.2f,%.2f) aim=(%.2f,%.2f) ammo=%d"),
+			TEXT("[BattleGrid] Fire origin world=(%.1f,%.1f,%.1f)"),
+			FireOriginWorld.X,
+			FireOriginWorld.Y,
+			FireOriginWorld.Z
+		);
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Fire origin server=(%.1f,%.1f,%.1f) has=%s"),
+			FireOriginServer.X,
+			FireOriginServer.Y,
+			FireOriginServer.Z,
+			bHasFireOrigin ? TEXT("true") : TEXT("false")
+		);
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Fire server shot_dir=(%.2f,%.2f,%.2f) aim=(%.2f,%.2f) spread=%.2f ammo=%d"),
 			ServerShotDirection.X,
 			ServerShotDirection.Y,
 			ServerShotDirectionZ,
 			AimX,
 			AimY,
+			LastShotSpreadDegrees,
 			CurrentAmmo
 		);
 	}
@@ -1803,7 +2456,15 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 		bIsSprinting,
 		bJump,
 		CurrentAmmo,
-		LastShotSpreadDegrees
+		LastShotSpreadDegrees,
+		bHasFireOrigin,
+		FireOriginServer.X,
+		FireOriginServer.Y,
+		FireOriginServer.Z,
+		bHasClientPosition,
+		ClientPositionServer.X,
+		ClientPositionServer.Y,
+		ClientPositionServer.Z
 	);
 
 	LastSentMoveForward = ServerMoveY;
@@ -1815,6 +2476,8 @@ void ABattleGridClientPlayerController::SendInputToServer(bool bForceSend)
 	if (bFire)
 	{
 		bPendingFireInput = false;
+		bLastFireOriginWorldValid = false;
+		bLastFireOriginServerValid = false;
 	}
 	if (bReload)
 	{
@@ -1980,11 +2643,29 @@ void ABattleGridClientPlayerController::UpdateServerGhostsFromSnapshot()
 			continue;
 		}
 
+		float PlayerGhostWorldZ = bUseSnapshotZForServerPlayerGhosts
+			? PlayerSnapshot.Z + ServerPlayerGhostZOffset
+			: ServerGhostHeight;
+		if (
+			bUseLocalPawnZForOwnServerGhost
+			&& PlayerSnapshot.PlayerId == LocalServerPlayerId
+		)
+		{
+			if (const APawn* ControlledPawn = GetPawn())
+			{
+				PlayerGhostWorldZ =
+					ControlledPawn->GetActorLocation().Z + ServerPlayerGhostZOffset;
+			}
+		}
+
 		const FVector WorldLocation = ConvertServerPositionToWorld(
 			PlayerSnapshot.X,
-			PlayerSnapshot.Y
+			PlayerSnapshot.Y,
+			0.0f
 		);
-		const FVector WorldOffset = WorldLocation - ServerSnapshotOrigin;
+		FVector PlayerGhostWorldLocation = WorldLocation;
+		PlayerGhostWorldLocation.Z = PlayerGhostWorldZ;
+		const FVector WorldOffset = PlayerGhostWorldLocation - ServerSnapshotOrigin;
 
 		const int32 EffectiveSnapshotLogInterval = FMath::Max(1, SnapshotLogInterval);
 		if (
@@ -1995,12 +2676,14 @@ void ABattleGridClientPlayerController::UpdateServerGhostsFromSnapshot()
 			UE_LOG(
 				LogTemp,
 				Log,
-				TEXT("[BattleGrid] ServerToWorld player_id=%d server=(%.1f,%.1f) world=(%.1f,%.1f)"),
+				TEXT("[BattleGrid] ServerToWorld player_id=%d server=(%.1f,%.1f,%.1f) world=(%.1f,%.1f,%.1f)"),
 				PlayerSnapshot.PlayerId,
 				PlayerSnapshot.X,
 				PlayerSnapshot.Y,
+				PlayerSnapshot.Z,
 				WorldOffset.X,
-				WorldOffset.Y
+				WorldOffset.Y,
+				PlayerGhostWorldLocation.Z
 			);
 		}
 
@@ -2021,7 +2704,7 @@ void ABattleGridClientPlayerController::UpdateServerGhostsFromSnapshot()
 
 			GhostActor = World->SpawnActor<ABattleGridServerGhostActor>(
 				GhostClass,
-				WorldLocation,
+				PlayerGhostWorldLocation,
 				FRotator::ZeroRotator,
 				SpawnParameters
 			);
@@ -2039,7 +2722,7 @@ void ABattleGridClientPlayerController::UpdateServerGhostsFromSnapshot()
 
 		if (GhostActor)
 		{
-			GhostActor->SetSnapshotData(PlayerSnapshot, WorldLocation);
+			GhostActor->SetSnapshotData(PlayerSnapshot, PlayerGhostWorldLocation);
 		}
 	}
 
@@ -2079,6 +2762,28 @@ FVector ABattleGridClientPlayerController::ConvertServerPositionToWorld(
 		ServerY,
 		WorldHeight
 	);
+}
+
+bool ABattleGridClientPlayerController::ConvertWorldPositionToServerPosition(
+	const FVector& WorldLocation,
+	FVector& OutServerLocation
+) const
+{
+	if (FMath::IsNearlyZero(ServerToUnrealScale))
+	{
+		OutServerLocation = FVector::ZeroVector;
+		return false;
+	}
+
+	const FVector LocalWorld = WorldLocation - ServerSnapshotOrigin;
+	// X/Y use the calibrated arena mapping. Z is kept in Unreal world units for
+	// prototype vertical alignment; the server does not simulate terrain yet.
+	OutServerLocation = FVector(
+		LocalWorld.Y / ServerToUnrealScale,
+		LocalWorld.X / ServerToUnrealScale,
+		WorldLocation.Z
+	);
+	return true;
 }
 
 void ABattleGridClientPlayerController::CalibrateServerSnapshotOriginIfNeeded()
@@ -2177,8 +2882,185 @@ void ABattleGridClientPlayerController::ResetServerSnapshotOriginCalibration()
 	LastCalibratedServerPlayerId = 0;
 	LastCalibrationSnapshotTick = 0;
 	LastCalibrationMatchId = 0;
+	bHasSnappedLocalPawnToServerOnJoin = false;
+	LastJoinSnapServerPlayerId = 0;
+	LastJoinSnapMatchId = 0;
+	JoinSnapTimer = 0.0f;
 	LastProcessedSnapshotTick = 0;
 	LastServerPositionErrorLogSnapshotTick = 0;
+	LastCorrectionObservedSnapshotTick = 0;
+	LastCorrectionObservedSnapshotWorldTime = 0.0f;
+}
+
+void ABattleGridClientPlayerController::SnapLocalPawnToServerOnJoinIfNeeded(
+	float DeltaTime
+)
+{
+	if (!bSnapLocalPawnToServerOnJoin)
+	{
+		bHasSnappedLocalPawnToServerOnJoin = false;
+		LastJoinSnapServerPlayerId = 0;
+		LastJoinSnapMatchId = 0;
+		JoinSnapTimer = 0.0f;
+		return;
+	}
+
+	UGameInstance* GameInstance = GetGameInstance();
+	APawn* ControlledPawn = GetPawn();
+	if (!GameInstance || !ControlledPawn)
+	{
+		bHasSnappedLocalPawnToServerOnJoin = false;
+		return;
+	}
+
+	UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	if (
+		!NetworkSubsystem
+		|| !NetworkSubsystem->IsConnected()
+		|| !NetworkSubsystem->HasJoined()
+		|| !NetworkSubsystem->HasSnapshot()
+	)
+	{
+		bHasSnappedLocalPawnToServerOnJoin = false;
+		LastJoinSnapServerPlayerId = 0;
+		LastJoinSnapMatchId = 0;
+		JoinSnapTimer = 0.0f;
+		return;
+	}
+
+	const int32 ServerPlayerId = NetworkSubsystem->GetPlayerId();
+	if (ServerPlayerId <= 0)
+	{
+		return;
+	}
+
+	const int32 MatchId = NetworkSubsystem->HasMatchSnapshot()
+		? NetworkSubsystem->GetLatestMatchSnapshot().MatchId
+		: 0;
+	const bool bKnownJoinMatchChanged =
+		MatchId > 0 && LastJoinSnapMatchId > 0 && MatchId != LastJoinSnapMatchId;
+	const bool bJoinIdentityChanged =
+		ServerPlayerId != LastJoinSnapServerPlayerId
+		|| bKnownJoinMatchChanged;
+	if (bJoinIdentityChanged)
+	{
+		LastJoinSnapServerPlayerId = ServerPlayerId;
+		if (MatchId > 0)
+		{
+			LastJoinSnapMatchId = MatchId;
+		}
+		bHasSnappedLocalPawnToServerOnJoin = false;
+		JoinSnapTimer = FMath::Max(0.0f, JoinSnapDelaySeconds);
+	}
+
+	if (bHasSnappedLocalPawnToServerOnJoin)
+	{
+		return;
+	}
+
+	if (bAutoCalibrateServerSnapshotOrigin && !bServerSnapshotOriginCalibrated)
+	{
+		return;
+	}
+
+	FBattleGridServerPlayerSnapshot OwnSnapshot;
+	if (!NetworkSubsystem->GetPlayerSnapshotById(ServerPlayerId, OwnSnapshot))
+	{
+		return;
+	}
+
+	JoinSnapTimer -= FMath::Max(0.0f, DeltaTime);
+	if (JoinSnapTimer > 0.0f)
+	{
+		return;
+	}
+
+	if (SnapLocalPawnToOwnServerSnapshot(TEXT("server spawn")))
+	{
+		bHasSnappedLocalPawnToServerOnJoin = true;
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Snapped local pawn to server spawn player_id=%d"),
+			ServerPlayerId
+		);
+	}
+}
+
+bool ABattleGridClientPlayerController::SnapLocalPawnToOwnServerSnapshot(
+	const TCHAR* ReasonText
+)
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	APawn* ControlledPawn = GetPawn();
+	if (!GameInstance || !ControlledPawn)
+	{
+		return false;
+	}
+
+	UBattleGridNetworkSubsystem* NetworkSubsystem =
+		GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>();
+	if (
+		!NetworkSubsystem
+		|| !NetworkSubsystem->IsConnected()
+		|| !NetworkSubsystem->HasJoined()
+	)
+	{
+		return false;
+	}
+
+	FBattleGridServerPlayerSnapshot OwnSnapshot;
+	if (!NetworkSubsystem->GetOwnPlayerSnapshot(OwnSnapshot))
+	{
+		return false;
+	}
+
+	const FVector PawnLocation = ControlledPawn->GetActorLocation();
+	FVector ServerWorldLocation = ConvertServerPositionToWorld(
+		OwnSnapshot.X,
+		OwnSnapshot.Y,
+		0.0f
+	);
+	ServerWorldLocation.Z =
+		(bUseSnapshotZForServerPlayerGhosts && !FMath::IsNearlyZero(OwnSnapshot.Z, 1.0f))
+			? OwnSnapshot.Z
+			: PawnLocation.Z;
+	ControlledPawn->SetActorLocation(
+		ServerWorldLocation,
+		false,
+		nullptr,
+		ETeleportType::TeleportPhysics
+	);
+
+	if (ACharacter* ControlledCharacter = Cast<ACharacter>(ControlledPawn))
+	{
+		if (UCharacterMovementComponent* MovementComponent =
+			ControlledCharacter->GetCharacterMovement())
+		{
+			MovementComponent->StopMovementImmediately();
+		}
+	}
+
+	CurrentMoveForward = 0.0f;
+	CurrentMoveRight = 0.0f;
+	bHasLastSentInput = false;
+
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[BattleGrid] Snapped local pawn to %s. player_id=%d world=(%.1f,%.1f,%.1f) server=(%.1f,%.1f,%.1f)"),
+		ReasonText,
+		OwnSnapshot.PlayerId,
+		ServerWorldLocation.X,
+		ServerWorldLocation.Y,
+		ServerWorldLocation.Z,
+		OwnSnapshot.X,
+		OwnSnapshot.Y,
+		OwnSnapshot.Z
+	);
+
+	return true;
 }
 
 FVector2D ABattleGridClientPlayerController::ConvertUnrealDirectionToServerDirection(
@@ -2208,13 +3090,144 @@ FVector2D ABattleGridClientPlayerController::ConvertServerDirectionToUnrealDirec
 	float ServerDirY
 ) const
 {
-	FVector2D UnrealDirection(ServerDirY, ServerDirX);
+	const float SafeAimSignX = FMath::IsNearlyZero(ServerAimSignX) ? 1.0f : ServerAimSignX;
+	const float SafeAimSignY = FMath::IsNearlyZero(ServerAimSignY) ? 1.0f : ServerAimSignY;
+	FVector2D UnrealDirection(
+		ServerDirY / SafeAimSignY,
+		ServerDirX / SafeAimSignX
+	);
 	if (!UnrealDirection.Normalize())
 	{
 		UnrealDirection = FVector2D(1.0f, 0.0f);
 	}
 
 	return UnrealDirection;
+}
+
+float ABattleGridClientPlayerController::ConvertServerYawToUnrealYaw(
+	float ServerYawDegrees
+) const
+{
+	// Server yaw is atan2(serverY, serverX). Server positions map to
+	// Unreal as WorldX=ServerY and WorldY=ServerX, so yaw is rotated by
+	// 90 degrees and mirrored across that swapped basis.
+	return FMath::UnwindDegrees(90.0f - ServerYawDegrees);
+}
+
+bool ABattleGridClientPlayerController::BuildServerProjectileVisualWorldSegment(
+	const FBattleGridServerProjectileSnapshot& Snapshot,
+	FVector& OutStartWorld,
+	FVector& OutEndWorld
+) const
+{
+	OutStartWorld = ConvertServerPositionToWorld(
+		Snapshot.ServerStart.X,
+		Snapshot.ServerStart.Y,
+		ServerProjectileGhostHeight + (Snapshot.ServerStart.Z * ServerToUnrealScale)
+	);
+	OutEndWorld = ConvertServerPositionToWorld(
+		Snapshot.ServerEnd.X,
+		Snapshot.ServerEnd.Y,
+		ServerProjectileGhostHeight + (Snapshot.ServerEnd.Z * ServerToUnrealScale)
+	);
+
+	const FVector ConvertedSegment = OutEndWorld - OutStartWorld;
+	float TracerLength = ConvertedSegment.Size();
+	if (TracerLength <= KINDA_SMALL_NUMBER)
+	{
+		const FVector ServerSegment = Snapshot.ServerEnd - Snapshot.ServerStart;
+		TracerLength = FMath::Max(600.0f, ServerSegment.Size() * ServerToUnrealScale);
+	}
+
+	const FVector2D UnrealProjectileDirection =
+		ConvertServerDirectionToUnrealDirection(Snapshot.DirX, Snapshot.DirY);
+	FVector UnrealProjectileDirection3D(
+		UnrealProjectileDirection.X,
+		UnrealProjectileDirection.Y,
+		Snapshot.DirZ
+	);
+	if (!UnrealProjectileDirection3D.Normalize())
+	{
+		const FVector ConvertedDirection = ConvertedSegment.GetSafeNormal();
+		if (!ConvertedDirection.IsNearlyZero())
+		{
+			UnrealProjectileDirection3D = ConvertedDirection;
+		}
+		else
+		{
+			UnrealProjectileDirection3D = FVector::ForwardVector;
+		}
+	}
+
+	if (!bUseClientMuzzleForServerTracerStart)
+	{
+		return true;
+	}
+
+	bool bOverrodeStart = false;
+	if (Snapshot.OwnerType.Equals(TEXT("bot"), ESearchCase::IgnoreCase))
+	{
+		if (const TObjectPtr<ABattleGridServerBotGhostActor>* BotGhostActor =
+			ServerBotGhostActors.Find(Snapshot.OwnerBotId))
+		{
+			if (*BotGhostActor)
+			{
+				OutStartWorld = (*BotGhostActor)->GetApproximateMuzzleWorldLocation();
+				bOverrodeStart = true;
+			}
+		}
+	}
+	else if (Snapshot.OwnerType.Equals(TEXT("player"), ESearchCase::IgnoreCase))
+	{
+		UGameInstance* GameInstance = GetGameInstance();
+		UBattleGridNetworkSubsystem* NetworkSubsystem = GameInstance
+			? GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>()
+			: nullptr;
+		const int32 LocalServerPlayerId = NetworkSubsystem
+			? NetworkSubsystem->GetPlayerId()
+			: 0;
+
+		if (Snapshot.OwnerPlayerId == LocalServerPlayerId)
+		{
+			if (const ABattleGridClientCharacter* BattleGridCharacter =
+				Cast<ABattleGridClientCharacter>(GetPawn()))
+			{
+				OutStartWorld = BattleGridCharacter->GetApproximateMuzzleWorldLocation();
+				bOverrodeStart = true;
+			}
+		}
+		else if (const TObjectPtr<ABattleGridServerGhostActor>* PlayerGhostActor =
+			ServerGhostActors.Find(Snapshot.OwnerPlayerId))
+		{
+			if (*PlayerGhostActor)
+			{
+				OutStartWorld = (*PlayerGhostActor)->GetApproximateMuzzleWorldLocation();
+				bOverrodeStart = true;
+			}
+		}
+	}
+
+	if (bOverrodeStart)
+	{
+		// Once the start is replaced with a client-side muzzle, the end must be
+		// rebuilt from the same world-space direction instead of reusing the
+		// converted server endpoint from a different origin.
+		OutEndWorld = OutStartWorld + (UnrealProjectileDirection3D * TracerLength);
+	}
+
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+	if (bShowProjectileGhostDebug)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			DrawDebugSphere(World, OutStartWorld, 10.0f, 12, FColor::Green, false, 0.0f);
+			DrawDebugSphere(World, OutEndWorld, 10.0f, 12, FColor::Red, false, 0.0f);
+			DrawDebugLine(World, OutStartWorld, OutEndWorld, FColor::Yellow, false, 0.0f, 0, 1.5f);
+		}
+	}
+#endif
+
+	return true;
 }
 
 void ABattleGridClientPlayerController::UpdateServerProjectileGhostsFromSnapshot()
@@ -2277,16 +3290,17 @@ void ABattleGridClientPlayerController::UpdateServerProjectileGhostsFromSnapshot
 			ProjectileSnapshot.Y,
 			ServerProjectileGhostHeight + (ProjectileSnapshot.Z * ServerToUnrealScale)
 		);
-		FVector WorldStartLocation = ConvertServerPositionToWorld(
-			ProjectileSnapshot.ServerStart.X,
-			ProjectileSnapshot.ServerStart.Y,
-			ServerProjectileGhostHeight + (ProjectileSnapshot.ServerStart.Z * ServerToUnrealScale)
-		);
-		const FVector WorldEndLocation = ConvertServerPositionToWorld(
-			ProjectileSnapshot.ServerEnd.X,
-			ProjectileSnapshot.ServerEnd.Y,
-			ServerProjectileGhostHeight + (ProjectileSnapshot.ServerEnd.Z * ServerToUnrealScale)
-		);
+		FVector WorldStartLocation = FVector::ZeroVector;
+		FVector WorldEndLocation = FVector::ZeroVector;
+		if (!BuildServerProjectileVisualWorldSegment(
+			ProjectileSnapshot,
+			WorldStartLocation,
+			WorldEndLocation
+		))
+		{
+			continue;
+		}
+
 		const FVector2D UnrealProjectileDirection =
 			ConvertServerDirectionToUnrealDirection(
 				ProjectileSnapshot.DirX,
@@ -2300,29 +3314,6 @@ void ABattleGridClientPlayerController::UpdateServerProjectileGhostsFromSnapshot
 		if (!UnrealProjectileDirection3D.Normalize())
 		{
 			UnrealProjectileDirection3D = FVector(1.0f, 0.0f, 0.0f);
-		}
-
-		if (ProjectileSnapshot.OwnerType.Equals(TEXT("bot"), ESearchCase::IgnoreCase))
-		{
-			if (const TObjectPtr<ABattleGridServerBotGhostActor>* BotGhostActor =
-				ServerBotGhostActors.Find(ProjectileSnapshot.OwnerBotId))
-			{
-				if (*BotGhostActor)
-				{
-					WorldStartLocation = (*BotGhostActor)->GetApproximateMuzzleWorldLocation();
-				}
-			}
-		}
-		else if (
-			ProjectileSnapshot.OwnerType.Equals(TEXT("player"), ESearchCase::IgnoreCase)
-			&& ProjectileSnapshot.OwnerPlayerId == NetworkSubsystem->GetPlayerId()
-		)
-		{
-			if (const ABattleGridClientCharacter* Character =
-				Cast<ABattleGridClientCharacter>(GetPawn()))
-			{
-				WorldStartLocation = Character->GetApproximateMuzzleWorldLocation();
-			}
 		}
 
 		TObjectPtr<ABattleGridServerProjectileGhostActor>& GhostActor =
@@ -2353,14 +3344,37 @@ void ABattleGridClientPlayerController::UpdateServerProjectileGhostsFromSnapshot
 				UE_LOG(
 					LogTemp,
 					Log,
-					TEXT("[BattleGrid] Spawned server projectile ghost id=%d dir server=(%.2f,%.2f) unreal=(%.2f,%.2f)"),
+					TEXT("[BattleGrid] Spawned server projectile ghost id=%d owner=%s dir server=(%.2f,%.2f) unreal=(%.2f,%.2f) start=(%.1f,%.1f,%.1f) end=(%.1f,%.1f,%.1f)"),
 					ProjectileSnapshot.ProjectileId,
+					*ProjectileSnapshot.OwnerType,
 					ProjectileSnapshot.DirX,
 					ProjectileSnapshot.DirY,
 					UnrealProjectileDirection.X,
-					UnrealProjectileDirection.Y
+					UnrealProjectileDirection.Y,
+					WorldStartLocation.X,
+					WorldStartLocation.Y,
+					WorldStartLocation.Z,
+					WorldEndLocation.X,
+					WorldEndLocation.Y,
+					WorldEndLocation.Z
 				);
 			}
+		}
+
+		if (bShowProjectileGhostDebug)
+		{
+			UE_LOG(
+				LogTemp,
+				Log,
+				TEXT("[BattleGrid] Server projectile visual owner=%s start=(%.1f,%.1f,%.1f) end=(%.1f,%.1f,%.1f)"),
+				*ProjectileSnapshot.OwnerType,
+				WorldStartLocation.X,
+				WorldStartLocation.Y,
+				WorldStartLocation.Z,
+				WorldEndLocation.X,
+				WorldEndLocation.Y,
+				WorldEndLocation.Z
+			);
 		}
 
 		if (GhostActor)
@@ -2562,6 +3576,7 @@ void ABattleGridClientPlayerController::UpdateServerBotGhostsFromSnapshot()
 			BotSnapshot.Y,
 			ServerBotGhostHeight + BotSnapshot.Z
 		);
+		const float ConvertedBotYaw = ConvertServerYawToUnrealYaw(BotSnapshot.Yaw);
 
 		TObjectPtr<ABattleGridServerBotGhostActor>& GhostActor =
 			ServerBotGhostActors.FindOrAdd(BotSnapshot.BotId);
@@ -2594,12 +3609,19 @@ void ABattleGridClientPlayerController::UpdateServerBotGhostsFromSnapshot()
 					TEXT("[BattleGrid] Spawned server bot ghost id=%d"),
 					BotSnapshot.BotId
 				);
+				UE_LOG(
+					LogTemp,
+					Log,
+					TEXT("[BattleGrid] Bot yaw convert server=%.2f unreal=%.2f"),
+					BotSnapshot.Yaw,
+					ConvertedBotYaw
+				);
 			}
 		}
 
 		if (GhostActor)
 		{
-			GhostActor->SetSnapshotData(BotSnapshot, WorldLocation);
+			GhostActor->SetSnapshotData(BotSnapshot, WorldLocation, ConvertedBotYaw);
 		}
 	}
 
@@ -2751,6 +3773,9 @@ void ABattleGridClientPlayerController::UpdateOwnServerPositionErrorAndCorrectio
 	{
 		bHasOwnServerWorldLocation = false;
 		LastServerPositionError = 0.0f;
+		LastCorrectionObservedSnapshotTick = 0;
+		LastCorrectionObservedSnapshotWorldTime = 0.0f;
+		bLoggedBothCorrectionModesWarning = false;
 		return;
 	}
 
@@ -2759,6 +3784,8 @@ void ABattleGridClientPlayerController::UpdateOwnServerPositionErrorAndCorrectio
 	{
 		bHasOwnServerWorldLocation = false;
 		LastServerPositionError = 0.0f;
+		LastCorrectionObservedSnapshotTick = 0;
+		LastCorrectionObservedSnapshotWorldTime = 0.0f;
 		return;
 	}
 
@@ -2767,6 +3794,8 @@ void ABattleGridClientPlayerController::UpdateOwnServerPositionErrorAndCorrectio
 	{
 		bHasOwnServerWorldLocation = false;
 		LastServerPositionError = 0.0f;
+		LastCorrectionObservedSnapshotTick = 0;
+		LastCorrectionObservedSnapshotWorldTime = 0.0f;
 		return;
 	}
 
@@ -2786,6 +3815,15 @@ void ABattleGridClientPlayerController::UpdateOwnServerPositionErrorAndCorrectio
 	bHasOwnServerWorldLocation = true;
 
 	const int32 SnapshotTick = NetworkSubsystem->GetLastSnapshotTick();
+	const float CurrentWorldTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	if (SnapshotTick != LastCorrectionObservedSnapshotTick)
+	{
+		LastCorrectionObservedSnapshotTick = SnapshotTick;
+		LastCorrectionObservedSnapshotWorldTime = CurrentWorldTime;
+	}
+	const bool bSnapshotFreshForCorrection =
+		!GetWorld()
+		|| CurrentWorldTime - LastCorrectionObservedSnapshotWorldTime <= 0.35f;
 	const int32 EffectiveSnapshotLogInterval = FMath::Max(1, SnapshotLogInterval);
 	if (
 		SnapshotTick > 0
@@ -2804,17 +3842,61 @@ void ABattleGridClientPlayerController::UpdateOwnServerPositionErrorAndCorrectio
 	}
 
 	if (
-		!bUseServerPositionCorrection
+		(!bUseServerPositionCorrection && !bUseGentleServerPositionCorrection)
 		|| IsPlayerDead()
 		|| IsServerDead()
 		|| HasWon()
+		|| SnapshotTick <= 0
+		|| !bSnapshotFreshForCorrection
 	)
 	{
 		return;
 	}
 
+	if (bUseServerPositionCorrection && bUseGentleServerPositionCorrection)
+	{
+		if (!bLoggedBothCorrectionModesWarning)
+		{
+			UE_LOG(
+				LogTemp,
+				Warning,
+				TEXT("[BattleGrid] Both correction modes enabled; using gentle correction.")
+			);
+			bLoggedBothCorrectionModesWarning = true;
+		}
+	}
+	else
+	{
+		bLoggedBothCorrectionModesWarning = false;
+	}
+
+	const bool bUseGentleCorrection = bUseGentleServerPositionCorrection;
 	FVector CorrectedLocation = PawnLocation;
-	if (LastServerPositionError > ServerCorrectionSnapDistance)
+	if (bUseGentleCorrection)
+	{
+		if (LastServerPositionError <= GentleCorrectionThreshold)
+		{
+			return;
+		}
+
+		if (LastServerPositionError > HardCorrectionThreshold)
+		{
+			CorrectedLocation.X = ServerPawnLocation.X;
+			CorrectedLocation.Y = ServerPawnLocation.Y;
+		}
+		else
+		{
+			const FVector InterpolatedLocation = FMath::VInterpTo(
+				PawnLocation,
+				ServerPawnLocation,
+				DeltaTime,
+				FMath::Max(0.0f, GentleCorrectionInterpSpeed)
+			);
+			CorrectedLocation.X = InterpolatedLocation.X;
+			CorrectedLocation.Y = InterpolatedLocation.Y;
+		}
+	}
+	else if (LastServerPositionError > ServerCorrectionSnapDistance)
 	{
 		CorrectedLocation.X = ServerPawnLocation.X;
 		CorrectedLocation.Y = ServerPawnLocation.Y;
@@ -2920,25 +4002,10 @@ void ABattleGridClientPlayerController::UpdateServerLifeStateFromSnapshot(float 
 	{
 		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Server says player respawned."));
 
-		if (bSnapLocalPawnOnServerRespawn)
+		if (bSnapLocalPawnToServerOnRespawn || bSnapLocalPawnOnServerRespawn)
 		{
-			const FVector PawnLocation = ControlledPawn->GetActorLocation();
-			FVector RespawnWorldLocation = ConvertServerPositionToWorld(
-				OwnSnapshot.X,
-				OwnSnapshot.Y,
-				0.0f
-			);
-			RespawnWorldLocation.Z = PawnLocation.Z;
-			ControlledPawn->SetActorLocation(RespawnWorldLocation);
-
-			if (ACharacter* ControlledCharacter = Cast<ACharacter>(ControlledPawn))
-			{
-				if (UCharacterMovementComponent* MovementComponent =
-					ControlledCharacter->GetCharacterMovement())
-				{
-					MovementComponent->StopMovementImmediately();
-				}
-			}
+			SnapLocalPawnToOwnServerSnapshot(TEXT("server respawn"));
+			UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Snapped local pawn to server respawn."));
 		}
 
 		CurrentMoveForward = 0.0f;

@@ -12,6 +12,7 @@ class USkeletalMeshComponent;
 class UStaticMeshComponent;
 class UTextRenderComponent;
 class UMaterialInterface;
+class UAnimationAsset;
 
 UCLASS(Blueprintable)
 class BATTLEGRIDCLIENT_API ABattleGridServerBotGhostActor : public AActor
@@ -26,7 +27,8 @@ public:
 
 	void SetSnapshotData(
 		const FBattleGridServerBotSnapshot& Snapshot,
-		const FVector& WorldLocation
+		const FVector& WorldLocation,
+		float ConvertedServerYawDegrees
 	);
 	int32 GetBotId() const;
 	FVector GetApproximateMuzzleWorldLocation() const;
@@ -85,11 +87,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
 	FVector BotWeaponRelativeScale;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual")
 	FName MuzzleSocketName;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual")
 	FVector MuzzleFallbackOffset;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual")
+	bool bShowMuzzleDebug;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual", meta = (ClampMin = "0.0"))
+	float MuzzleDebugSphereRadius;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.01"))
 	float HumanoidAliveScale;
@@ -100,14 +108,71 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.0"))
 	float HumanoidLabelHeight;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	FVector HumanoidMeshRelativeLocation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	FRotator HumanoidMeshRelativeRotation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	FVector HumanoidMeshRelativeScale3D;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	bool bFaceMovementDirection;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	bool bUseServerYawWhenNotMoving;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.0"))
+	float RotationInterpSpeed;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.0"))
+	float MovementFacingThreshold;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual")
+	float MeshForwardYawOffset;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation")
+	bool bUseSimpleBotAnimationPlayback;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation")
+	TObjectPtr<UAnimationAsset> BotIdleAnimation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation")
+	TObjectPtr<UAnimationAsset> BotRunAnimation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation")
+	TObjectPtr<UAnimationAsset> BotDeathAnimation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation", meta = (ClampMin = "0.0"))
+	float BotRunSpeedThreshold;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Debug")
+	bool bShowServerHitVolumes;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Debug", meta = (ClampMin = "0.0"))
+	float DebugHeadSphereRadius;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Debug", meta = (ClampMin = "0.0"))
+	float DebugBodySphereRadius;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Debug", meta = (ClampMin = "0.0"))
+	float DebugBodyHeight;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Debug", meta = (ClampMin = "0.0"))
+	float DebugHeadHeight;
+
 private:
 	void ApplyVisualState(bool bIsAlive, bool bIsInvincible);
 	void AttachWeaponToSkeletalMesh();
+	void UpdateSimpleAnimationPlayback(float DeltaSeconds);
+	void ApplyHumanoidMeshTransform(float StateScale);
 
 	int32 BotId;
 	FString Name;
 	FVector TargetLocation;
-	float TargetYaw;
+	float TargetActorYaw;
+	float ConvertedServerYaw;
 	int32 HP;
 	int32 MaxHP;
 	bool bAlive;
@@ -117,6 +182,13 @@ private:
 	TObjectPtr<UMaterialInterface> DefaultMaterial;
 
 	bool bLoggedMissingWeaponSocketWarning;
+	mutable bool bLoggedMissingMuzzleSocketWarning;
 	bool bLoggedWeaponAttachment;
 	bool bLoggedSkeletalMaterialPreservation;
+	bool bLoggedMovementFacing;
+
+	FVector PreviousWorldLocation;
+	bool bHasPreviousWorldLocation;
+	float VisualSpeed;
+	FString CurrentAnimationState;
 };

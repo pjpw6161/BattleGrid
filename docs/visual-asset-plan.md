@@ -33,8 +33,13 @@ BattleGrid is currently a gameplay and networking prototype with placeholder vis
 ## Implementation Status
 
 - Player C++ now exposes a `WeaponMeshComponent` and socket/offset settings.
+- Player C++ now exposes humanoid mesh transform offsets and optional simple Idle/Run/Jump animation playback.
+- Player C++ exposes camera collision probe sizing for quick third-person camera clipping adjustments.
 - Bot ghost C++ now exposes optional Skeletal Mesh visualization and a weapon mesh slot.
-- Player and bot visual classes now expose muzzle socket names and fallback offsets for future muzzle/tracer alignment.
+- Bot ghost C++ now exposes optional simple Idle/Run/Death animation playback for humanoid ghosts.
+- Bot ghost C++ exposes humanoid mesh transform offsets for Paragon orientation, floor height, and scale fixes.
+- Player, bot ghost, and server player ghost visual classes now expose muzzle socket names or fallback offsets for muzzle/tracer alignment.
+- PlayerController can spawn local visual projectiles from the local muzzle and can override visual-only server tracer starts with local player, bot ghost, or remote server player ghost muzzle approximations.
 - Server projectile ghosts support visual-only tracer lines with player/bot material slots.
 - External assets are not imported yet.
 - No animation retargeting, aim offsets, firing montages, reload montages, or weapon sockets are authored by Codex.
@@ -45,16 +50,22 @@ The human developer should import and configure assets in Unreal Editor:
 
 - Add third-party assets under `Content/BattleGrid/Art/...`.
 - Assign player Skeletal Mesh and optional AnimBP in `BP_BattleGridCharacter`.
+- Tune player mesh location, rotation, scale, and camera offsets so movement/ADS remains readable.
+- Optionally enable simple player animation playback only while testing compatible Idle, Run, and Jump assets.
 - Assign bot Skeletal Mesh and optional AnimBP in `BP_BattleGridServerBotGhostActor`.
+- Optionally enable `bUseSimpleBotAnimationPlayback` and assign compatible Idle, Run, and Death animation assets.
+- Tune `HumanoidMeshRelativeLocation`, `HumanoidMeshRelativeRotation`, and `HumanoidMeshRelativeScale3D` for the selected bot asset.
 - Create or verify right-hand weapon sockets.
 - Create or verify muzzle sockets when the weapon mesh is ready.
 - Tune mesh scale, location, rotation, label height, and weapon offsets.
+- Use `bShowMuzzleDebug` briefly to verify muzzle spheres/lines, then disable it before recording.
 - Assign separate player and bot projectile materials to the server projectile ghost Blueprint if clearer tracer colors are needed.
 - Record all third-party asset sources in `docs/asset-credits.md`.
 
 ## Future Visual Work
 
 - Humanoid movement and aim animations.
+- Player Animation Blueprint/retargeting pass.
 - Firing and reload animation montages.
 - Weapon socket alignment pass.
 - Niagara muzzle flash, tracer, and impact effects.

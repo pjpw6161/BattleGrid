@@ -155,6 +155,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server State")
 	bool bShowServerDeathStatus;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Movement")
+	bool bSnapLocalPawnToServerOnJoin;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Movement")
+	bool bSnapLocalPawnToServerOnRespawn;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Movement", meta = (ClampMin = "0.0"))
+	float JoinSnapDelaySeconds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Movement")
+	bool bSendClientPositionToServer;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Movement")
+	bool bUseGentleServerPositionCorrection;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Movement", meta = (ClampMin = "0.0"))
+	float GentleCorrectionThreshold;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Movement", meta = (ClampMin = "0.0"))
+	float GentleCorrectionInterpSpeed;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Movement", meta = (ClampMin = "0.0"))
+	float HardCorrectionThreshold;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Movement", meta = (ClampMin = "0.0"))
 	float NormalMoveSpeed;
 
@@ -242,6 +266,51 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|Combat", meta = (ClampMin = "0.0"))
 	float FireCooldownSeconds;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual")
+	bool bUseServerAuthoritativeFireVisuals;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual")
+	bool bSpawnLegacyLocalProjectileWhenConnected;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual")
+	bool bAllowLegacyLocalProjectileDamageWhenConnected;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual")
+	bool bSpawnLegacyLocalProjectileWhenOffline;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual")
+	bool bSpawnLocalProjectileFromMuzzle;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual")
+	bool bUseClientMuzzleForServerTracerStart;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual", meta = (ClampMin = "100.0"))
+	float AimTraceDistance;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual")
+	bool bShowAimDebug;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Debug")
+	bool bShowServerShotDebug;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Debug", meta = (ClampMin = "100.0"))
+	float ServerShotDebugLength;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Debug")
+	bool bDrawServerArenaBounds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Debug")
+	float ServerArenaBoundsDebugZ;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Debug")
+	bool bDrawServerBotAreaBounds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Debug")
+	float BotAreaBoundsDebugZ;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	bool bShowProjectileGhostDebug;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
 	bool bShowServerGhosts;
 
@@ -256,6 +325,15 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
 	float ServerGhostHeight;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	bool bUseSnapshotZForServerPlayerGhosts;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	float ServerPlayerGhostZOffset;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
+	bool bUseLocalPawnZForOwnServerGhost;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Server Snapshot")
 	bool bAutoCalibrateServerSnapshotOrigin;
@@ -342,8 +420,15 @@ private:
 	void UpdateAimRotation();
 	void ApplyMovementAndADSState();
 	bool IsControlledPawnFalling() const;
+	bool IsServerAuthoritativeFireMode() const;
 	FVector GetCameraRelativeMovementDirection(float ForwardAxis, float RightAxis) const;
 	FVector CalculateShotDirectionWithSpread(float SpreadDegrees) const;
+	FVector CalculateShotDirectionWithSpread(float SpreadDegrees, const FVector& BaseDirection) const;
+	bool GetCrosshairAimPoint(FVector& OutAimPoint, FVector& OutAimDirection) const;
+	bool GetCurrentFireOriginAndDirectionForServer(
+		FVector& OutFireOriginWorld,
+		FVector& OutShotDirectionWorld
+	) const;
 	void SendInputToServerIfNeeded();
 	void SendInputToServer(bool bForceSend);
 	void ApplyDemoServerSettingsIfNeeded();
@@ -352,10 +437,27 @@ private:
 	FVector ConvertServerPositionToWorldNoOrigin(float ServerX, float ServerY, float WorldHeight) const;
 	FVector ConvertServerPositionToWorld(float ServerX, float ServerY) const;
 	FVector ConvertServerPositionToWorld(float ServerX, float ServerY, float WorldHeight) const;
+	bool ConvertWorldPositionToServerPosition(
+		const FVector& WorldLocation,
+		FVector& OutServerLocation
+	) const;
 	FVector2D ConvertUnrealDirectionToServerDirection(const FVector& UnrealForward) const;
 	FVector2D ConvertServerDirectionToUnrealDirection(float ServerDirX, float ServerDirY) const;
+	float ConvertServerYawToUnrealYaw(float ServerYawDegrees) const;
 	void CalibrateServerSnapshotOriginIfNeeded();
 	void ResetServerSnapshotOriginCalibration();
+	void SnapLocalPawnToServerOnJoinIfNeeded(float DeltaTime);
+	bool SnapLocalPawnToOwnServerSnapshot(const TCHAR* ReasonText);
+	FString GetServerCorrectionModeText() const;
+	FString GetServerArenaBoundsDebugText() const;
+	FString GetServerBotAreaBoundsDebugText() const;
+	void DrawServerArenaBoundsIfEnabled() const;
+	void DrawServerBotAreaBoundsIfEnabled() const;
+	bool BuildServerProjectileVisualWorldSegment(
+		const FBattleGridServerProjectileSnapshot& Snapshot,
+		FVector& OutStartWorld,
+		FVector& OutEndWorld
+	) const;
 	void UpdateServerProjectileGhostsFromSnapshot();
 	void UpdateServerTargetGhostsFromSnapshot();
 	void UpdateServerBotGhostsFromSnapshot();
@@ -388,6 +490,10 @@ private:
 	int32 ShotSequence;
 	FVector2D LastShotDirectionServer;
 	float LastShotDirectionServerZ;
+	FVector LastFireOriginWorld;
+	FVector LastFireOriginServer;
+	bool bLastFireOriginWorldValid;
+	bool bLastFireOriginServerValid;
 	float LastShotSpreadDegrees;
 	int32 InputSequence;
 	float LastInputSendTime;
@@ -412,11 +518,18 @@ private:
 	int32 LastCalibratedServerPlayerId;
 	int32 LastCalibrationSnapshotTick;
 	int32 LastCalibrationMatchId;
+	bool bHasSnappedLocalPawnToServerOnJoin;
+	int32 LastJoinSnapServerPlayerId;
+	int32 LastJoinSnapMatchId;
+	float JoinSnapTimer;
 	int32 LastProcessedSnapshotTick;
 	float LastServerPositionError;
 	FVector LastOwnServerWorldLocation;
 	bool bHasOwnServerWorldLocation;
 	int32 LastServerPositionErrorLogSnapshotTick;
+	int32 LastCorrectionObservedSnapshotTick;
+	float LastCorrectionObservedSnapshotWorldTime;
+	bool bLoggedBothCorrectionModesWarning;
 	bool bWasServerAlive;
 	bool bIsServerDead;
 	bool bWasServerInvincible;

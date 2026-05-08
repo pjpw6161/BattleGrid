@@ -97,7 +97,7 @@
     <button id="sendInput">Send Input</button>
     <button id="sendFireInput">Send Fire Input</button>
     <button id="sendBodyShot">Send Body Shot</button>
-    <button id="sendHeadshot">Send Headshot-like Shot</button>
+    <button id="sendHeadshot">Send Headshot At Nearest Bot</button>
     <button id="sendFireAtBot1">Send Fire At Bot 1</button>
     <button id="sendFireAtNearestBot">Send Fire At Nearest Bot</button>
     <button id="fireFiveAtNearestBot">Fire 5 Shots At Nearest Bot</button>
@@ -142,6 +142,7 @@
     <div class="summary-card"><strong>Top 5 Ranking</strong><span id="scoreboardSummary">-</span></div>
     <div class="summary-card"><strong>Players</strong><span id="playersSummary">-</span></div>
     <div class="summary-card"><strong>Bots</strong><span id="botsSummary">-</span></div>
+    <div class="summary-card"><strong>Bot Area</strong><span id="botAreaSummary">Click Send Debug Room</span></div>
     <div class="summary-card"><strong>Targets Debug</strong><span id="targetsSummary">disabled</span></div>
     <div class="summary-card"><strong>Health Packs</strong><span id="healthPacksSummary">-</span></div>
     <div class="summary-card"><strong>Projectiles</strong><span id="projectilesSummary">-</span></div>
@@ -235,7 +236,8 @@
       const shotDirX = options.shotDirX ?? 1;
       const shotDirY = options.shotDirY ?? 0;
       const shotDirZ = options.shotDirZ ?? 0;
-      send(JSON.stringify({
+      const hasFireOrigin = options.hasFireOrigin ?? false;
+      const payload = {
         type: "input",
         seq: inputSeq,
         player_id: joinedPlayerId,
@@ -253,7 +255,16 @@
         jump: options.jump ?? false,
         ammo: options.ammo ?? 30,
         spread_deg: options.spreadDeg ?? 0
-      }));
+      };
+
+      if (hasFireOrigin) {
+        payload.has_fire_origin = true;
+        payload.fire_origin_x = options.fireOriginX ?? 0;
+        payload.fire_origin_y = options.fireOriginY ?? 0;
+        payload.fire_origin_z = options.fireOriginZ ?? 100;
+      }
+
+      send(JSON.stringify(payload));
     }
 
     function updateLatestRoomEntities(message) {
@@ -277,15 +288,15 @@
         : latestBots;
     }
 
-    function sendFireAtNearestBot() {
+    function findJoinedPlayerAndNearestAliveBot(actionLabel) {
       if (!latestSnapshot) {
-        log("Cannot fire at nearest bot: no snapshot has been received yet.");
-        return;
+        log(`Cannot ${actionLabel}: no snapshot has been received yet.`);
+        return null;
       }
 
       if (latestSnapshot.match && latestSnapshot.match.game_over) {
         log("Match is game_over. Click Apply Safe Demo Mode or Debug Restart Match before testing shots.");
-        return;
+        return null;
       }
 
       const players = getSnapshotPlayers();
@@ -293,12 +304,12 @@
       const player = players.find((entry) => entry.player_id === joinedPlayerId);
       const aliveBots = bots.filter((bot) => bot.alive);
       if (!player) {
-        log("Cannot fire at nearest bot: no current joined player snapshot. Wait for a snapshot first.");
-        return;
+        log(`Cannot ${actionLabel}: no current joined player snapshot. Wait for a snapshot first.`);
+        return null;
       }
       if (aliveBots.length === 0) {
-        log("Cannot fire at nearest bot: no alive bots in latest snapshot.");
-        return;
+        log(`Cannot ${actionLabel}: no alive bots in latest snapshot.`);
+        return null;
       }
 
       let nearestBot = null;
@@ -314,10 +325,26 @@
       }
 
       if (!nearestBot || nearestDistanceSquared <= 0.0001) {
-        log("Cannot fire at nearest bot: bot is too close to compute a stable direction.");
+        log(`Cannot ${actionLabel}: bot is too close to compute a stable direction.`);
+        return null;
+      }
+
+      return {
+        player,
+        bot: nearestBot,
+        distanceSquared: nearestDistanceSquared
+      };
+    }
+
+    function sendFireAtNearestBot() {
+      const target = findJoinedPlayerAndNearestAliveBot("fire at nearest bot");
+      if (!target) {
         return;
       }
 
+      const player = target.player;
+      const nearestBot = target.bot;
+      const nearestDistanceSquared = target.distanceSquared;
       const distance = Math.sqrt(nearestDistanceSquared);
       const dirX = (Number(nearestBot.x ?? 0) - Number(player.x ?? 0)) / distance;
       const dirY = (Number(nearestBot.y ?? 0) - Number(player.y ?? 0)) / distance;
@@ -334,6 +361,58 @@
         shotDirX: dirX,
         shotDirY: dirY,
         shotDirZ: 0,
+        hasFireOrigin: true,
+        fireOriginX: Number(player.x ?? 0),
+        fireOriginY: Number(player.y ?? 0),
+        fireOriginZ: Number(player.z ?? 0) + 100,
+        ammo: 29,
+        spreadDeg: 0,
+        ads: true
+      });
+    }
+
+    function sendHeadshotAtNearestBot() {
+      const target = findJoinedPlayerAndNearestAliveBot("send headshot at nearest bot");
+      if (!target) {
+        return;
+      }
+
+      const player = target.player;
+      const nearestBot = target.bot;
+      const playerOriginZ = Number(player.z ?? 0) + 100;
+      const botHeadHeight = Number(nearestBot.head_height ?? 160);
+      const botHeadZ = Number(nearestBot.z ?? 0) + botHeadHeight;
+      const dx = Number(nearestBot.x ?? 0) - Number(player.x ?? 0);
+      const dy = Number(nearestBot.y ?? 0) - Number(player.y ?? 0);
+      const dz = botHeadZ - playerOriginZ;
+      const distance = Math.hypot(dx, dy, dz);
+      const horizontalDistance = Math.hypot(dx, dy);
+      if (distance <= 0.0001 || horizontalDistance <= 0.0001) {
+        log("Cannot send headshot at nearest bot: bot/head position is too close to compute a stable direction.");
+        return;
+      }
+
+      const dirX = dx / distance;
+      const dirY = dy / distance;
+      const dirZ = dz / distance;
+      const aimX = dx / horizontalDistance;
+      const aimY = dy / horizontalDistance;
+      log(
+        `headshot nearest bot B${nearestBot.bot_id} ` +
+        `origin_z=${playerOriginZ.toFixed(1)} head_z=${botHeadZ.toFixed(1)} ` +
+        `dir=(${dirX.toFixed(3)},${dirY.toFixed(3)},${dirZ.toFixed(3)})`
+      );
+
+      sendInput(0, 0, true, {
+        aimX,
+        aimY,
+        shotDirX: dirX,
+        shotDirY: dirY,
+        shotDirZ: dirZ,
+        hasFireOrigin: true,
+        fireOriginX: Number(player.x ?? 0),
+        fireOriginY: Number(player.y ?? 0),
+        fireOriginZ: playerOriginZ,
         ammo: 29,
         spreadDeg: 0,
         ads: true
@@ -416,6 +495,61 @@
       return event.headshot ? "SERVER HEADSHOT" : "SERVER HIT";
     }
 
+    function getBotAreaBounds() {
+      if (latestSnapshot && latestSnapshot.bot_area_bounds) {
+        return latestSnapshot.bot_area_bounds;
+      }
+      if (latestSnapshot && latestSnapshot.arena && latestSnapshot.arena.bot_area_bounds) {
+        return latestSnapshot.arena.bot_area_bounds;
+      }
+      if (latestDebugRoom && latestDebugRoom.bot_area_bounds) {
+        return latestDebugRoom.bot_area_bounds;
+      }
+      if (latestDebugRoom && latestDebugRoom.arena && latestDebugRoom.arena.bot_area_bounds) {
+        return latestDebugRoom.arena.bot_area_bounds;
+      }
+      return null;
+    }
+
+    function getBotWaypointCount() {
+      if (latestDebugRoom && Array.isArray(latestDebugRoom.bot_waypoints)) {
+        return latestDebugRoom.bot_waypoints.length;
+      }
+      if (latestDebugRoom && latestDebugRoom.arena && Array.isArray(latestDebugRoom.arena.bot_waypoints)) {
+        return latestDebugRoom.arena.bot_waypoints.length;
+      }
+      if (latestSnapshot && latestSnapshot.arena && Array.isArray(latestSnapshot.arena.bot_waypoints)) {
+        return latestSnapshot.arena.bot_waypoints.length;
+      }
+      return 0;
+    }
+
+    function formatBounds(bounds) {
+      if (!bounds) {
+        return "bounds waiting";
+      }
+
+      return `x=${bounds.min_x}..${bounds.max_x} y=${bounds.min_y}..${bounds.max_y}`;
+    }
+
+    function buildBotAreaSummary() {
+      const bounds = getBotAreaBounds();
+      const waypointCount = getBotWaypointCount();
+      const bots = getSnapshotBots();
+      const botPositions = bots
+        .slice(0, 8)
+        .map((bot) =>
+          `B${bot.bot_id}(${Number(bot.x ?? 0).toFixed(0)},${Number(bot.y ?? 0).toFixed(0)})`
+        )
+        .join(" ");
+
+      return (
+        `${formatBounds(bounds)}\n` +
+        `waypoints=${waypointCount || "-"}\n` +
+        `${botPositions || "-"}`
+      );
+    }
+
     function buildCombatTuningSummary() {
       if (!latestDebugRoom) {
         return "Click Send Debug Room";
@@ -426,6 +560,8 @@
         `Bot shots body/head=${latestDebugRoom.bot_body_damage ?? latestDebugRoom.bot_attack_damage ?? 10}/${latestDebugRoom.bot_headshot_damage ?? 20}\n` +
         `Difficulty=${latestDebugRoom.bot_difficulty ?? "normal"} attacks=${latestDebugRoom.bot_attacks_enabled ?? true}\n` +
         `Bot fire=${latestDebugRoom.bot_fire_interval ?? latestDebugRoom.bot_attack_cooldown ?? 0.5}s spread=${latestDebugRoom.bot_aim_spread ?? 12}deg\n` +
+        `Bot 2D fallback=${latestDebugRoom.enable_bot_2d_fallback_hit ?? true} radiusScale=${latestDebugRoom.bot_2d_fallback_radius_scale ?? 0.75}\n` +
+        `Client fire origin=${latestDebugRoom.use_client_fire_origin_for_hitscan ?? true} warn=${latestDebugRoom.client_fire_origin_warning_distance ?? 300} max=${latestDebugRoom.max_accepted_client_fire_origin_distance ?? 2000}\n` +
         `Timer auto-end=${latestDebugRoom.auto_end_match_by_timer ?? true}\n` +
         `Kill score bot/player=${latestDebugRoom.bot_kill_score ?? 1}/${latestDebugRoom.player_kill_score ?? 1}`
       );
@@ -478,6 +614,7 @@
         setText("scoreboardSummary", "-");
         setText("playersSummary", "-");
         setText("botsSummary", "-");
+        setText("botAreaSummary", buildBotAreaSummary());
         setText("targetsSummary", "disabled");
         setText("healthPacksSummary", "-");
         setText("projectilesSummary", "-");
@@ -516,6 +653,7 @@
         .map((bot) => `B${bot.bot_id}:${bot.alive ? bot.hp + "/" + bot.max_hp : "DEAD"}`)
         .join(" ");
       setText("botsSummary", `${aliveBots}/${bots.length}\n${botSummary || "-"}`);
+      setText("botAreaSummary", buildBotAreaSummary());
 
       const aliveTargets = targets.filter((target) => target.alive).length;
       const targetSummary = targets
@@ -605,13 +743,19 @@
       arenaLogged = true;
       const arena = message.arena;
       const bounds = arena.bounds;
+      const botAreaBounds = message.bot_area_bounds || arena.bot_area_bounds;
       const playerSpawns = Array.isArray(arena.player_spawns) ? arena.player_spawns.length : 0;
       const legacyTargets = Array.isArray(arena.target_cores_debug) ? arena.target_cores_debug.length : 0;
       const botSpawns = Array.isArray(arena.bot_spawns) ? arena.bot_spawns.length : 0;
+      const botWaypoints = Array.isArray(message.bot_waypoints)
+        ? message.bot_waypoints.length
+        : (Array.isArray(arena.bot_waypoints) ? arena.bot_waypoints.length : 0);
       const healthPackSpawns = Array.isArray(arena.health_pack_spawns) ? arena.health_pack_spawns.length : 0;
       log(
         `arena x=${bounds.min_x}..${bounds.max_x} y=${bounds.min_y}..${bounds.max_y} ` +
-        `player_spawns=${playerSpawns} bot_spawns=${botSpawns} health_pack_spawns=${healthPackSpawns}` +
+        `bot_area=${formatBounds(botAreaBounds)} ` +
+        `player_spawns=${playerSpawns} bot_spawns=${botSpawns} bot_waypoints=${botWaypoints} ` +
+        `health_pack_spawns=${healthPackSpawns}` +
         (legacyTargets > 0 ? ` legacy_targets_debug=${legacyTargets}` : "")
       );
     }
@@ -698,7 +842,15 @@
           log(
             `combat_tuning body=${message.body_damage ?? 20} ` +
             `head=${message.headshot_damage ?? 40} ` +
-            `kill_score bot/player=${message.bot_kill_score ?? 1}/${message.player_kill_score ?? 1}`
+            `kill_score bot/player=${message.bot_kill_score ?? 1}/${message.player_kill_score ?? 1} ` +
+            `bot_2d_fallback=${message.enable_bot_2d_fallback_hit ?? true} ` +
+            `radius_scale=${message.bot_2d_fallback_radius_scale ?? 0.75} ` +
+            `client_fire_origin=${message.use_client_fire_origin_for_hitscan ?? true} ` +
+            `max_origin_dist=${message.max_accepted_client_fire_origin_distance ?? 2000}`
+          );
+          log(
+            `bot_area ${formatBounds(message.bot_area_bounds)} ` +
+            `waypoints=${Array.isArray(message.bot_waypoints) ? message.bot_waypoints.length : 0}`
           );
           logArenaLayout(message);
           logEvents(message);
@@ -794,13 +946,7 @@
     });
 
     document.getElementById("sendHeadshot").addEventListener("click", () => {
-      sendInput(0, 0, true, {
-        shotDirX: 1,
-        shotDirY: 0,
-        shotDirZ: 0.6,
-        spreadDeg: 0,
-        ads: true
-      });
+      sendHeadshotAtNearestBot();
     });
 
     document.getElementById("sendFireAtBot1").addEventListener("click", () => {

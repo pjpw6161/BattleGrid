@@ -51,6 +51,10 @@ void BotState::Respawn(double newX, double newY)
     invincibleTimerSeconds = 1.5;
     respawnTimerSeconds = 0.0;
     targetPlayerId = 0;
+    stuckTimerSeconds = 0.0;
+    lastXForStuck = x;
+    lastYForStuck = y;
+    currentWaypointIndex = 0;
     attackTimerSeconds = 0.0;
     ammo = magazineSize;
     reloading = false;

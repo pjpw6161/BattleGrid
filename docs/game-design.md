@@ -68,7 +68,9 @@ The current server has hitscan shot result events:
 - Sprint spread: 6.0 degrees.
 - Jump spread: 9.0 degrees.
 
-Local projectile visuals are still separate from server hitscan damage. The server shot result event is the authoritative hit confirmation.
+Connected server mode uses server hitscan, server tracer ghosts, and server shot result events as the primary fire feedback.
+The legacy local sphere projectile remains for offline/local testing and is disabled by default while connected and joined to the server.
+The server shot result event is the authoritative hit confirmation.
 
 ## Crosshair Rules
 
@@ -90,6 +92,8 @@ The current C++ HUD supports optional `CrosshairTop`, `CrosshairBottom`, `Crossh
 - Bots detect nearest alive non-invincible players, face the target, and fire low-accuracy server hitscan shots.
 - Bots have 30-round magazines, infinite reserve ammo, and 2.5 second reloads.
 - Bot shots can spawn visual-only server tracer projectiles for ghost visualization.
+- Bots are constrained to a smaller demo bot area (`x=-1500..1500`, `y=-900..900`) because the server does not yet know Unreal map collision or NavMesh.
+- When not chasing a player, bots move between fixed demo waypoints inside that area. Basic stuck detection picks a new waypoint if a bot cannot make progress.
 - If bot attacks are disabled for safe demos, bots still move/chase/wander but do not shoot players.
 
 Debug/demo difficulty values:
@@ -182,7 +186,7 @@ When disabled:
 
 ## Current Limitations
 
-- Local projectile visuals and server hitscan damage are separate layers.
+- The legacy local projectile and local target layer still exist for offline testing, but the connected PvPvE demo uses server tracers and server hit markers as the primary shot feedback.
 - Local offline targets still exist but are no longer the main PvPvE objective.
 - Bots use simple server shooter AI, not full navigation, cover, animations, or advanced target selection.
 - No final humanoid player/bot models yet.

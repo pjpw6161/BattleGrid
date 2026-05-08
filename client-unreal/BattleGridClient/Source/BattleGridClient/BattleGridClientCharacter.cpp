@@ -6,6 +6,7 @@
 #include "BattleGridHealthComponent.h"
 #include "BattleGridWeaponComponent.h"
 #include "UObject/ConstructorHelpers.h"
+#include "Animation/AnimationAsset.h"
 #include "Camera/CameraComponent.h"
 #include "Components/DecalComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -15,6 +16,7 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Materials/Material.h"
+#include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 
 ABattleGridClientCharacter::ABattleGridClientCharacter()
@@ -39,6 +41,7 @@ ABattleGridClientCharacter::ABattleGridClientCharacter()
 	AdsSocketOffset = FVector(0.0f, 90.0f, 50.0f);
 	CameraInterpSpeed = 12.0f;
 	CameraLagSpeed = 12.0f;
+	PlayerCameraCollisionProbeSize = 12.0f;
 	DefaultFOV = 90.0f;
 	AdsFOV = 70.0f;
 	WeaponSocketName = TEXT("hand_rSocket");
@@ -46,9 +49,34 @@ ABattleGridClientCharacter::ABattleGridClientCharacter()
 	WeaponRelativeRotation = FRotator::ZeroRotator;
 	WeaponRelativeScale = FVector(1.0f, 1.0f, 1.0f);
 	MuzzleSocketName = TEXT("Muzzle");
-	MuzzleFallbackOffset = FVector(80.0f, 20.0f, 80.0f);
+	MuzzleFallbackOffset = FVector(100.0f, 25.0f, 90.0f);
+	bShowMuzzleDebug = false;
+	MuzzleDebugSphereRadius = 8.0f;
+	PlayerMeshRelativeLocation = FVector(0.0f, 0.0f, -90.0f);
+	PlayerMeshRelativeRotation = FRotator(0.0f, -90.0f, 0.0f);
+	PlayerMeshRelativeScale3D = FVector(1.0f, 1.0f, 1.0f);
+	bUseSimplePlayerAnimationPlayback = false;
+	PlayerIdleAnimation = nullptr;
+	PlayerRunAnimation = nullptr;
+	PlayerJumpAnimation = nullptr;
+	PlayerJumpStartAnimation = nullptr;
+	PlayerJumpLoopAnimation = nullptr;
+	PlayerJumpLandAnimation = nullptr;
+	bLoopPlayerJumpLoopAnimation = false;
+	PlayerLandAnimationLockSeconds = 0.25f;
+	PlayerRunSpeedThreshold = 20.0f;
 	bADSActive = false;
 	bSprinting = false;
+	LastPlayerWorldLocation = FVector::ZeroVector;
+	PlayerVisualSpeed = 0.0f;
+	CurrentPlayerVisualAnimState = NAME_None;
+	bWasPlayerFalling = false;
+	bPlayerJumpStartPlayed = false;
+	bPlayerJumpLoopPlayed = false;
+	bPlayerLandPlaying = false;
+	PlayerLandLockTimer = 0.0f;
+
+	ApplyPlayerMeshVisualSettings();
 
 	// Configure character movement
 	GetCharacterMovement()->bOrientRotationToMovement = false;
@@ -83,7 +111,17 @@ ABattleGridClientCharacter::ABattleGridClientCharacter()
 	bIsDead = false;
 	RespawnDelaySeconds = 3.0f;
 	bLoggedMissingWeaponSocketWarning = false;
+	bLoggedMissingMuzzleSocketWarning = false;
 	bLoggedWeaponAttachment = false;
+}
+
+void ABattleGridClientCharacter::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+
+	ApplyPlayerMeshVisualSettings();
+	AttachWeaponToCharacterMesh();
+	ApplyCameraSettings(0.0f);
 }
 
 void ABattleGridClientCharacter::BeginPlay()
@@ -92,6 +130,14 @@ void ABattleGridClientCharacter::BeginPlay()
 
 	RespawnLocation = GetActorLocation();
 	RespawnRotation = GetActorRotation();
+	LastPlayerWorldLocation = GetActorLocation();
+	CurrentPlayerVisualAnimState = NAME_None;
+	bWasPlayerFalling = false;
+	bPlayerJumpStartPlayed = false;
+	bPlayerJumpLoopPlayed = false;
+	bPlayerLandPlaying = false;
+	PlayerLandLockTimer = 0.0f;
+	ApplyPlayerMeshVisualSettings();
 	AttachWeaponToCharacterMesh();
 
 	if (HealthComponent)
@@ -107,6 +153,33 @@ void ABattleGridClientCharacter::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	ApplyCameraSettings(DeltaSeconds);
+	UpdateSimplePlayerAnimation(DeltaSeconds);
+
+	if (bShowMuzzleDebug)
+	{
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+		const FVector MuzzleLocation = GetApproximateMuzzleWorldLocation();
+		DrawDebugSphere(
+			GetWorld(),
+			MuzzleLocation,
+			MuzzleDebugSphereRadius,
+			12,
+			FColor::Cyan,
+			false,
+			0.0f
+		);
+		DrawDebugLine(
+			GetWorld(),
+			MuzzleLocation,
+			MuzzleLocation + (GetActorForwardVector() * 120.0f),
+			FColor::Cyan,
+			false,
+			0.0f,
+			0,
+			1.5f
+		);
+#endif
+	}
 }
 
 float ABattleGridClientCharacter::TakeDamage(
@@ -244,6 +317,160 @@ void ABattleGridClientCharacter::SetSprinting(bool bInSprinting)
 	bSprinting = bInSprinting;
 }
 
+void ABattleGridClientCharacter::ApplyPlayerMeshVisualSettings()
+{
+	USkeletalMeshComponent* CharacterMesh = GetMesh();
+	if (!CharacterMesh)
+	{
+		return;
+	}
+
+	CharacterMesh->SetRelativeLocation(PlayerMeshRelativeLocation);
+	CharacterMesh->SetRelativeRotation(PlayerMeshRelativeRotation);
+	CharacterMesh->SetRelativeScale3D(PlayerMeshRelativeScale3D);
+	CharacterMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+}
+
+void ABattleGridClientCharacter::UpdateSimplePlayerAnimation(float DeltaSeconds)
+{
+	USkeletalMeshComponent* CharacterMesh = GetMesh();
+	if (!CharacterMesh || !bUseSimplePlayerAnimationPlayback)
+	{
+		CurrentPlayerVisualAnimState = NAME_None;
+		LastPlayerWorldLocation = GetActorLocation();
+		PlayerVisualSpeed = 0.0f;
+		bWasPlayerFalling = false;
+		bPlayerJumpStartPlayed = false;
+		bPlayerJumpLoopPlayed = false;
+		bPlayerLandPlaying = false;
+		PlayerLandLockTimer = 0.0f;
+		return;
+	}
+
+	CharacterMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+
+	const FVector CurrentLocation = GetActorLocation();
+	FVector MovementDelta = CurrentLocation - LastPlayerWorldLocation;
+	MovementDelta.Z = 0.0f;
+	PlayerVisualSpeed = DeltaSeconds > KINDA_SMALL_NUMBER
+		? MovementDelta.Size() / DeltaSeconds
+		: 0.0f;
+	LastPlayerWorldLocation = CurrentLocation;
+
+	const UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
+	const bool bIsFalling = MovementComponent && MovementComponent->IsFalling();
+	UAnimationAsset* JumpLoopAnimation = PlayerJumpLoopAnimation.Get()
+		? PlayerJumpLoopAnimation.Get()
+		: PlayerJumpAnimation.Get();
+
+	if (!bIsFalling && bWasPlayerFalling)
+	{
+		bWasPlayerFalling = false;
+		bPlayerJumpStartPlayed = false;
+		bPlayerJumpLoopPlayed = false;
+		if (PlayerJumpLandAnimation)
+		{
+			bPlayerLandPlaying = true;
+			PlayerLandLockTimer = PlayerLandAnimationLockSeconds;
+			PlaySimplePlayerAnimation(PlayerJumpLandAnimation.Get(), TEXT("JumpLand"), false);
+			return;
+		}
+	}
+
+	if (bPlayerLandPlaying)
+	{
+		PlayerLandLockTimer -= DeltaSeconds;
+		if (PlayerLandLockTimer > 0.0f)
+		{
+			return;
+		}
+		bPlayerLandPlaying = false;
+		PlayerLandLockTimer = 0.0f;
+	}
+
+	if (bIsFalling && !bWasPlayerFalling)
+	{
+		bWasPlayerFalling = true;
+		bPlayerLandPlaying = false;
+		PlayerLandLockTimer = 0.0f;
+		bPlayerJumpStartPlayed = false;
+		bPlayerJumpLoopPlayed = false;
+
+		if (PlayerJumpStartAnimation)
+		{
+			bPlayerJumpStartPlayed = true;
+			PlaySimplePlayerAnimation(PlayerJumpStartAnimation.Get(), TEXT("JumpStart"), false);
+			return;
+		}
+
+		bPlayerJumpStartPlayed = true;
+		bPlayerJumpLoopPlayed = true;
+		if (JumpLoopAnimation)
+		{
+			PlaySimplePlayerAnimation(JumpLoopAnimation, TEXT("JumpLoop"), bLoopPlayerJumpLoopAnimation);
+		}
+		return;
+	}
+
+	if (bIsFalling)
+	{
+		bWasPlayerFalling = true;
+		if (!bPlayerJumpLoopPlayed)
+		{
+			bPlayerJumpLoopPlayed = true;
+			if (JumpLoopAnimation)
+			{
+				PlaySimplePlayerAnimation(JumpLoopAnimation, TEXT("JumpLoop"), bLoopPlayerJumpLoopAnimation);
+			}
+		}
+		return;
+	}
+
+	bPlayerJumpStartPlayed = false;
+	bPlayerJumpLoopPlayed = false;
+
+	if (PlayerVisualSpeed > PlayerRunSpeedThreshold && PlayerRunAnimation)
+	{
+		PlaySimplePlayerAnimation(PlayerRunAnimation.Get(), TEXT("Run"), true);
+		return;
+	}
+
+	if (PlayerIdleAnimation)
+	{
+		PlaySimplePlayerAnimation(PlayerIdleAnimation.Get(), TEXT("Idle"), true);
+	}
+}
+
+bool ABattleGridClientCharacter::PlaySimplePlayerAnimation(
+	UAnimationAsset* Animation,
+	FName StateName,
+	bool bLoopAnimation
+)
+{
+	USkeletalMeshComponent* CharacterMesh = GetMesh();
+	if (!CharacterMesh || !Animation || StateName == NAME_None)
+	{
+		return false;
+	}
+
+	if (CurrentPlayerVisualAnimState == StateName)
+	{
+		return false;
+	}
+
+	CurrentPlayerVisualAnimState = StateName;
+	CharacterMesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	CharacterMesh->PlayAnimation(Animation, bLoopAnimation);
+
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[BattleGrid] Player anim state %s"),
+		*StateName.ToString()
+	);
+	return true;
+}
+
 void ABattleGridClientCharacter::AttachWeaponToCharacterMesh()
 {
 	USkeletalMeshComponent* CharacterMesh = GetMesh();
@@ -316,6 +543,17 @@ FVector ABattleGridClientCharacter::GetApproximateMuzzleWorldLocation() const
 		return CharacterMesh->GetSocketLocation(MuzzleSocketName);
 	}
 
+	if (bShowMuzzleDebug && MuzzleSocketName != NAME_None && !bLoggedMissingMuzzleSocketWarning)
+	{
+		UE_LOG(
+			LogTemp,
+			Warning,
+			TEXT("[BattleGrid] Muzzle socket %s not found. Using player muzzle fallback offset."),
+			*MuzzleSocketName.ToString()
+		);
+		bLoggedMissingMuzzleSocketWarning = true;
+	}
+
 	return GetActorTransform().TransformPosition(MuzzleFallbackOffset);
 }
 
@@ -338,6 +576,7 @@ void ABattleGridClientCharacter::ApplyCameraSettings(float DeltaSeconds)
 	CameraBoom->SetRelativeLocation(FVector::ZeroVector);
 	CameraBoom->SetRelativeRotation(FRotator::ZeroRotator);
 	CameraBoom->CameraLagSpeed = FMath::Max(0.0f, CameraLagSpeed);
+	CameraBoom->ProbeSize = FMath::Max(0.0f, PlayerCameraCollisionProbeSize);
 	FollowCamera->bUsePawnControlRotation = false;
 
 	if (DeltaSeconds <= 0.0f || BlendSpeed <= 0.0f)

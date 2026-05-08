@@ -171,9 +171,121 @@ The Skeletal Mesh is visible but has no compatible animation setup.
 Fix:
 
 - Assign a compatible Animation Blueprint in the Mesh or bot `SkeletalMeshComponent` details.
+- Or, for bot ghosts, enable `bUseSimpleBotAnimationPlayback` and assign compatible `BotIdleAnimation`, `BotRunAnimation`, and `BotDeathAnimation` assets.
 - Retarget animations if the imported asset uses a different skeleton.
 - Verify the Anim Class is saved on the active Blueprint used by the level.
 - For a demo, avoid enabling humanoid bot visuals until animation and scale are acceptable.
+
+## Player Model Visible But Not Animated
+
+The player mesh can use either an Animation Blueprint or the simple C++ animation playback path.
+
+Check:
+
+- If using an AnimBP, assign the Anim Class on `BP_BattleGridCharacter`'s inherited `Mesh` component and keep `bUseSimplePlayerAnimationPlayback=false`.
+- If using simple playback, enable `bUseSimplePlayerAnimationPlayback` and assign compatible `PlayerIdleAnimation`, `PlayerRunAnimation`, `PlayerJumpStartAnimation`, `PlayerJumpLoopAnimation`, and `PlayerJumpLandAnimation`.
+- Assigned animation assets must use the same skeleton as the player Skeletal Mesh.
+- Rebuild C++ and restart Unreal if the new `BattleGrid|Animation` properties are not visible.
+
+## Jump Animation Repeats Rapidly In Air
+
+This happens when a short apex clip is used as the only jump animation and gets restarted while `CharacterMovement->IsFalling()` remains true.
+
+Fix:
+
+- Assign `Jump_Start` to `PlayerJumpStartAnimation`.
+- Assign `Jump_Apex` to `PlayerJumpLoopAnimation`.
+- Assign `Jump_Land` to `PlayerJumpLandAnimation`.
+- Set `bLoopPlayerJumpLoopAnimation=false` for short apex clips.
+- Leave `PlayerJumpLoopAnimation` empty if the apex pose looks bad and no proper looping/falling animation exists yet.
+
+The simple player animation path now changes jump state only on takeoff, first airborne loop/apex, and landing. It does not replay the same `JumpLoop` state every tick.
+
+## Player Model Rotated Sideways
+
+Tune `BP_BattleGridCharacter` Class Defaults under `BattleGrid|Visual`:
+
+- Start with `PlayerMeshRelativeRotation = (0, -90, 0)`.
+- Try yaw values `90`, `-90`, `180`, or `0` depending on the asset.
+- Keep actor/controller rotation logic unchanged; use mesh relative rotation for asset orientation only.
+
+## Player Model Floats Or Sinks
+
+Tune `PlayerMeshRelativeLocation.Z`.
+
+Recommended starting value:
+
+```text
+PlayerMeshRelativeLocation = (0, 0, -90)
+```
+
+The Character capsule is still the gameplay collision shape. Do not move the capsule just to fix visual foot placement.
+
+## Camera Clips Into Player Model
+
+If the camera clips into the player body or shoulder:
+
+- Increase `AdsSocketOffset.Y` to move the ADS camera farther over the shoulder.
+- Increase `AdsArmLength` slightly.
+- Reduce `PlayerMeshRelativeScale3D`.
+- Tune `DefaultSocketOffset` / `AdsSocketOffset`.
+- Increase `PlayerCameraCollisionProbeSize` slightly if camera collision feels too tight.
+
+Do not change server position correction or movement settings to fix camera clipping.
+
+## Murdock Bot Is T-Pose
+
+For `BP_BattleGridServerBotGhostActor`, check:
+
+- `bUseSkeletalMeshVisual=true`.
+- `SkeletalMeshComponent` has the Murdock Skeletal Mesh assigned.
+- If using simple playback, `bUseSimpleBotAnimationPlayback=true`.
+- `BotIdleAnimation`, `BotRunAnimation`, and `BotDeathAnimation` use the same skeleton as the assigned Murdock mesh.
+- If using an Animation Blueprint instead, leave simple playback disabled so the AnimBP owns the pose.
+
+## Murdock Bot Slides
+
+The ghost is moving, but the visible mesh is not switching to a run animation.
+
+Check:
+
+- `BotRunAnimation` is assigned.
+- `bUseSimpleBotAnimationPlayback=true`.
+- `BotRunSpeedThreshold` is not too high. Start with `20`.
+- The selected run/jog animation uses the same skeleton as the Skeletal Mesh.
+
+If no run asset is ready, sliding is expected during setup. Server movement and hit tests are still working.
+
+## Bot Slides Sideways With Run Animation
+
+If the run animation plays but the bot appears to strafe sideways, the issue is usually visual orientation, not server movement.
+
+Common causes:
+
+- Server yaw was raw arena yaw instead of converted Unreal yaw.
+- Actor rotation was following snapshot yaw instead of visible movement.
+- The skeletal mesh local forward axis does not match the actor forward axis.
+
+Fix:
+
+- In `BP_BattleGridServerBotGhostActor`, enable `bFaceMovementDirection`.
+- Keep `bUseServerYawWhenNotMoving` enabled for stationary/combat facing.
+- Start with `RotationInterpSpeed=12` and `MovementFacingThreshold=5`.
+- Tune `MeshForwardYawOffset` first. Try `0`, `90`, `-90`, and `180`.
+- If the whole model is also tilted, floating, or globally rotated, tune `HumanoidMeshRelativeRotation` after the forward offset.
+
+`MeshForwardYawOffset` only changes the skeletal mesh relative rotation. It should not be used to replace actor rotation.
+
+## Murdock Bot Faces Wrong Direction
+
+Tune the bot skeletal mesh transform offsets in `BP_BattleGridServerBotGhostActor`:
+
+- `HumanoidMeshRelativeRotation`: adjust yaw, usually `90`, `-90`, or `180`.
+- `MeshForwardYawOffset`: adjust final local-forward correction, usually `0`, `90`, `-90`, or `180`.
+- `HumanoidMeshRelativeLocation`: adjust if feet float above or sink below the floor.
+- `HumanoidMeshRelativeScale3D`: adjust asset-specific scale.
+
+These are visual-only offsets. They do not change server `BotState` position, damage, or hit volumes.
 
 ## Bot Label Is Inside The Humanoid Mesh
 
@@ -185,22 +297,157 @@ When bot ghost skeletal visuals are enabled, tune:
 
 These settings live on `BP_BattleGridServerBotGhostActor` under `BattleGrid|Visual`. They only affect visualization and do not change server hit volumes.
 
+If the label overlaps the body after changing mesh scale, raise `HumanoidLabelHeight`. Dead bots still show `BOT-* DOWN`, and invincible bots still show `BOT-* INV`.
+
 ## Tracer Does Not Appear From The Weapon Area
 
-Server tracer records are visual-only and currently come from the server fire origin, not from an exact Unreal weapon socket. The C++ classes expose muzzle helpers for alignment work:
+Server tracer records are visual-only. Unreal can now override the visible tracer start with a local muzzle approximation while keeping server hitscan damage unchanged. The C++ classes expose muzzle helpers for alignment work:
 
 - `ABattleGridClientCharacter`: `MuzzleSocketName`, `MuzzleFallbackOffset`
 - `ABattleGridServerBotGhostActor`: `MuzzleSocketName`, `MuzzleFallbackOffset`
+- `ABattleGridServerGhostActor`: `MuzzleFallbackOffset` for remote server player echoes
 
 Check:
 
 - The weapon or character skeleton has a socket such as `Muzzle`, `weapon_r`, `hand_r`, or `hand_rSocket`.
 - If no muzzle socket exists, tune the fallback offset in the Blueprint Class Defaults.
+- Temporarily enable `bShowMuzzleDebug` and tune the offset until the debug sphere sits near the weapon barrel.
+- In the active PlayerController Blueprint, keep `bSpawnLocalProjectileFromMuzzle=true` for local visual shots.
+- Keep `bUseClientMuzzleForServerTracerStart=true` if server tracer ghosts should visually begin at the local player, bot ghost, or remote server player ghost muzzle approximation.
 - `BP_BattleGridServerProjectileGhostActor` has `bUseTracerLineVisual=true`.
 - `PlayerProjectileMaterial` and `BotProjectileMaterial` are assigned if you need different tracer colors.
 - Server snapshots include `visual_only=true`, `start_x/y/z`, and `end_x/y/z` for projectiles.
 
 Tracer ghosts do not apply damage. Server shot result events and bot/player HP changes are the authoritative combat result.
+
+If the tracer starts from the chest or body, increase/decrease `MuzzleFallbackOffset.X` and `MuzzleFallbackOffset.Z`. If it starts on the wrong side, adjust `MuzzleFallbackOffset.Y`. For humanoid bot ghosts, also check `MeshForwardYawOffset`; the fallback uses the skeletal mesh transform when skeletal visual mode is active.
+
+## ADS Tracer Goes Down-Left Or Away From The Crosshair
+
+In third-person ADS, the camera and weapon muzzle are offset from each other. If the visual projectile uses camera forward directly from the muzzle, it travels along a parallel line and appears to miss the screen-center crosshair.
+
+Expected behavior after this ADS alignment fix:
+
+- The PlayerController deprojects the center of the viewport.
+- It traces from the camera through the crosshair to find an aim point.
+- The local visual projectile starts at `GetApproximateMuzzleWorldLocation()`.
+- The local visual projectile points from muzzle to that crosshair aim point.
+- The server shot direction is still crosshair-derived and keeps weapon spread.
+
+To debug:
+
+- In the active PlayerController Blueprint, enable `BattleGrid|Weapon Visual > bShowAimDebug`.
+- In `BP_BattleGridCharacter`, enable `bShowMuzzleDebug`.
+- Verify the camera debug line hits the crosshair target and the green muzzle line converges to the same point.
+- Keep `bSpawnLocalProjectileFromMuzzle=true`.
+- Tune `MuzzleFallbackOffset` only after confirming the aim debug line is correct.
+
+## Server Projectile Ghost Tracer Goes The Wrong Direction
+
+If disabling `Show Server Projectile Ghosts` makes the bad yellow line disappear, the issue is the server projectile ghost/tracer visualization, not the local sphere projectile.
+
+Expected behavior after the server projectile ghost alignment fix:
+
+- Local projectile direction and local projectile behavior are unchanged.
+- Server projectile ghost start/end are built together in final Unreal world space.
+- If a muzzle override is used for a local player, bot, or remote server player ghost, the tracer end is recomputed as `start + converted server shot direction * tracer length`.
+- The tracer no longer mixes a local muzzle start with an old converted server endpoint.
+- `ConvertServerDirectionToUnrealDirection` respects `ServerAimSignX` and `ServerAimSignY`, matching the direction signs used when sending shot input to the server.
+
+To debug:
+
+- Enable PlayerController `BattleGrid|Server Snapshot > bShowProjectileGhostDebug`.
+- The debug view draws green start, red end, and yellow tracer line.
+- Check the Output Log for `Server projectile visual owner=... start=... end=...`.
+- If the server tracer is still mirrored, check `ServerAimSignX` and `ServerAimSignY` on the active PlayerController Blueprint.
+
+## Why Does The Old Sphere Bullet Differ From The Yellow Tracer?
+
+BattleGrid has two projectile visual layers:
+
+- Legacy local sphere projectile: the original offline/local test projectile. It can collide with local test targets.
+- Yellow/server tracer ghost: the server-authoritative shot visual created from server projectile snapshots. It represents server hitscan fire and is paired with `SERVER HIT`, `SERVER HEADSHOT`, or `SERVER MISS`.
+
+In connected PvPvE server mode, the server tracer is the primary visual. The active PlayerController should normally use:
+
+- `bUseServerAuthoritativeFireVisuals=true`
+- `bSpawnLegacyLocalProjectileWhenConnected=false`
+- `bAllowLegacyLocalProjectileDamageWhenConnected=false`
+- `bSpawnLegacyLocalProjectileWhenOffline=true`
+
+With those defaults, the old sphere bullet is not spawned while connected and joined, so it cannot visually disagree with the server tracer or damage local test targets during a server demo. If you intentionally enable `bSpawnLegacyLocalProjectileWhenConnected` for debugging, keep `bAllowLegacyLocalProjectileDamageWhenConnected=false` unless you specifically want to test the old local damage layer.
+
+## Local Player And SERVER ECHO Drift Apart
+
+The local pawn uses Unreal movement and collision. The server does not know the Unreal map collision, so pure input simulation can let `SERVER ECHO` continue through a wall after the local pawn has stopped. For the current prototype/demo, the Unreal client can send its local pawn position to the server so `PlayerState` follows the actual visible character.
+
+Check:
+
+- In the active PlayerController Blueprint, keep `bAutoCalibrateServerSnapshotOrigin=true`.
+- Keep `bSendClientPositionToServer=true` for the demo.
+- Keep `bSnapLocalPawnToServerOnJoin=true` and `bSnapLocalPawnToServerOnRespawn=true`.
+- Use movement speeds `NormalMoveSpeed=600`, `SprintMoveSpeed=850`, and `ADSMoveSpeed=400`.
+- Rebuild and restart the server so the server also uses `walk_speed=600`, `sprint_speed=850`, and `ads_walk_speed=400`.
+- In `debug_room`, inspect `use_client_position_for_player_movement=true`, `latest_input.has_client_position=true`, `latest_input.client_x/y/z`, and `effective_speed`.
+- Enable `bShowLocalDebugHud` temporarily and watch `Server Error` plus `Correction`.
+
+Correction modes:
+
+- `Off`: no continuous correction, best default for avoiding running-in-place.
+- `Gentle`: optional interpolation only when error exceeds `GentleCorrectionThreshold`.
+- `Hard`: legacy correction using `bUseServerPositionCorrection`; useful for debugging large desync, but can feel aggressive.
+
+If client-position sync is disabled, error can still grow while holding Shift or RMB if the client and server speed settings are out of sync. If the error points in a wrong direction, inspect the `Move send local_axes=... server_move=...` log and confirm camera-relative movement is being converted to server axes.
+
+## SERVER ECHO Follows X/Y But Not Height
+
+Client-position sync sends `client_z` so the server snapshot can follow the local pawn's Unreal world height. If `SERVER ECHO` stays at a fixed height while the player jumps, walks up ramps, or stands on a raised platform, check:
+
+- Active PlayerController `BattleGrid|Server Movement > bSendClientPositionToServer=true`.
+- Active PlayerController `BattleGrid|Server Snapshot > bUseSnapshotZForServerPlayerGhosts=true`.
+- `debug_room.players[].latest_input.has_client_position=true`.
+- `debug_room.players[].latest_input.client_z` changes when the local pawn changes height.
+- Snapshot `players[].z` changes after the server accepts the client position.
+- If the ghost is consistently too high or too low, tune `ServerPlayerGhostZOffset`.
+- For visual-only debugging, `bUseLocalPawnZForOwnServerGhost=true` can make the own `SERVER ECHO` use local pawn Z even before trusting server Z.
+
+The server still does not simulate terrain or platform physics. Z sync is prototype movement alignment, not production authoritative vertical movement.
+
+## Invisible Walls While Correction Is Enabled
+
+If hard or gentle server position correction is enabled, the local pawn can feel like it hits an invisible wall when the server `PlayerState` reaches the server arena clamp before the visible Unreal map does. Correction then pulls the pawn back to the authoritative server position. Client-position sync should avoid this in the demo because the server follows the local pawn instead of simulating through missing server collision.
+
+Fix:
+
+- Keep `bUseServerPositionCorrection=false` for normal demo recording.
+- Keep `bUseGentleServerPositionCorrection=false` unless you are actively testing smoothing.
+- Keep `bSendClientPositionToServer=true` so the server ghost follows the Unreal pawn without correction.
+- If correction is needed, enable only gentle correction first. If both correction modes are enabled, the client uses gentle correction and logs a warning.
+- Enable PlayerController `BattleGrid|Debug > bDrawServerArenaBounds` to draw the cyan server arena rectangle in Unreal.
+- Check `debug_room` or snapshots for `arena.bounds`; the demo server default is now `x=-5000..5000`, `y=-5000..5000`.
+- If the cyan rectangle still does not match the visible map, adjust the Unreal map layout manually or update the server arena constants for the intended demo area.
+
+Recommended correction defaults:
+
+- `bUseServerPositionCorrection=false`
+- `bUseGentleServerPositionCorrection=false`
+- `GentleCorrectionThreshold=300`
+- `GentleCorrectionInterpSpeed=2`
+- `HardCorrectionThreshold=2500`
+
+## Bots Outside The Visible Demo Map
+
+The player arena bounds are intentionally wide for the demo, but bots use a smaller server bot area so they stay near the current visible map.
+
+Check:
+
+- Click `Apply Safe Demo Mode` so bots reset to the current demo spawn list.
+- `debug_room.bot_area_bounds` should read approximately `x=-1500..1500`, `y=-900..900`.
+- `debug_room.bot_waypoints` should contain 13 fixed waypoints.
+- Bot spawns should be the eight symmetric demo positions from `BOT-1 (-900,500)` through `BOT-8 (900,-500)`.
+- In Unreal, enable PlayerController `bDrawServerBotAreaBounds` to draw the green server bot area rectangle.
+- If bots appear too far out, tune the server `BotAreaMinX`, `BotAreaMaxX`, `BotAreaMinY`, and `BotAreaMaxY` constants rather than shrinking the player arena bounds.
+- The server still does not know Unreal collision or NavMesh. These bounds and waypoints are a prototype constraint, not final navigation.
 
 ## GCP Firewall TCP 7777 Not Open
 
@@ -481,20 +728,30 @@ Use `tools/websocket-test.html`:
 5. Wait for a snapshot with `bots=8/8`.
 6. Click `Send Fire At Nearest Bot`.
 7. For a faster kill test, click `Fire 5 Shots At Nearest Bot`.
+8. For a headshot-specific test, click `Send Headshot At Nearest Bot`.
 
 Expected server logs:
 
 ```text
 [BattleGridServer] Hitscan fire shooter=1 seq=...
 [BattleGridServer] Shot result shooter=1 result=hit target=bot damage=20 headshot=false
-[BattleGridServer] Hitscan bot hit shooter=1 bot=... damage=20 hp=80/100
+[BattleGridServer] Hitscan bot hit shooter=1 bot=... group=body damage=20 hp=80/100 dir=(...)
 ```
 
 The browser page now also shows a `Shot Result` summary. A valid server hit should show `SERVER HIT BOT-* -20` or `SERVER HEADSHOT BOT-* -40`. If the match is `game_over`, click `Apply Safe Demo Mode` before testing shots; fire inputs can still be acknowledged, but server combat is disabled while the match is over.
 
-For prototype aiming, bot hitscan uses 3D head/body spheres and a forgiving 2D body fallback. The fallback is only for bot hit testing; disabling bot attacks does not make bots invulnerable.
+For prototype aiming, bot hitscan uses 3D head/body spheres and a forgiving 2D body fallback. The fallback is only for bot hit testing, and it should not override a valid headshot. Disabling bot attacks does not make bots invulnerable.
 
 `Fire 5 Shots At Nearest Bot` sends five spread-free server fire inputs toward the nearest alive bot using the latest snapshot position. It does not rely on local projectile collision, and it keeps small delays between inputs so the browser stays responsive.
+
+`Send Fire At Nearest Bot` intentionally sends `shot_dir_z=0`, so it is a body-shot test. `Send Headshot At Nearest Bot` computes a 3D direction from the joined player's server fire origin to the nearest bot head volume and should produce `SERVER HEADSHOT BOT-* -40` when the ray is unobstructed and the bot is alive.
+
+If Unreal shots against the visible bot head still deal only 20:
+
+- Check the Output Log for `Fire server shot_dir=(X,Y,Z)`. The Z value should be nonzero when aiming above the body.
+- Enable `BP_BattleGridServerBotGhostActor > BattleGrid|Debug > bShowServerHitVolumes`.
+- Confirm the magenta head sphere is where you are aiming and the cyan body sphere is below it.
+- Confirm the server log says `group=head damage=40` for headshots.
 
 ## Bot Shots Do Not Appear
 
@@ -554,6 +811,34 @@ For server combat, check one of these instead:
 - Browser `Shot Result` shows `SERVER HIT`, `SERVER HEADSHOT`, or `SERVER MISS`.
 - Server logs show `Shot result`, `Hitscan bot hit`, `Hitscan target hit`, or a combat event.
 - The HUD `CombatMessageText` briefly shows `SERVER HIT ...` or `SERVER MISS`, then returns to the event feed.
+
+## A Different Bot Loses HP Than The One Aimed At
+
+Server hitscan selects the closest valid hit along the shot ray, not the first bot found in the server container. If the wrong bot still appears to take damage:
+
+- Click `Send Debug Room` in `tools/websocket-test.html` and check `enable_bot_2d_fallback_hit` and `bot_2d_fallback_radius_scale`.
+- Check `use_client_fire_origin_for_hitscan=true`. This lets the server use the client-provided muzzle/crosshair fire origin when it is close enough to the authoritative player position.
+- Check `use_client_position_for_player_movement=true` and, from Unreal, `latest_input.has_client_position=true`; this keeps the server origin close to the local pawn during movement.
+- Temporarily enable `BattleGrid|Debug > bShowServerHitVolumes` on `BP_BattleGridServerBotGhostActor` to see the server body/head spheres.
+- Temporarily enable `BattleGrid|Debug > bShowServerShotDebug` on the PlayerController to draw the world-space shot ray sent to the server.
+- If the local pawn and `SERVER ECHO` are separated, check the server log for `Client fire origin far from server position` or `Rejected client fire origin`. Rejected origins fall back to the server player position and can still feel offset.
+- If nearby bots still steal body hits, reduce `Bot2DFallbackRadiusScale` in `GameRoom` or disable `bEnableBot2DFallbackHit` for stricter testing.
+- Remember that fallback hits are forgiving 2D body checks; true head/body sphere hits always have priority for the same bot, and the closest selected candidate wins globally.
+
+## Local Pawn And SERVER ECHO Are Separated While Shooting
+
+The server is still authoritative for damage, but in prototype/demo mode the client sends an optional `fire_origin_x/y/z` with each fire input. Unreal builds that origin from the approximate player muzzle in world space, converts it back into server arena coordinates, and sends it with the camera/crosshair shot direction.
+
+The server accepts the client fire origin only when it is within `max_accepted_client_fire_origin_distance` of the authoritative player position. If it is farther away, the server falls back to `PlayerState.x/y/z + fire height`.
+
+Debug steps:
+
+- Keep `BattleGrid|Server Movement > bSendClientPositionToServer=true` for normal demo testing so the accepted server `PlayerState` stays close to the local pawn before shots are fired.
+- In Unreal, enable `BattleGrid|Debug > bShowServerShotDebug` to draw the local fire ray.
+- In the browser, click `Send Debug Room` and verify `use_client_fire_origin_for_hitscan=true` and `use_client_position_for_player_movement=true`.
+- Watch server logs for `Fire origin player=... source=client` on fire inputs.
+- If logs show `source=server`, confirm Unreal is connected/joined and the active PlayerController has the latest C++ build.
+- If logs show `Rejected client fire origin`, the local pawn and server ghost are too far apart for the configured sanity limit; use Safe Demo Mode, origin calibration, or temporarily increase `MaxAcceptedClientFireOriginDistance` for local testing.
 
 ## Server HP Differs From Local HP
 

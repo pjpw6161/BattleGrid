@@ -17,6 +17,7 @@ ABattleGridProjectile::ABattleGridProjectile()
 	PrimaryActorTick.bCanEverTick = false;
 	InitialLifeSpan = 2.5f;
 	DamageAmount = 20.0f;
+	bDamageEnabled = true;
 
 	CollisionComponent = CreateDefaultSubobject<USphereComponent>(TEXT("CollisionComponent"));
 	CollisionComponent->InitSphereRadius(16.0f);
@@ -47,6 +48,11 @@ ABattleGridProjectile::ABattleGridProjectile()
 	ProjectileMovement->bShouldBounce = false;
 
 	CollisionComponent->OnComponentHit.AddDynamic(this, &ABattleGridProjectile::OnHit);
+}
+
+void ABattleGridProjectile::SetDamageEnabled(bool bEnabled)
+{
+	bDamageEnabled = bEnabled;
 }
 
 void ABattleGridProjectile::BeginPlay()
@@ -91,15 +97,24 @@ void ABattleGridProjectile::OnHit(
 		}
 	}
 
-	UGameplayStatics::ApplyDamage(
-		OtherActor,
-		DamageAmount,
-		DamageInstigatorController,
-		this,
-		UDamageType::StaticClass()
-	);
+	if (bDamageEnabled)
+	{
+		UGameplayStatics::ApplyDamage(
+			OtherActor,
+			DamageAmount,
+			DamageInstigatorController,
+			this,
+			UDamageType::StaticClass()
+		);
+	}
 
-	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Projectile hit: %s"), *GetNameSafe(OtherActor));
+	UE_LOG(
+		LogTemp,
+		Log,
+		TEXT("[BattleGrid] Projectile hit: %s damage_enabled=%s"),
+		*GetNameSafe(OtherActor),
+		bDamageEnabled ? TEXT("true") : TEXT("false")
+	);
 
 	Destroy();
 }

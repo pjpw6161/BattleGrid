@@ -66,7 +66,15 @@ Rules:
   "sprint": false,
   "jump": false,
   "ammo": 30,
-  "spread_deg": 0.8
+  "spread_deg": 0.8,
+  "has_fire_origin": true,
+  "fire_origin_x": -1200.0,
+  "fire_origin_y": 0.0,
+  "fire_origin_z": 100.0,
+  "has_client_position": true,
+  "client_x": -1198.0,
+  "client_y": 4.0,
+  "client_z": 0.0
 }
 ```
 
@@ -74,8 +82,8 @@ Fields:
 
 - `seq`: client input sequence number.
 - `player_id`: ID assigned by `join_ok`.
-- `move_x`: server logical X movement axis.
-- `move_y`: server logical Y movement axis.
+- `move_x`: normalized camera-relative movement direction converted to server logical X.
+- `move_y`: normalized camera-relative movement direction converted to server logical Y.
 - `aim_x`: server logical X aim direction.
 - `aim_y`: server logical Y aim direction.
 - `shot_dir_x`: server logical X shot direction after local spread is applied.
@@ -88,6 +96,10 @@ Fields:
 - `jump`: true while the client is jumping or falling.
 - `ammo`: client-side magazine ammo count after local weapon processing.
 - `spread_deg`: client-side spread value used for this shot/input.
+- `has_fire_origin`: optional. True when the client is providing a fire origin in server coordinate space for the current fire input.
+- `fire_origin_x`, `fire_origin_y`, `fire_origin_z`: optional client-provided ray origin in server coordinates. Used for prototype/demo hitscan alignment when accepted by server sanity checks.
+- `has_client_position`: optional. True when the Unreal client is providing its current pawn location in server coordinate space for prototype/demo movement synchronization.
+- `client_x`, `client_y`, `client_z`: optional client pawn position. Used by the demo server to keep `PlayerState` / `SERVER ECHO` aligned with the actual Unreal pawn when accepted by sanity checks. X/Y use server arena coordinates; `client_z` preserves the Unreal world height in Unreal units for prototype vertical alignment.
 
 `aim_x` / `aim_y` represent the intentional camera aim direction. `shot_dir_x` / `shot_dir_y` / `shot_dir_z` represent the actual shot direction after spread. If `shot_dir_x` and `shot_dir_y` are missing, the server falls back to `aim_x` and `aim_y` with `shot_dir_z = 0`.
 
@@ -106,8 +118,12 @@ Rules:
 - The session must be joined.
 - Message `player_id` must match the joined session.
 - Accepted input replaces the player's latest stored `PlayerInput`.
-- Fire input spawns one projectile during the server tick when the sequence has not already been processed.
-- Server projectiles use `shot_dir_x` / `shot_dir_y` when present, otherwise `aim_x` / `aim_y`.
+- Fire input spawns one visual-only tracer during the server tick when the sequence has not already been processed.
+- In demo/prototype mode, if `has_client_position=true`, the server can use `client_x/y/z` as the player's current position after sanity checks. This keeps `SERVER ECHO` aligned with the Unreal pawn and avoids drift caused by missing server-side Unreal collision. X/Y are server arena coordinates; Z is currently an Unreal-height value, not a terrain-simulated server physics value.
+- If client position is missing or rejected, movement falls back to integrating the latest normalized move vector with an effective speed of 600 walk, 850 sprint, or 400 ADS walk.
+- If both sprint and ADS are true, sprint speed wins. Dead players do not move.
+- Server hitscan and tracer direction use the full `shot_dir_x` / `shot_dir_y` / `shot_dir_z` vector when present, otherwise the server falls back to `aim_x` / `aim_y` with `shot_dir_z = 0`.
+- In demo/prototype mode, the server may accept `fire_origin_*` as the ray origin for hitscan if `has_fire_origin=true` and the origin is within `max_accepted_client_fire_origin_distance` of the authoritative player position. If missing or rejected, the server falls back to the authoritative player position.
 
 ### `debug_room`
 
@@ -121,6 +137,29 @@ Expected response:
 {
   "type": "room_state",
   "room_id": 1,
+  "arena": {
+    "bounds": {
+      "min_x": -5000.0,
+      "max_x": 5000.0,
+      "min_y": -5000.0,
+      "max_y": 5000.0
+    }
+  },
+  "arena_bounds": {
+    "min_x": -5000.0,
+    "max_x": 5000.0,
+    "min_y": -5000.0,
+    "max_y": 5000.0
+  },
+  "bot_area_bounds": {
+    "min_x": -1500.0,
+    "max_x": 1500.0,
+    "min_y": -900.0,
+    "max_y": 900.0
+  },
+  "bot_waypoints": [
+    { "waypoint_id": 1, "label": "WP-1", "x": -1200.0, "y": 0.0, "z": 0.0 }
+  ],
   "player_count": 1,
   "projectile_count": 0,
   "targets_enabled": false,
@@ -133,6 +172,18 @@ Expected response:
   "bot_detect_range": 1500.0,
   "bot_attack_range": 900.0,
   "bot_move_speed": 500.0,
+  "enable_bot_2d_fallback_hit": true,
+  "bot_2d_fallback_radius_scale": 0.75,
+  "verbose_hitscan_candidate_logs": false,
+  "use_client_fire_origin_for_hitscan": true,
+  "client_fire_origin_warning_distance": 300.0,
+  "max_accepted_client_fire_origin_distance": 2000.0,
+  "use_client_position_for_player_movement": true,
+  "max_client_position_delta_per_second": 1400.0,
+  "max_client_position_snap_distance": 3000.0,
+  "walk_speed": 600.0,
+  "sprint_speed": 850.0,
+  "ads_walk_speed": 400.0,
   "auto_end_match_by_timer": true,
   "health_pack_count": 3,
   "active_health_pack_count": 3,
@@ -150,6 +201,10 @@ Expected response:
 `debug_room` is intended for browser testing and inspection.
 
 Primary PvPvE kill race snapshots use `players`, `bots`, `health_packs`, `projectiles`, `match`, `scoreboard`, and `events`. `targets` is legacy/debug-only and is empty by default while `targets_enabled=false`.
+
+`arena.bounds` exposes the server-authoritative clamp rectangle. Unreal can draw this rectangle for debugging because correction can pull the local pawn back when the server position reaches those bounds.
+
+`bot_area_bounds` and `bot_waypoints` expose the smaller prototype bot navigation area. Browser and Unreal debug views can use these fields to verify bots are spawning and wandering inside the current visible demo map. The full server response contains all 13 bot waypoints.
 
 ### `debug_restart_match`
 
@@ -283,6 +338,14 @@ When disabled, the match timer can reach zero without forcing `game_over`. The k
 {
   "type": "room_state",
   "room_id": 1,
+  "arena": {
+    "bounds": {
+      "min_x": -5000.0,
+      "max_x": 5000.0,
+      "min_y": -5000.0,
+      "max_y": 5000.0
+    }
+  },
   "player_count": 1,
   "projectile_count": 1,
   "targets_enabled": false,
@@ -295,6 +358,9 @@ When disabled, the match timer can reach zero without forcing `game_over`. The k
   "bot_detect_range": 1500.0,
   "bot_attack_range": 900.0,
   "bot_move_speed": 500.0,
+  "enable_bot_2d_fallback_hit": true,
+  "bot_2d_fallback_radius_scale": 0.75,
+  "verbose_hitscan_candidate_logs": false,
   "auto_end_match_by_timer": true,
   "health_pack_count": 3,
   "active_health_pack_count": 3,
@@ -368,7 +434,11 @@ When disabled, the match timer can reach zero without forcing `game_over`. The k
         "sprint": false,
         "jump": false,
         "ammo": 30,
-        "spread_deg": 0.8
+        "spread_deg": 0.8,
+        "has_client_position": true,
+        "client_x": 100.0,
+        "client_y": 0.0,
+        "client_z": 0.0
       }
     }
   ],
@@ -376,8 +446,8 @@ When disabled, the match timer can reach zero without forcing `game_over`. The k
     {
       "bot_id": 1,
       "name": "BOT-1",
-      "x": 300.0,
-      "y": 300.0,
+      "x": -900.0,
+      "y": 500.0,
       "z": 0.0,
       "yaw": -135.0,
       "hp": 100,
@@ -463,6 +533,14 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
   "type": "snapshot",
   "tick": 30,
   "room_id": 1,
+  "arena": {
+    "bounds": {
+      "min_x": -5000.0,
+      "max_x": 5000.0,
+      "min_y": -5000.0,
+      "max_y": 5000.0
+    }
+  },
   "match": {
     "state": "in_progress",
     "time_left": 287.5,
@@ -533,8 +611,8 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
     {
       "bot_id": 1,
       "name": "BOT-1",
-      "x": 300.0,
-      "y": 300.0,
+      "x": -900.0,
+      "y": 500.0,
       "z": 0.0,
       "yaw": -135.0,
       "hp": 100,
@@ -623,7 +701,7 @@ Combat event fields:
 - `killer_is_bot`: true when the event actor is a bot.
 - `killer_is_player`: true when the event actor is a player.
 - `damage`: damage amount for shot result events, or `0` when not applicable.
-- `hit_group`: shot result hit group such as `head`, `body`, `legacy_target`, or `miss`.
+- `hit_group`: shot result hit group such as `head`, `body`, `fallback_body`, `core`, or `miss`.
 - `hit_x`, `hit_y`, `hit_z`: approximate server-space hit position for shot result/debug display.
 
 The Unreal kill log filters combat events to `bot_killed`, `player_killed`, and `bot_killed_player`. Own kills are displayed green, player death events are displayed red, and other bot kills are displayed neutral white/gray.
@@ -676,7 +754,8 @@ Player fields:
 
 - `player_id`: server player ID.
 - `nickname`: player nickname from join.
-- `x`, `y`, `z`: server logical position.
+- `x`, `y`, `z`: server player position. X/Y are logical arena coordinates; Z currently mirrors Unreal world height in demo client-position sync.
+- `speed` / `effective_speed`: current server movement speed after sprint/ADS rules when present in debug data.
 - `hp`: server player HP placeholder.
 - `max_hp`: server player maximum HP.
 - `alive`: whether the player can move and be damaged.
@@ -697,6 +776,11 @@ Bot fields:
 - `alive`: whether the bot can move, attack, and be damaged.
 - `invincible`: true during the short post-respawn protection window.
 - `target_player_id`: current player target, or `0`.
+- `wander_target_x`, `wander_target_y`: current demo waypoint target used when the bot is not chasing a player.
+- `current_waypoint_index`: zero-based index into the fixed demo waypoint list.
+- `stuck_timer`: seconds accumulated by the simple stuck detector.
+- `body_radius`, `head_radius`: server hit sphere radii for player shots against bots.
+- `body_height`, `head_height`: server hit sphere center heights above the bot base position.
 
 Health pack fields:
 
@@ -757,19 +841,23 @@ Mismatched player ID:
 
 - Room ID is fixed to `1`.
 - Player IDs are process-local and reset when the server restarts.
-- Movement integrates latest input at a fixed speed and clamps to the arena.
+- In Unreal demo mode, player movement can use accepted `client_x/y/z` pawn positions so `SERVER ECHO` follows the Unreal character and respects Unreal map collision. `client_z` / snapshot player `z` carry the local pawn world height so jump/ramp/platform visuals can stay aligned.
+- Browser clients or clients without `has_client_position` fall back to normalized input integration and clamp to the server arena bounds, currently `x=-5000..5000`, `y=-5000..5000` for the demo map.
+- Player effective movement speed is 600 walk, 850 sprint, or 400 ADS walk. Sprint overrides ADS if both flags arrive.
 - Fire input creates visual-only server tracer records.
 - Server tracers use the spread-adjusted `shot_dir_x` / `shot_dir_y` / `shot_dir_z` fields when available.
 - Server hitscan damage is applied immediately when a new fire input sequence is processed.
+- Player hitscan evaluates all valid bot/player candidates and applies damage to the closest valid hit along the ray.
 - Legacy target hitscan is disabled by default with the old target objective.
 - Hitscan player damage checks head sphere first for 40 damage, then body sphere for 20 damage.
-- Hitscan bot damage checks head sphere first for 40 damage, then body sphere for 20 damage.
+- Hitscan bot damage checks head sphere first for 40 damage, then body sphere for 20 damage, then optional `fallback_body`.
+- Bot 2D fallback is enabled by default for forgiving tests, but uses `bot_2d_fallback_radius_scale = 0.75` and participates in closest-hit selection by ray distance.
 - Server bot kills award +1 kill and increment `bot_kills`.
 - Server player kills award +1 kill and increment `player_kills`.
 - Legacy target kills do not affect primary ranking while targets are disabled.
 - Dead players respawn after 8 seconds and are invincible for 1.5 seconds.
 - Dead bots respawn after 8 seconds and are invincible for 1.5 seconds.
-- Bots use simple server AI: move toward the nearest alive non-invincible player inside detect range, otherwise wander.
+- Bots use simple server AI: move toward the nearest alive non-invincible player inside detect range, otherwise wander through fixed waypoints inside the smaller demo bot area bounds `x=-1500..1500`, `y=-900..900`.
 - Bot attacks are server hitscan gun shots with ammo, reload, low accuracy, and visual tracer projectiles.
 - Bot body damage is 10 and bot headshot damage is 20.
 - Debug bot difficulty tunes bot shooter AI:
@@ -791,6 +879,7 @@ Mismatched player ID:
 - No binary protocol.
 - No authentication.
 - No real multiple-room support.
+- Demo movement can accept client pawn position for Unreal collision alignment; this is not production movement validation or anti-cheat.
 - Bot behavior is simple hitscan shooter AI with no pathfinding, animations, or advanced target selection.
 - Health packs are server-side snapshot entities only; there are no local pickup effects, sounds, or imported models yet.
 - No lag compensation or advanced hit validation yet.

@@ -141,6 +141,8 @@ void UBattleGridNetworkSubsystem::Connect(const FString& InServerUrl, const FStr
 	LastDebugMessage.Empty();
 	LastSnapshotTick = 0;
 	LastSnapshotRoomId = 0;
+	LatestArenaBounds = FBattleGridServerArenaBoundsSnapshot();
+	LatestBotAreaBounds = FBattleGridServerArenaBoundsSnapshot();
 	LatestPlayerSnapshots.Empty();
 	LatestProjectileSnapshots.Empty();
 	LatestTargetSnapshots.Empty();
@@ -187,6 +189,8 @@ void UBattleGridNetworkSubsystem::Disconnect()
 	bHasJoined = false;
 	LastSnapshotTick = 0;
 	LastSnapshotRoomId = 0;
+	LatestArenaBounds = FBattleGridServerArenaBoundsSnapshot();
+	LatestBotAreaBounds = FBattleGridServerArenaBoundsSnapshot();
 	LatestPlayerSnapshots.Empty();
 	LatestProjectileSnapshots.Empty();
 	LatestTargetSnapshots.Empty();
@@ -280,7 +284,15 @@ void UBattleGridNetworkSubsystem::SendInput(
 	bool bSprint,
 	bool bJump,
 	int32 Ammo,
-	float SpreadDegrees
+	float SpreadDegrees,
+	bool bHasFireOrigin,
+	float FireOriginX,
+	float FireOriginY,
+	float FireOriginZ,
+	bool bHasClientPosition,
+	float ClientX,
+	float ClientY,
+	float ClientZ
 )
 {
 	if (!Socket.IsValid() || !Socket->IsConnected() || !bHasJoined)
@@ -306,6 +318,20 @@ void UBattleGridNetworkSubsystem::SendInput(
 	JsonObject->SetBoolField(TEXT("jump"), bJump);
 	JsonObject->SetNumberField(TEXT("ammo"), Ammo);
 	JsonObject->SetNumberField(TEXT("spread_deg"), SpreadDegrees);
+	JsonObject->SetBoolField(TEXT("has_fire_origin"), bHasFireOrigin);
+	if (bHasFireOrigin)
+	{
+		JsonObject->SetNumberField(TEXT("fire_origin_x"), FireOriginX);
+		JsonObject->SetNumberField(TEXT("fire_origin_y"), FireOriginY);
+		JsonObject->SetNumberField(TEXT("fire_origin_z"), FireOriginZ);
+	}
+	JsonObject->SetBoolField(TEXT("has_client_position"), bHasClientPosition);
+	if (bHasClientPosition)
+	{
+		JsonObject->SetNumberField(TEXT("client_x"), ClientX);
+		JsonObject->SetNumberField(TEXT("client_y"), ClientY);
+		JsonObject->SetNumberField(TEXT("client_z"), ClientZ);
+	}
 
 	if (SendJsonObject(JsonObject, nullptr))
 	{
@@ -320,12 +346,14 @@ void UBattleGridNetworkSubsystem::SendInput(
 			UE_LOG(
 				LogTemp,
 				Log,
-				TEXT("[BattleGrid] Sent input seq=%d fire=%s reload=%s ammo=%d spread=%.2f"),
+				TEXT("[BattleGrid] Sent input seq=%d fire=%s reload=%s ammo=%d spread=%.2f has_origin=%s has_client_position=%s"),
 				Seq,
 				bFire ? TEXT("true") : TEXT("false"),
 				bReload ? TEXT("true") : TEXT("false"),
 				Ammo,
-				SpreadDegrees
+				SpreadDegrees,
+				bHasFireOrigin ? TEXT("true") : TEXT("false"),
+				bHasClientPosition ? TEXT("true") : TEXT("false")
 			);
 		}
 	}
@@ -615,6 +643,58 @@ int32 UBattleGridNetworkSubsystem::GetLastSnapshotTick() const
 int32 UBattleGridNetworkSubsystem::GetLastSnapshotRoomId() const
 {
 	return LastSnapshotRoomId;
+}
+
+bool UBattleGridNetworkSubsystem::HasArenaBounds() const
+{
+	return LatestArenaBounds.bHasBounds;
+}
+
+FBattleGridServerArenaBoundsSnapshot UBattleGridNetworkSubsystem::GetLatestArenaBounds() const
+{
+	return LatestArenaBounds;
+}
+
+FString UBattleGridNetworkSubsystem::GetServerArenaBoundsText() const
+{
+	if (!LatestArenaBounds.bHasBounds)
+	{
+		return TEXT("Arena: waiting");
+	}
+
+	return FString::Printf(
+		TEXT("Arena: x %.0f..%.0f y %.0f..%.0f"),
+		LatestArenaBounds.MinX,
+		LatestArenaBounds.MaxX,
+		LatestArenaBounds.MinY,
+		LatestArenaBounds.MaxY
+	);
+}
+
+bool UBattleGridNetworkSubsystem::HasBotAreaBounds() const
+{
+	return LatestBotAreaBounds.bHasBounds;
+}
+
+FBattleGridServerArenaBoundsSnapshot UBattleGridNetworkSubsystem::GetLatestBotAreaBounds() const
+{
+	return LatestBotAreaBounds;
+}
+
+FString UBattleGridNetworkSubsystem::GetServerBotAreaBoundsText() const
+{
+	if (!LatestBotAreaBounds.bHasBounds)
+	{
+		return TEXT("BotArea: waiting");
+	}
+
+	return FString::Printf(
+		TEXT("BotArea: x %.0f..%.0f y %.0f..%.0f"),
+		LatestBotAreaBounds.MinX,
+		LatestBotAreaBounds.MaxX,
+		LatestBotAreaBounds.MinY,
+		LatestBotAreaBounds.MaxY
+	);
 }
 
 void UBattleGridNetworkSubsystem::GetLatestPlayerSnapshots(
@@ -1108,6 +1188,8 @@ void UBattleGridNetworkSubsystem::HandleClosed(
 	bHasJoined = false;
 	LastSnapshotTick = 0;
 	LastSnapshotRoomId = 0;
+	LatestArenaBounds = FBattleGridServerArenaBoundsSnapshot();
+	LatestBotAreaBounds = FBattleGridServerArenaBoundsSnapshot();
 	LatestPlayerSnapshots.Empty();
 	LatestProjectileSnapshots.Empty();
 	LatestTargetSnapshots.Empty();
@@ -1296,6 +1378,72 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 
 	const int32 SnapshotTick = static_cast<int32>(SnapshotTickValue);
 	const int32 SnapshotRoomId = static_cast<int32>(SnapshotRoomIdValue);
+
+	LatestArenaBounds = FBattleGridServerArenaBoundsSnapshot();
+	LatestBotAreaBounds = FBattleGridServerArenaBoundsSnapshot();
+	auto ParseBoundsObject = [](const TSharedPtr<FJsonObject>& BoundsObject, FBattleGridServerArenaBoundsSnapshot& OutBounds)
+	{
+		if (!BoundsObject.IsValid())
+		{
+			return;
+		}
+
+		double MinXValue = 0.0;
+		double MaxXValue = 0.0;
+		double MinYValue = 0.0;
+		double MaxYValue = 0.0;
+		if (
+			BoundsObject->TryGetNumberField(TEXT("min_x"), MinXValue)
+			&& BoundsObject->TryGetNumberField(TEXT("max_x"), MaxXValue)
+			&& BoundsObject->TryGetNumberField(TEXT("min_y"), MinYValue)
+			&& BoundsObject->TryGetNumberField(TEXT("max_y"), MaxYValue)
+		)
+		{
+			OutBounds.bHasBounds = true;
+			OutBounds.MinX = static_cast<float>(MinXValue);
+			OutBounds.MaxX = static_cast<float>(MaxXValue);
+			OutBounds.MinY = static_cast<float>(MinYValue);
+			OutBounds.MaxY = static_cast<float>(MaxYValue);
+		}
+	};
+
+	const TSharedPtr<FJsonObject>* ArenaObjectPtr = nullptr;
+	if (
+		JsonObject->TryGetObjectField(TEXT("arena"), ArenaObjectPtr)
+		&& ArenaObjectPtr
+		&& ArenaObjectPtr->IsValid()
+	)
+	{
+		const TSharedPtr<FJsonObject>* BoundsObjectPtr = nullptr;
+		if (
+			(*ArenaObjectPtr)->TryGetObjectField(TEXT("bounds"), BoundsObjectPtr)
+			&& BoundsObjectPtr
+			&& BoundsObjectPtr->IsValid()
+		)
+		{
+			ParseBoundsObject(*BoundsObjectPtr, LatestArenaBounds);
+		}
+
+		const TSharedPtr<FJsonObject>* ArenaBotAreaBoundsObjectPtr = nullptr;
+		if (
+			(*ArenaObjectPtr)->TryGetObjectField(TEXT("bot_area_bounds"), ArenaBotAreaBoundsObjectPtr)
+			&& ArenaBotAreaBoundsObjectPtr
+			&& ArenaBotAreaBoundsObjectPtr->IsValid()
+		)
+		{
+			ParseBoundsObject(*ArenaBotAreaBoundsObjectPtr, LatestBotAreaBounds);
+		}
+	}
+
+	const TSharedPtr<FJsonObject>* BotAreaBoundsObjectPtr = nullptr;
+	if (
+		JsonObject->TryGetObjectField(TEXT("bot_area_bounds"), BotAreaBoundsObjectPtr)
+		&& BotAreaBoundsObjectPtr
+		&& BotAreaBoundsObjectPtr->IsValid()
+	)
+	{
+		ParseBoundsObject(*BotAreaBoundsObjectPtr, LatestBotAreaBounds);
+	}
 
 	LatestMatchSnapshot = FBattleGridServerMatchSnapshot();
 	bHasMatchSnapshot = false;
@@ -1715,6 +1863,10 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			double HPValue = 0.0;
 			double MaxHPValue = 0.0;
 			double TargetPlayerIdValue = 0.0;
+			double BodyRadiusValue = 90.0;
+			double HeadRadiusValue = 45.0;
+			double BodyHeightValue = 90.0;
+			double HeadHeightValue = 160.0;
 			bool bAliveValue = false;
 			bool bInvincibleValue = false;
 
@@ -1729,6 +1881,10 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			BotObject->TryGetBoolField(TEXT("alive"), bAliveValue);
 			BotObject->TryGetBoolField(TEXT("invincible"), bInvincibleValue);
 			BotObject->TryGetNumberField(TEXT("target_player_id"), TargetPlayerIdValue);
+			BotObject->TryGetNumberField(TEXT("body_radius"), BodyRadiusValue);
+			BotObject->TryGetNumberField(TEXT("head_radius"), HeadRadiusValue);
+			BotObject->TryGetNumberField(TEXT("body_height"), BodyHeightValue);
+			BotObject->TryGetNumberField(TEXT("head_height"), HeadHeightValue);
 
 			BotSnapshot.BotId = static_cast<int32>(BotIdValue);
 			BotSnapshot.X = static_cast<float>(XValue);
@@ -1740,6 +1896,10 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			BotSnapshot.bAlive = bAliveValue;
 			BotSnapshot.bInvincible = bInvincibleValue;
 			BotSnapshot.TargetPlayerId = static_cast<int32>(TargetPlayerIdValue);
+			BotSnapshot.BodyRadius = static_cast<float>(BodyRadiusValue);
+			BotSnapshot.HeadRadius = static_cast<float>(HeadRadiusValue);
+			BotSnapshot.BodyHeight = static_cast<float>(BodyHeightValue);
+			BotSnapshot.HeadHeight = static_cast<float>(HeadHeightValue);
 
 			if (BotSnapshot.BotId > 0)
 			{

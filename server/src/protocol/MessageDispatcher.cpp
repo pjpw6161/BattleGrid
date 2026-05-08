@@ -251,6 +251,14 @@ std::string MessageDispatcher::HandleInput(const nlohmann::json& message)
     const bool jump = ReadBool(message, "jump", false);
     const int ammo = ReadInt(message, "ammo", 0);
     const double spreadDegrees = ReadDouble(message, "spread_deg", 0.0);
+    const bool hasFireOrigin = ReadBool(message, "has_fire_origin", false);
+    const double fireOriginX = ReadDouble(message, "fire_origin_x", 0.0);
+    const double fireOriginY = ReadDouble(message, "fire_origin_y", 0.0);
+    const double fireOriginZ = ReadDouble(message, "fire_origin_z", 0.0);
+    const bool hasClientPosition = ReadBool(message, "has_client_position", false);
+    const double clientX = ReadDouble(message, "client_x", 0.0);
+    const double clientY = ReadDouble(message, "client_y", 0.0);
+    const double clientZ = ReadDouble(message, "client_z", 0.0);
     double shotDirX = ReadDouble(message, "shot_dir_x", aimX);
     double shotDirY = ReadDouble(message, "shot_dir_y", aimY);
     double shotDirZ = ReadDouble(message, "shot_dir_z", 0.0);
@@ -295,6 +303,14 @@ std::string MessageDispatcher::HandleInput(const nlohmann::json& message)
     input.shotDirX = shotDirX;
     input.shotDirY = shotDirY;
     input.shotDirZ = shotDirZ;
+    input.hasFireOrigin = hasFireOrigin;
+    input.fireOriginX = fireOriginX;
+    input.fireOriginY = fireOriginY;
+    input.fireOriginZ = fireOriginZ;
+    input.hasClientPosition = hasClientPosition;
+    input.clientX = clientX;
+    input.clientY = clientY;
+    input.clientZ = clientZ;
 
     if (!room->UpdateInput(sessionState.playerId, input))
     {
@@ -313,7 +329,13 @@ std::string MessageDispatcher::HandleInput(const nlohmann::json& message)
             << " sprint=" << (sprint ? "true" : "false")
             << " jump=" << (jump ? "true" : "false")
             << " ammo=" << ammo
-            << " spread=" << spreadDegrees;
+            << " spread=" << spreadDegrees
+            << " shot_dir=(" << shotDirX << "," << shotDirY << "," << shotDirZ << ")"
+            << " has_fire_origin=" << (hasFireOrigin ? "true" : "false")
+            << " fire_origin=(" << fireOriginX << "," << fireOriginY << "," << fireOriginZ << ")"
+            << " has_client_position=" << (hasClientPosition ? "true" : "false")
+            << " client_position=(" << clientX << "," << clientY << "," << clientZ << ")"
+            << " aim=(" << aimX << "," << aimY << ")";
 
         Logger::Info(logMessage.str());
     }

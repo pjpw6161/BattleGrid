@@ -19,12 +19,17 @@ class BATTLEGRIDCLIENT_API ABattleGridProjectile : public AActor
 public:
 	ABattleGridProjectile();
 
+	void SetDamageEnabled(bool bEnabled);
+
 protected:
 	virtual void BeginPlay() override;
 
 private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|Projectile", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float DamageAmount;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Projectile", meta = (AllowPrivateAccess = "true"))
+	bool bDamageEnabled;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Projectile", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USphereComponent> CollisionComponent;

@@ -115,6 +115,27 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerProjectileSnapshot
 };
 
 USTRUCT(BlueprintType)
+struct BATTLEGRIDCLIENT_API FBattleGridServerArenaBoundsSnapshot
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	bool bHasBounds = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float MinX = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float MaxX = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float MinY = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float MaxY = 0.0f;
+};
+
+USTRUCT(BlueprintType)
 struct BATTLEGRIDCLIENT_API FBattleGridServerTargetSnapshot
 {
 	GENERATED_BODY()
@@ -175,6 +196,18 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerBotSnapshot
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	int32 TargetPlayerId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float BodyRadius = 90.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float HeadRadius = 45.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float BodyHeight = 90.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
+	float HeadHeight = 160.0f;
 };
 
 USTRUCT(BlueprintType)
@@ -383,7 +416,15 @@ public:
 		bool bSprint,
 		bool bJump,
 		int32 Ammo,
-		float SpreadDegrees
+		float SpreadDegrees,
+		bool bHasFireOrigin,
+		float FireOriginX,
+		float FireOriginY,
+		float FireOriginZ,
+		bool bHasClientPosition,
+		float ClientX,
+		float ClientY,
+		float ClientZ
 	);
 	void ConfigureDemoLogging(
 		bool bInVerboseNetworkLogs,
@@ -407,6 +448,12 @@ public:
 	bool HasSnapshot() const;
 	int32 GetLastSnapshotTick() const;
 	int32 GetLastSnapshotRoomId() const;
+	bool HasArenaBounds() const;
+	FBattleGridServerArenaBoundsSnapshot GetLatestArenaBounds() const;
+	FString GetServerArenaBoundsText() const;
+	bool HasBotAreaBounds() const;
+	FBattleGridServerArenaBoundsSnapshot GetLatestBotAreaBounds() const;
+	FString GetServerBotAreaBoundsText() const;
 	void GetLatestPlayerSnapshots(TArray<FBattleGridServerPlayerSnapshot>& OutSnapshots) const;
 	bool GetPlayerSnapshotById(int32 InPlayerId, FBattleGridServerPlayerSnapshot& OutSnapshot) const;
 	void GetLatestProjectileSnapshots(TArray<FBattleGridServerProjectileSnapshot>& OutProjectiles) const;
@@ -465,6 +512,8 @@ private:
 	FString LastDebugMessage;
 	int32 LastSnapshotTick = 0;
 	int32 LastSnapshotRoomId = 0;
+	FBattleGridServerArenaBoundsSnapshot LatestArenaBounds;
+	FBattleGridServerArenaBoundsSnapshot LatestBotAreaBounds;
 	TMap<int32, FBattleGridServerPlayerSnapshot> LatestPlayerSnapshots;
 	TMap<int32, FBattleGridServerProjectileSnapshot> LatestProjectileSnapshots;
 	TMap<int32, FBattleGridServerTargetSnapshot> LatestTargetSnapshots;

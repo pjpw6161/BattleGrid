@@ -7,6 +7,7 @@
 #include "Components/TextRenderComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Materials/MaterialInterface.h"
+#include "DrawDebugHelpers.h"
 #include "UObject/ConstructorHelpers.h"
 
 ABattleGridServerGhostActor::ABattleGridServerGhostActor()
@@ -19,9 +20,13 @@ ABattleGridServerGhostActor::ABattleGridServerGhostActor()
 	DeadScale = 0.35f;
 	InvincibleScale = 0.75f;
 	LabelHeight = 120.0f;
+	MuzzleFallbackOffset = FVector(100.0f, 25.0f, 90.0f);
+	bShowMuzzleDebug = false;
+	MuzzleDebugSphereRadius = 8.0f;
 	PlayerId = 0;
 	TargetLocation = FVector::ZeroVector;
 	DefaultMaterial = nullptr;
+	bLoggedServerGhostMuzzleFallback = false;
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	RootComponent = SceneRoot;
@@ -76,6 +81,32 @@ void ABattleGridServerGhostActor::Tick(float DeltaSeconds)
 		InterpSpeed
 	);
 	SetActorLocation(NewLocation);
+
+	if (bShowMuzzleDebug)
+	{
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+		const FVector MuzzleLocation = GetApproximateMuzzleWorldLocation();
+		DrawDebugSphere(
+			GetWorld(),
+			MuzzleLocation,
+			MuzzleDebugSphereRadius,
+			12,
+			FColor::Cyan,
+			false,
+			0.0f
+		);
+		DrawDebugLine(
+			GetWorld(),
+			MuzzleLocation,
+			MuzzleLocation + (GetActorForwardVector() * 120.0f),
+			FColor::Cyan,
+			false,
+			0.0f,
+			0,
+			1.5f
+		);
+#endif
+	}
 }
 
 void ABattleGridServerGhostActor::SetSnapshotData(
@@ -110,6 +141,22 @@ void ABattleGridServerGhostActor::SetSnapshotData(
 int32 ABattleGridServerGhostActor::GetPlayerId() const
 {
 	return PlayerId;
+}
+
+FVector ABattleGridServerGhostActor::GetApproximateMuzzleWorldLocation() const
+{
+	if (bShowMuzzleDebug && !bLoggedServerGhostMuzzleFallback)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Server player ghost using muzzle fallback offset for player_id=%d."),
+			PlayerId
+		);
+		bLoggedServerGhostMuzzleFallback = true;
+	}
+
+	return GetActorTransform().TransformPosition(MuzzleFallbackOffset);
 }
 
 void ABattleGridServerGhostActor::ApplyVisualState(bool bIsAlive, bool bIsInvincible)

@@ -68,6 +68,10 @@ private:
     void UpdateBots(double deltaSeconds);
     void UpdateBotAI(double deltaSeconds);
     void ProcessBotShot(BotState& bot, PlayerState& targetPlayer);
+    bool IsInsideBotArea(double x, double y) const;
+    double ClampBotX(double x) const;
+    double ClampBotY(double y) const;
+    std::pair<double, double> ClampToBotArea(double x, double y) const;
     void UpdateHealthPacks(double deltaSeconds);
     void CheckHealthPackPickups();
     std::pair<double, double> ChooseHealthPackSpawnPoint(std::uint64_t healthPackId) const;
@@ -110,6 +114,15 @@ private:
     double botFireIntervalSeconds;
     double botAimSpreadDegrees;
     bool bVerboseBotShotEvents;
+    bool bEnableBot2DFallbackHit;
+    double Bot2DFallbackRadiusScale;
+    bool bVerboseHitscanCandidateLogs;
+    bool bUseClientFireOriginForHitscan;
+    double ClientFireOriginWarningDistance;
+    double MaxAcceptedClientFireOriginDistance;
+    bool bUseClientPositionForPlayerMovement;
+    double MaxClientPositionDeltaPerSecond;
+    double MaxClientPositionSnapDistance;
     mutable bool targetsInitialized;
     mutable bool botsInitialized;
     mutable bool healthPacksInitialized;

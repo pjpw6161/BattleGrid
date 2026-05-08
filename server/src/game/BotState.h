@@ -28,6 +28,10 @@ struct BotState
     double wanderTargetX = 0.0;
     double wanderTargetY = 0.0;
     double decisionTimerSeconds = 0.0;
+    double stuckTimerSeconds = 0.0;
+    double lastXForStuck = 0.0;
+    double lastYForStuck = 0.0;
+    std::uint64_t currentWaypointIndex = 0;
     double attackCooldownSeconds = 1.0;
     double attackTimerSeconds = 0.0;
     int ammo = 30;

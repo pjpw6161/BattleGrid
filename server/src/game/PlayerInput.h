@@ -21,5 +21,13 @@ struct PlayerInput
     double shotDirX = 0.0;
     double shotDirY = 0.0;
     double shotDirZ = 0.0;
+    bool hasFireOrigin = false;
+    double fireOriginX = 0.0;
+    double fireOriginY = 0.0;
+    double fireOriginZ = 0.0;
+    bool hasClientPosition = false;
+    double clientX = 0.0;
+    double clientY = 0.0;
+    double clientZ = 0.0;
 };
 }

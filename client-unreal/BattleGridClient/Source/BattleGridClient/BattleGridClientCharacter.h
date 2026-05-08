@@ -14,6 +14,7 @@ class UBattleGridHealthComponent;
 class UBattleGridWeaponComponent;
 class USpringArmComponent;
 class UStaticMeshComponent;
+class UAnimationAsset;
 
 /**
  *  A controllable third-person BattleGrid character.
@@ -44,6 +45,7 @@ public:
 
 	/** Initialization */
 	virtual void BeginPlay() override;
+	virtual void OnConstruction(const FTransform& Transform) override;
 
 	/** Update */
 	virtual void Tick(float DeltaSeconds) override;
@@ -72,12 +74,15 @@ public:
 	UBattleGridWeaponComponent* GetWeaponComponent() const { return WeaponComponent.Get(); }
 	void AttachWeaponToCharacterMesh();
 	FVector GetApproximateMuzzleWorldLocation() const;
+	void ApplyPlayerMeshVisualSettings();
 
 private:
 	void HandleDeath();
 	void Respawn();
 	void SyncHealthToPlayerController() const;
 	void ApplyCameraSettings(float DeltaSeconds);
+	void UpdateSimplePlayerAnimation(float DeltaSeconds);
+	bool PlaySimplePlayerAnimation(UAnimationAsset* Animation, FName StateName, bool bLoopAnimation);
 
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Combat", meta = (AllowPrivateAccess = "true"))
@@ -89,23 +94,68 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UStaticMeshComponent> WeaponMeshComponent;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual", meta = (AllowPrivateAccess = "true"))
 	FName WeaponSocketName;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual", meta = (AllowPrivateAccess = "true"))
 	FVector WeaponRelativeLocation;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual", meta = (AllowPrivateAccess = "true"))
 	FRotator WeaponRelativeRotation;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual", meta = (AllowPrivateAccess = "true"))
 	FVector WeaponRelativeScale;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual", meta = (AllowPrivateAccess = "true"))
 	FName MuzzleSocketName;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual", meta = (AllowPrivateAccess = "true"))
 	FVector MuzzleFallbackOffset;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual", meta = (AllowPrivateAccess = "true"))
+	bool bShowMuzzleDebug;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+	float MuzzleDebugSphereRadius;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	FVector PlayerMeshRelativeLocation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	FRotator PlayerMeshRelativeRotation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true"))
+	FVector PlayerMeshRelativeScale3D;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation", meta = (AllowPrivateAccess = "true"))
+	bool bUseSimplePlayerAnimationPlayback;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimationAsset> PlayerIdleAnimation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimationAsset> PlayerRunAnimation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimationAsset> PlayerJumpAnimation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimationAsset> PlayerJumpStartAnimation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimationAsset> PlayerJumpLoopAnimation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAnimationAsset> PlayerJumpLandAnimation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation", meta = (AllowPrivateAccess = "true"))
+	bool bLoopPlayerJumpLoopAnimation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+	float PlayerLandAnimationLockSeconds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Animation", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+	float PlayerRunSpeedThreshold;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Camera", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float DefaultArmLength;
@@ -125,6 +175,9 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Camera", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float CameraLagSpeed;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+	float PlayerCameraCollisionProbeSize;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Camera", meta = (AllowPrivateAccess = "true", ClampMin = "1.0", ClampMax = "170.0"))
 	float DefaultFOV;
 
@@ -139,6 +192,15 @@ private:
 	FTimerHandle RespawnTimerHandle;
 	float RespawnDelaySeconds;
 	bool bLoggedMissingWeaponSocketWarning;
+	mutable bool bLoggedMissingMuzzleSocketWarning;
 	bool bLoggedWeaponAttachment;
+	FVector LastPlayerWorldLocation;
+	float PlayerVisualSpeed;
+	FName CurrentPlayerVisualAnimState;
+	bool bWasPlayerFalling;
+	bool bPlayerJumpStartPlayed;
+	bool bPlayerJumpLoopPlayed;
+	bool bPlayerLandPlaying;
+	float PlayerLandLockTimer;
 };
 

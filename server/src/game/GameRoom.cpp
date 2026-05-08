@@ -14,12 +14,18 @@ namespace battlegrid
 {
 namespace
 {
-constexpr double ArenaMinX = -1800.0;
-constexpr double ArenaMaxX = 1800.0;
-constexpr double ArenaMinY = -1200.0;
-constexpr double ArenaMaxY = 1200.0;
-constexpr double ArenaWidth = ArenaMaxX - ArenaMinX;
-constexpr double ArenaHeight = ArenaMaxY - ArenaMinY;
+constexpr double ArenaMinX = -5000.0;
+constexpr double ArenaMaxX = 5000.0;
+constexpr double ArenaMinY = -5000.0;
+constexpr double ArenaMaxY = 5000.0;
+constexpr double MinPlayerZ = -1000.0;
+constexpr double MaxPlayerZ = 5000.0;
+constexpr double BotAreaMinX = -1500.0;
+constexpr double BotAreaMaxX = 1500.0;
+constexpr double BotAreaMinY = -900.0;
+constexpr double BotAreaMaxY = 900.0;
+constexpr double BotStuckMovementThreshold = 10.0;
+constexpr double BotStuckTimeoutSeconds = 2.0;
 constexpr double ProjectileSpawnForwardOffset = 50.0;
 constexpr int BodyDamage = 20;
 constexpr int HeadshotDamage = 40;
@@ -37,6 +43,9 @@ constexpr double BotInvincibleSeconds = 1.5;
 constexpr int BotKillScore = 1;
 constexpr int PlayerKillScore = 1;
 constexpr int TargetKillScore = 0;
+constexpr double WalkSpeed = 600.0;
+constexpr double SprintSpeed = 850.0;
+constexpr double AdsWalkSpeed = 400.0;
 constexpr const char* SafeDemoDifficulty = "easy";
 constexpr bool bSafeDemoBotAttacksEnabled = false;
 constexpr bool bSafeDemoAutoEndMatchByTimer = false;
@@ -83,14 +92,30 @@ constexpr std::array<ArenaPoint, 5> TargetCorePositions = {{
 }};
 
 constexpr std::array<ArenaPoint, 8> BotSpawnPoints = {{
-    {1, "BOT-1", -300.0, 300.0, 0.0},
-    {2, "BOT-2", -300.0, -300.0, 0.0},
-    {3, "BOT-3", 300.0, 300.0, 0.0},
-    {4, "BOT-4", 300.0, -300.0, 0.0},
-    {5, "BOT-5", 1000.0, 0.0, 0.0},
-    {6, "BOT-6", -1000.0, 0.0, 0.0},
-    {7, "BOT-7", 0.0, 700.0, 0.0},
-    {8, "BOT-8", 0.0, -700.0, 0.0},
+    {1, "BOT-1", -900.0, 500.0, 0.0},
+    {2, "BOT-2", -900.0, -500.0, 0.0},
+    {3, "BOT-3", -300.0, 500.0, 0.0},
+    {4, "BOT-4", -300.0, -500.0, 0.0},
+    {5, "BOT-5", 300.0, 500.0, 0.0},
+    {6, "BOT-6", 300.0, -500.0, 0.0},
+    {7, "BOT-7", 900.0, 500.0, 0.0},
+    {8, "BOT-8", 900.0, -500.0, 0.0},
+}};
+
+constexpr std::array<ArenaPoint, 13> BotWanderPoints = {{
+    {1, "WP-1", -1200.0, 0.0, 0.0},
+    {2, "WP-2", -900.0, 600.0, 0.0},
+    {3, "WP-3", -900.0, -600.0, 0.0},
+    {4, "WP-4", -300.0, 700.0, 0.0},
+    {5, "WP-5", -300.0, -700.0, 0.0},
+    {6, "WP-6", 300.0, 700.0, 0.0},
+    {7, "WP-7", 300.0, -700.0, 0.0},
+    {8, "WP-8", 900.0, 600.0, 0.0},
+    {9, "WP-9", 900.0, -600.0, 0.0},
+    {10, "WP-10", 1200.0, 0.0, 0.0},
+    {11, "WP-11", 0.0, 0.0, 0.0},
+    {12, "WP-12", 0.0, 800.0, 0.0},
+    {13, "WP-13", 0.0, -800.0, 0.0},
 }};
 
 constexpr std::array<ArenaPoint, 6> HealthPackSpawnPoints = {{
@@ -108,24 +133,18 @@ constexpr std::array<HealthPackInitialSpawn, 3> InitialHealthPackSpawns = {{
     {3, 4},
 }};
 
-struct HitscanHit
+struct HitscanHitResult
 {
-    enum class Type
-    {
-        None,
-        Target,
-        Player,
-        Bot,
-    };
-
-    Type type = Type::None;
-    double distance = std::numeric_limits<double>::max();
+    bool hit = false;
+    std::string targetType; // "bot", "player", "target"
     std::uint64_t targetId = 0;
-    std::uint64_t victimPlayerId = 0;
-    std::uint64_t botId = 0;
-    bool headshot = false;
-    bool used2dFallback = false;
+    double distance = 0.0;
     int damage = 0;
+    bool headshot = false;
+    std::string hitGroup; // "head", "body", "fallback_body", "core"
+    double hitX = 0.0;
+    double hitY = 0.0;
+    double hitZ = 0.0;
 };
 
 double ClampX(double x)
@@ -138,9 +157,86 @@ double ClampY(double y)
     return std::clamp(y, ArenaMinY, ArenaMaxY);
 }
 
+double ClampPlayerZ(double z)
+{
+    return std::clamp(z, MinPlayerZ, MaxPlayerZ);
+}
+
+double ClampBotXValue(double x)
+{
+    return std::clamp(x, BotAreaMinX, BotAreaMaxX);
+}
+
+double ClampBotYValue(double y)
+{
+    return std::clamp(y, BotAreaMinY, BotAreaMaxY);
+}
+
 bool IsInsideArena(double x, double y)
 {
     return x >= ArenaMinX && x <= ArenaMaxX && y >= ArenaMinY && y <= ArenaMaxY;
+}
+
+bool IsInsideBotAreaValue(double x, double y)
+{
+    return x >= BotAreaMinX && x <= BotAreaMaxX && y >= BotAreaMinY && y <= BotAreaMaxY;
+}
+
+std::pair<double, double> ClampToBotAreaValue(double x, double y)
+{
+    return {ClampBotXValue(x), ClampBotYValue(y)};
+}
+
+std::size_t GetInitialBotWaypointIndex(const ArenaPoint& spawn)
+{
+    if (BotWanderPoints.empty())
+    {
+        return 0;
+    }
+
+    return static_cast<std::size_t>((spawn.id - 1) % BotWanderPoints.size());
+}
+
+std::size_t GetNextBotWaypointIndex(const BotState& bot)
+{
+    if (BotWanderPoints.empty())
+    {
+        return 0;
+    }
+
+    return static_cast<std::size_t>(
+        (bot.currentWaypointIndex + 1 + (bot.botId % 3)) % BotWanderPoints.size()
+    );
+}
+
+void AssignBotWaypoint(BotState& bot, std::size_t waypointIndex)
+{
+    if (BotWanderPoints.empty())
+    {
+        bot.wanderTargetX = ClampBotXValue(bot.x);
+        bot.wanderTargetY = ClampBotYValue(bot.y);
+        bot.currentWaypointIndex = 0;
+        return;
+    }
+
+    const std::size_t normalizedIndex = waypointIndex % BotWanderPoints.size();
+    const ArenaPoint& waypoint = BotWanderPoints[normalizedIndex];
+    bot.currentWaypointIndex = static_cast<std::uint64_t>(normalizedIndex);
+    bot.wanderTargetX = ClampBotXValue(waypoint.x);
+    bot.wanderTargetY = ClampBotYValue(waypoint.y);
+    bot.decisionTimerSeconds = 2.0 + static_cast<double>(bot.botId % 3);
+}
+
+void AssignNextBotWaypoint(BotState& bot)
+{
+    AssignBotWaypoint(bot, GetNextBotWaypointIndex(bot));
+}
+
+void ResetBotStuckState(BotState& bot)
+{
+    bot.stuckTimerSeconds = 0.0;
+    bot.lastXForStuck = bot.x;
+    bot.lastYForStuck = bot.y;
 }
 
 template <std::size_t Count>
@@ -174,11 +270,22 @@ nlohmann::json BuildArenaBoundsJson()
     return boundsJson;
 }
 
+nlohmann::json BuildBotAreaBoundsJson()
+{
+    nlohmann::json boundsJson;
+    boundsJson["min_x"] = BotAreaMinX;
+    boundsJson["max_x"] = BotAreaMaxX;
+    boundsJson["min_y"] = BotAreaMinY;
+    boundsJson["max_y"] = BotAreaMaxY;
+    return boundsJson;
+}
+
 nlohmann::json BuildArenaLayoutJson(bool bIncludeSpawnLists, bool bIncludeTargetCores)
 {
     nlohmann::json arenaJson;
     arenaJson["name"] = "BattleGrid PvPvE Kill Race Arena v1";
     arenaJson["bounds"] = BuildArenaBoundsJson();
+    arenaJson["bot_area_bounds"] = BuildBotAreaBoundsJson();
 
     if (bIncludeSpawnLists)
     {
@@ -188,6 +295,7 @@ nlohmann::json BuildArenaLayoutJson(bool bIncludeSpawnLists, bool bIncludeTarget
             arenaJson["target_cores_debug"] = BuildArenaPointsJson(TargetCorePositions, "target_id");
         }
         arenaJson["bot_spawns"] = BuildArenaPointsJson(BotSpawnPoints, "bot_id");
+        arenaJson["bot_waypoints"] = BuildArenaPointsJson(BotWanderPoints, "waypoint_id");
         arenaJson["health_pack_spawns"] = BuildArenaPointsJson(HealthPackSpawnPoints, "spawn_id");
     }
 
@@ -274,13 +382,14 @@ bool RayCircleIntersection2D(
     const double deltaX = centerX - origin.x;
     const double deltaY = centerY - origin.y;
     const double projectedDistance = (deltaX * directionX) + (deltaY * directionY);
-    if (projectedDistance < 0.0 || projectedDistance > range)
+    const double rayDistance = projectedDistance / directionLength;
+    if (rayDistance < 0.0 || rayDistance > range)
     {
         return false;
     }
 
-    const double closestX = origin.x + (directionX * projectedDistance);
-    const double closestY = origin.y + (directionY * projectedDistance);
+    const double closestX = origin.x + (direction.x * rayDistance);
+    const double closestY = origin.y + (direction.y * rayDistance);
     const double missX = centerX - closestX;
     const double missY = centerY - closestY;
     const double missDistanceSquared = (missX * missX) + (missY * missY);
@@ -289,7 +398,7 @@ bool RayCircleIntersection2D(
         return false;
     }
 
-    outDistance = projectedDistance;
+    outDistance = rayDistance;
     return true;
 }
 
@@ -361,61 +470,89 @@ Vec3 BuildHitPoint(const Vec3& origin, const Vec3& direction, double distance)
     };
 }
 
-std::string GetShotResultTargetName(HitscanHit::Type type)
+bool IsCloserHit(const HitscanHitResult& candidate, const HitscanHitResult& current)
 {
-    switch (type)
-    {
-    case HitscanHit::Type::Target:
-        return "core";
-    case HitscanHit::Type::Player:
-        return "player";
-    case HitscanHit::Type::Bot:
-        return "bot";
-    default:
-        return "none";
-    }
+    return candidate.hit && (!current.hit || candidate.distance < current.distance);
 }
 
-void LogShotResult(
-    std::uint64_t shooterId,
-    bool bHit,
-    HitscanHit::Type targetType,
+HitscanHitResult BuildHitResult(
+    const std::string& targetType,
+    std::uint64_t targetId,
+    double distance,
     int damage,
-    bool bHeadshot
+    bool bHeadshot,
+    const std::string& hitGroup,
+    const Vec3& origin,
+    const Vec3& direction
 )
+{
+    const Vec3 hitPoint = BuildHitPoint(origin, direction, distance);
+
+    HitscanHitResult result;
+    result.hit = true;
+    result.targetType = targetType;
+    result.targetId = targetId;
+    result.distance = distance;
+    result.damage = damage;
+    result.headshot = bHeadshot;
+    result.hitGroup = hitGroup;
+    result.hitX = hitPoint.x;
+    result.hitY = hitPoint.y;
+    result.hitZ = hitPoint.z;
+    return result;
+}
+
+std::string GetShotResultTargetName(const std::string& targetType)
+{
+    if (targetType == "target")
+    {
+        return "core";
+    }
+    if (targetType == "player")
+    {
+        return "player";
+    }
+    if (targetType == "bot")
+    {
+        return "bot";
+    }
+    return "none";
+}
+
+void LogShotResult(std::uint64_t shooterId, const HitscanHitResult& hit)
 {
     std::ostringstream logMessage;
     logMessage
         << "Shot result shooter=" << shooterId
-        << " result=" << (bHit ? "hit" : "miss")
-        << " target=" << GetShotResultTargetName(targetType)
-        << " damage=" << damage
-        << " headshot=" << (bHeadshot ? "true" : "false");
+        << " result=" << (hit.hit ? "hit" : "miss")
+        << " target=" << GetShotResultTargetName(hit.targetType)
+        << " damage=" << hit.damage
+        << " headshot=" << (hit.headshot ? "true" : "false");
     Logger::Info(logMessage.str());
 }
 
 std::string BuildShotShortMessage(
-    HitscanHit::Type targetType,
+    const std::string& targetType,
     std::uint64_t targetId,
     int damage,
     bool bHeadshot
 )
 {
-    if (targetType == HitscanHit::Type::None)
+    if (targetType.empty())
     {
         return "SERVER MISS";
     }
 
     std::string label = "TARGET";
-    if (targetType == HitscanHit::Type::Bot)
+    if (targetType == "bot")
     {
         label = "BOT-" + std::to_string(targetId);
     }
-    else if (targetType == HitscanHit::Type::Target)
+    else if (targetType == "target")
     {
         label = "CORE-" + std::to_string(targetId);
     }
-    else if (targetType == HitscanHit::Type::Player)
+    else if (targetType == "player")
     {
         label = "PLAYER-" + std::to_string(targetId);
     }
@@ -492,6 +629,14 @@ nlohmann::json BuildBotSnapshotJson(const BotState& bot)
     botJson["fire_cooldown"] = bot.fireCooldownSeconds;
     botJson["aim_spread_deg"] = bot.aimSpreadDegrees;
     botJson["attack_range"] = bot.attackRange;
+    botJson["wander_target_x"] = bot.wanderTargetX;
+    botJson["wander_target_y"] = bot.wanderTargetY;
+    botJson["current_waypoint_index"] = bot.currentWaypointIndex;
+    botJson["stuck_timer"] = bot.stuckTimerSeconds;
+    botJson["body_radius"] = bot.bodyRadius;
+    botJson["head_radius"] = bot.headRadius;
+    botJson["body_height"] = bot.bodyHeight;
+    botJson["head_height"] = bot.headHeight;
     return botJson;
 }
 
@@ -577,11 +722,31 @@ GameRoom::GameRoom(std::uint64_t inRoomId)
       botFireIntervalSeconds(0.5),
       botAimSpreadDegrees(12.0),
       bVerboseBotShotEvents(false),
+      bEnableBot2DFallbackHit(true),
+      Bot2DFallbackRadiusScale(0.75),
+      bVerboseHitscanCandidateLogs(false),
+      bUseClientFireOriginForHitscan(true),
+      ClientFireOriginWarningDistance(300.0),
+      MaxAcceptedClientFireOriginDistance(2000.0),
+      bUseClientPositionForPlayerMovement(true),
+      MaxClientPositionDeltaPerSecond(1400.0),
+      MaxClientPositionSnapDistance(3000.0),
       targetsInitialized(false),
       botsInitialized(false),
       healthPacksInitialized(false),
       mutex()
 {
+    std::ostringstream boundsLog;
+    boundsLog << "[BattleGridServer] Arena bounds x=" << ArenaMinX << ".." << ArenaMaxX
+              << " y=" << ArenaMinY << ".." << ArenaMaxY
+              << " player_z=" << MinPlayerZ << ".." << MaxPlayerZ;
+    Logger::Info(boundsLog.str());
+
+    std::ostringstream botAreaLog;
+    botAreaLog << "[BattleGridServer] Bot area bounds x=" << BotAreaMinX << ".." << BotAreaMaxX
+               << " y=" << BotAreaMinY << ".." << BotAreaMaxY;
+    Logger::Info(botAreaLog.str());
+
     if (bTargetsEnabled)
     {
         InitializeDefaultTargets();
@@ -681,8 +846,95 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
             continue;
         }
 
-        double moveX = player.latestInput.moveX;
-        double moveY = player.latestInput.moveY;
+        const PlayerInput& input = player.latestInput;
+        double effectiveSpeed = WalkSpeed;
+        if (input.sprint)
+        {
+            effectiveSpeed = SprintSpeed;
+        }
+        else if (input.ads)
+        {
+            effectiveSpeed = AdsWalkSpeed;
+        }
+        player.speed = effectiveSpeed;
+
+        bool bUsedClientPosition = false;
+        std::string movementSource = "input";
+        if (bUseClientPositionForPlayerMovement && input.hasClientPosition)
+        {
+            if (
+                std::isfinite(input.clientX)
+                && std::isfinite(input.clientY)
+                && std::isfinite(input.clientZ)
+            )
+            {
+                const double clientX = ClampX(input.clientX);
+                const double clientY = ClampY(input.clientY);
+                // Demo-mode Z mirrors the Unreal pawn height. The server only
+                // sanity-clamps it; terrain and platform physics remain client-side.
+                const double clientZ = ClampPlayerZ(input.clientZ);
+                const double deltaX = clientX - player.x;
+                const double deltaY = clientY - player.y;
+                const double distance = std::sqrt((deltaX * deltaX) + (deltaY * deltaY));
+                const double acceptedStep =
+                    (MaxClientPositionDeltaPerSecond * std::max(0.0, deltaSeconds)) + 50.0;
+
+                if (distance <= acceptedStep || distance <= MaxClientPositionSnapDistance)
+                {
+                    if (distance > acceptedStep && tickNumber % 30 == 0)
+                    {
+                        std::ostringstream snapLog;
+                        snapLog
+                            << "[BattleGridServer] Accepted demo client position snap player="
+                            << player.playerId
+                            << " dist=" << distance;
+                        Logger::Info(snapLog.str());
+                    }
+
+                    player.x = clientX;
+                    player.y = clientY;
+                    player.z = clientZ;
+                    bUsedClientPosition = true;
+                    movementSource = distance > acceptedStep
+                        ? "client_snap"
+                        : "client_position";
+
+                    if (
+                        (input.clientZ < MinPlayerZ || input.clientZ > MaxPlayerZ)
+                        && tickNumber % 30 == 0
+                    )
+                    {
+                        std::ostringstream zClampLog;
+                        zClampLog
+                            << "[BattleGridServer] Clamped client z player="
+                            << player.playerId
+                            << " input_z=" << input.clientZ
+                            << " applied_z=" << clientZ;
+                        Logger::Warn(zClampLog.str());
+                    }
+                }
+                else if (tickNumber % 30 == 0)
+                {
+                    std::ostringstream rejectLog;
+                    rejectLog
+                        << "[BattleGridServer] Rejected client position player="
+                        << player.playerId
+                        << " dist=" << distance
+                        << " max_snap=" << MaxClientPositionSnapDistance;
+                    Logger::Warn(rejectLog.str());
+                }
+            }
+            else if (tickNumber % 30 == 0)
+            {
+                Logger::Warn(
+                    "[BattleGridServer] Rejected invalid client position player="
+                    + std::to_string(player.playerId)
+                );
+            }
+        }
+
+        double moveX = input.moveX;
+        double moveY = input.moveY;
         const double length = std::sqrt((moveX * moveX) + (moveY * moveY));
         if (length > 1.0)
         {
@@ -690,27 +942,30 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
             moveY /= length;
         }
 
-        player.x += moveX * player.speed * deltaSeconds;
-        player.y += moveY * player.speed * deltaSeconds;
-        player.x = ClampX(player.x);
-        player.y = ClampY(player.y);
+        if (!bUsedClientPosition)
+        {
+            player.x += moveX * effectiveSpeed * deltaSeconds;
+            player.y += moveY * effectiveSpeed * deltaSeconds;
+            player.x = ClampX(player.x);
+            player.y = ClampY(player.y);
+        }
 
         if (
-            player.latestInput.fire
-            && player.latestInput.seq != player.lastProcessedFireSeq
+            input.fire
+            && input.seq != player.lastProcessedFireSeq
         )
         {
-            double projectileDirX = player.latestInput.shotDirX;
-            double projectileDirY = player.latestInput.shotDirY;
-            double projectileDirZ = player.latestInput.shotDirZ;
+            double projectileDirX = input.shotDirX;
+            double projectileDirY = input.shotDirY;
+            double projectileDirZ = input.shotDirZ;
             const double shotDirectionLengthSquared =
                 (projectileDirX * projectileDirX)
                 + (projectileDirY * projectileDirY)
                 + (projectileDirZ * projectileDirZ);
             if (shotDirectionLengthSquared <= 0.0001)
             {
-                projectileDirX = player.latestInput.aimX;
-                projectileDirY = player.latestInput.aimY;
+                projectileDirX = input.aimX;
+                projectileDirY = input.aimY;
                 projectileDirZ = 0.0;
             }
 
@@ -722,9 +977,9 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
             );
             if (bUseHitscanDamage)
             {
-                ProcessHitscanFire(player, player.latestInput);
+                ProcessHitscanFire(player, input);
             }
-            player.lastProcessedFireSeq = player.latestInput.seq;
+            player.lastProcessedFireSeq = input.seq;
         }
 
         if (tickNumber % 60 == 0)
@@ -735,7 +990,12 @@ void GameRoom::Tick(double deltaSeconds, std::uint64_t tickNumber)
                 << " x=" << player.x
                 << " y=" << player.y
                 << " move_x=" << moveX
-                << " move_y=" << moveY;
+                << " move_y=" << moveY
+                << " speed=" << effectiveSpeed
+                << " source=" << movementSource
+                << " sprint=" << (input.sprint ? "true" : "false")
+                << " ads=" << (input.ads ? "true" : "false")
+                << " has_client_position=" << (input.hasClientPosition ? "true" : "false");
             Logger::Info(logMessage.str());
         }
     }
@@ -767,6 +1027,7 @@ nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
     json["tick"] = tickNumber;
     json["room_id"] = roomId;
     json["arena"] = BuildArenaLayoutJson(true, bTargetsEnabled);
+    json["bot_area_bounds"] = BuildBotAreaBoundsJson();
     json["match"] = matchState.ToJson();
     json["scoreboard"] = BuildScoreboardJson();
     json["events"] = BuildEventsJson();
@@ -837,6 +1098,9 @@ nlohmann::json GameRoom::ToDebugJson() const
     nlohmann::json json;
     json["room_id"] = roomId;
     json["arena"] = BuildArenaLayoutJson(true, true);
+    json["arena_bounds"] = BuildArenaBoundsJson();
+    json["bot_area_bounds"] = BuildBotAreaBoundsJson();
+    json["bot_waypoints"] = BuildArenaPointsJson(BotWanderPoints, "waypoint_id");
     json["match"] = matchState.ToJson();
     json["scoreboard"] = BuildScoreboardJson();
     json["events"] = BuildEventsJson();
@@ -856,6 +1120,17 @@ nlohmann::json GameRoom::ToDebugJson() const
     json["bot_fire_interval"] = botFireIntervalSeconds;
     json["bot_aim_spread"] = botAimSpreadDegrees;
     json["bot_shot_events_verbose"] = bVerboseBotShotEvents;
+    json["enable_bot_2d_fallback_hit"] = bEnableBot2DFallbackHit;
+    json["bot_2d_fallback_radius_scale"] = Bot2DFallbackRadiusScale;
+    json["verbose_hitscan_candidate_logs"] = bVerboseHitscanCandidateLogs;
+    json["use_client_fire_origin_for_hitscan"] = bUseClientFireOriginForHitscan;
+    json["client_fire_origin_warning_distance"] = ClientFireOriginWarningDistance;
+    json["max_accepted_client_fire_origin_distance"] = MaxAcceptedClientFireOriginDistance;
+    json["use_client_position_for_player_movement"] = bUseClientPositionForPlayerMovement;
+    json["max_client_position_delta_per_second"] = MaxClientPositionDeltaPerSecond;
+    json["max_client_position_snap_distance"] = MaxClientPositionSnapDistance;
+    json["min_player_z"] = MinPlayerZ;
+    json["max_player_z"] = MaxPlayerZ;
     json["auto_end_match_by_timer"] = bAutoEndMatchByTimer;
     json["body_damage"] = BodyDamage;
     json["headshot_damage"] = HeadshotDamage;
@@ -867,6 +1142,9 @@ nlohmann::json GameRoom::ToDebugJson() const
     json["bot_kill_score"] = BotKillScore;
     json["player_kill_score"] = PlayerKillScore;
     json["target_kill_score"] = TargetKillScore;
+    json["walk_speed"] = WalkSpeed;
+    json["sprint_speed"] = SprintSpeed;
+    json["ads_walk_speed"] = AdsWalkSpeed;
     json["health_pack_count"] = healthPacks.size();
     json["players"] = nlohmann::json::array();
     json["bots"] = nlohmann::json::array();
@@ -894,6 +1172,24 @@ nlohmann::json GameRoom::ToDebugJson() const
         inputJson["shot_dir_x"] = input.shotDirX;
         inputJson["shot_dir_y"] = input.shotDirY;
         inputJson["shot_dir_z"] = input.shotDirZ;
+        inputJson["has_fire_origin"] = input.hasFireOrigin;
+        inputJson["fire_origin_x"] = input.fireOriginX;
+        inputJson["fire_origin_y"] = input.fireOriginY;
+        inputJson["fire_origin_z"] = input.fireOriginZ;
+        inputJson["has_client_position"] = input.hasClientPosition;
+        inputJson["client_x"] = input.clientX;
+        inputJson["client_y"] = input.clientY;
+        inputJson["client_z"] = input.clientZ;
+
+        double effectiveSpeed = WalkSpeed;
+        if (input.sprint)
+        {
+            effectiveSpeed = SprintSpeed;
+        }
+        else if (input.ads)
+        {
+            effectiveSpeed = AdsWalkSpeed;
+        }
 
         nlohmann::json playerJson;
         playerJson["player_id"] = playerId;
@@ -906,6 +1202,7 @@ nlohmann::json GameRoom::ToDebugJson() const
         playerJson["y"] = player.y;
         playerJson["z"] = player.z;
         playerJson["speed"] = player.speed;
+        playerJson["effective_speed"] = effectiveSpeed;
         playerJson["hp"] = player.hp;
         playerJson["max_hp"] = player.maxHp;
         playerJson["score"] = CalculateKillRaceScore(player);
@@ -1157,6 +1454,26 @@ void GameRoom::SetAutoEndMatchByTimer(bool bEnabled)
     );
 }
 
+bool GameRoom::IsInsideBotArea(double x, double y) const
+{
+    return IsInsideBotAreaValue(x, y);
+}
+
+double GameRoom::ClampBotX(double x) const
+{
+    return ClampBotXValue(x);
+}
+
+double GameRoom::ClampBotY(double y) const
+{
+    return ClampBotYValue(y);
+}
+
+std::pair<double, double> GameRoom::ClampToBotArea(double x, double y) const
+{
+    return ClampToBotAreaValue(x, y);
+}
+
 void GameRoom::InitializeDefaultTargets() const
 {
     if (targetsInitialized && !targets.empty())
@@ -1197,8 +1514,8 @@ void GameRoom::InitializeDefaultBots() const
         BotState bot;
         bot.botId = spawn.id;
         bot.name = spawn.label;
-        bot.x = spawn.x;
-        bot.y = spawn.y;
+        bot.x = ClampBotX(spawn.x);
+        bot.y = ClampBotY(spawn.y);
         bot.z = spawn.z;
         bot.yaw = 0.0;
         bot.hp = BotMaxHp;
@@ -1206,9 +1523,9 @@ void GameRoom::InitializeDefaultBots() const
         bot.alive = true;
         bot.invincible = false;
         bot.speed = botMoveSpeed;
-        bot.wanderTargetX = spawn.x;
-        bot.wanderTargetY = spawn.y;
-        bot.decisionTimerSeconds = 0.0;
+        AssignBotWaypoint(bot, GetInitialBotWaypointIndex(spawn));
+        bot.decisionTimerSeconds = 2.0 + static_cast<double>(bot.botId % 3);
+        ResetBotStuckState(bot);
         bot.attackCooldownSeconds = botAttackCooldownSeconds;
         bot.attackTimerSeconds = 0.0;
         bot.ammo = bot.magazineSize;
@@ -1467,12 +1784,14 @@ void GameRoom::UpdateBotRespawns(double deltaSeconds)
                 (bot.botId - 1) % BotSpawnPoints.size()
             );
             const ArenaPoint& spawnPoint = BotSpawnPoints[spawnIndex];
-            bot.Respawn(spawnPoint.x, spawnPoint.y);
+            bot.Respawn(ClampBotX(spawnPoint.x), ClampBotY(spawnPoint.y));
             bot.invincibleTimerSeconds = BotInvincibleSeconds;
             bot.speed = botMoveSpeed;
             bot.attackRange = botAttackRange;
             bot.fireIntervalSeconds = botFireIntervalSeconds;
             bot.aimSpreadDegrees = botAimSpreadDegrees;
+            AssignBotWaypoint(bot, GetInitialBotWaypointIndex(spawnPoint));
+            ResetBotStuckState(bot);
 
             Logger::Info("Bot respawned bot_id=" + std::to_string(bot.botId));
             continue;
@@ -1704,17 +2023,18 @@ void GameRoom::UpdateBotAI(double deltaSeconds)
 
         double moveX = 0.0;
         double moveY = 0.0;
+        bool bTriedToMove = false;
 
         if (targetPlayer)
         {
             bot.targetPlayerId = targetPlayer->playerId;
-            moveX = targetPlayer->x - bot.x;
-            moveY = targetPlayer->y - bot.y;
-            const double distance = std::sqrt((moveX * moveX) + (moveY * moveY));
+            const double aimX = targetPlayer->x - bot.x;
+            const double aimY = targetPlayer->y - bot.y;
+            const double distance = std::sqrt((aimX * aimX) + (aimY * aimY));
 
             if (distance > 0.0001)
             {
-                bot.yaw = std::atan2(moveY, moveX) * 180.0 / 3.14159265358979323846;
+                bot.yaw = std::atan2(aimY, aimX) * 180.0 / 3.14159265358979323846;
             }
 
             const double effectiveAttackRange = bot.attackRange > 0.0
@@ -1727,14 +2047,23 @@ void GameRoom::UpdateBotAI(double deltaSeconds)
                 ProcessBotShot(bot, *targetPlayer);
                 if (distance <= bot.preferredCombatRange)
                 {
+                    bot.x = ClampBotX(bot.x);
+                    bot.y = ClampBotY(bot.y);
+                    ResetBotStuckState(bot);
                     continue;
                 }
             }
 
-            if (distance > 0.0001)
+            const std::pair<double, double> clampedChaseTarget =
+                ClampToBotArea(targetPlayer->x, targetPlayer->y);
+            moveX = clampedChaseTarget.first - bot.x;
+            moveY = clampedChaseTarget.second - bot.y;
+            const double moveDistance = std::sqrt((moveX * moveX) + (moveY * moveY));
+            if (moveDistance > 0.0001)
             {
-                moveX /= distance;
-                moveY /= distance;
+                moveX /= moveDistance;
+                moveY /= moveDistance;
+                bTriedToMove = true;
             }
         }
         else
@@ -1746,20 +2075,7 @@ void GameRoom::UpdateBotAI(double deltaSeconds)
 
             if (distance < 80.0 || bot.decisionTimerSeconds <= 0.0)
             {
-                const double botFactor = static_cast<double>(bot.botId);
-                bot.wanderTargetX = ClampX(
-                    std::fmod(
-                        (botFactor * 733.0) + (bot.x * 0.37) + ArenaWidth,
-                        ArenaWidth
-                    ) + ArenaMinX
-                );
-                bot.wanderTargetY = ClampY(
-                    std::fmod(
-                        (botFactor * 419.0) + (bot.y * 0.53) + ArenaHeight,
-                        ArenaHeight
-                    ) + ArenaMinY
-                );
-                bot.decisionTimerSeconds = 2.0 + static_cast<double>(bot.botId % 3);
+                AssignNextBotWaypoint(bot);
             }
 
             moveX = bot.wanderTargetX - bot.x;
@@ -1770,11 +2086,45 @@ void GameRoom::UpdateBotAI(double deltaSeconds)
                 moveX /= moveLength;
                 moveY /= moveLength;
                 bot.yaw = std::atan2(moveY, moveX) * 180.0 / 3.14159265358979323846;
+                bTriedToMove = true;
             }
         }
 
-        bot.x = ClampX(bot.x + (moveX * bot.speed * deltaSeconds));
-        bot.y = ClampY(bot.y + (moveY * bot.speed * deltaSeconds));
+        if (bTriedToMove)
+        {
+            bot.x = ClampBotX(bot.x + (moveX * bot.speed * deltaSeconds));
+            bot.y = ClampBotY(bot.y + (moveY * bot.speed * deltaSeconds));
+
+            const double baselineDeltaX = bot.x - bot.lastXForStuck;
+            const double baselineDeltaY = bot.y - bot.lastYForStuck;
+            const double baselineDistance =
+                std::sqrt((baselineDeltaX * baselineDeltaX) + (baselineDeltaY * baselineDeltaY));
+            if (baselineDistance < BotStuckMovementThreshold)
+            {
+                bot.stuckTimerSeconds += deltaSeconds;
+                if (bot.stuckTimerSeconds >= BotStuckTimeoutSeconds)
+                {
+                    AssignNextBotWaypoint(bot);
+                    ResetBotStuckState(bot);
+                    Logger::Info(
+                        "[BattleGridServer] Bot stuck; selected new waypoint bot_id="
+                        + std::to_string(bot.botId)
+                        + " waypoint_index="
+                        + std::to_string(bot.currentWaypointIndex)
+                    );
+                }
+            }
+            else
+            {
+                ResetBotStuckState(bot);
+            }
+        }
+        else
+        {
+            bot.x = ClampBotX(bot.x);
+            bot.y = ClampBotY(bot.y);
+            ResetBotStuckState(bot);
+        }
     }
 }
 
@@ -2096,12 +2446,43 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         return;
     }
 
-    const Vec3 origin{shooter.x, shooter.y, shooter.z + FireOriginHeight};
+    const Vec3 serverOrigin{shooter.x, shooter.y, shooter.z + FireOriginHeight};
+    Vec3 origin = serverOrigin;
+    std::string originSource = "server";
+    if (bUseClientFireOriginForHitscan && input.hasFireOrigin)
+    {
+        const double deltaX = input.fireOriginX - shooter.x;
+        const double deltaY = input.fireOriginY - shooter.y;
+        const double originDistance = std::sqrt((deltaX * deltaX) + (deltaY * deltaY));
+        if (originDistance <= MaxAcceptedClientFireOriginDistance)
+        {
+            origin = Vec3{input.fireOriginX, input.fireOriginY, input.fireOriginZ};
+            originSource = "client";
+            if (originDistance > ClientFireOriginWarningDistance)
+            {
+                std::ostringstream warningMessage;
+                warningMessage
+                    << "Client fire origin far from server position player=" << shooter.playerId
+                    << " dist=" << originDistance;
+                Logger::Warn(warningMessage.str());
+            }
+        }
+        else
+        {
+            std::ostringstream rejectMessage;
+            rejectMessage
+                << "Rejected client fire origin player=" << shooter.playerId
+                << " dist=" << originDistance;
+            Logger::Warn(rejectMessage.str());
+        }
+    }
+
     const Vec3 direction = BuildShotDirection(input);
 
     std::ostringstream fireLogMessage;
     fireLogMessage
-        << "Hitscan fire shooter=" << shooter.playerId
+        << "Fire origin player=" << shooter.playerId
+        << " source=" << originSource
         << " seq=" << input.seq
         << " origin=(" << origin.x << "," << origin.y << "," << origin.z << ")"
         << " dir=(" << direction.x << "," << direction.y << "," << direction.z << ")"
@@ -2109,7 +2490,30 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         << " spread=" << input.spreadDegrees;
     Logger::Info(fireLogMessage.str());
 
-    HitscanHit bestHit;
+    HitscanHitResult selectedHit;
+
+    auto considerHit = [this, &selectedHit](const HitscanHitResult& candidate)
+    {
+        if (!candidate.hit)
+        {
+            return;
+        }
+
+        if (bVerboseHitscanCandidateLogs && candidate.targetType == "bot")
+        {
+            std::ostringstream candidateLogMessage;
+            candidateLogMessage
+                << "Hitscan candidate bot=" << candidate.targetId
+                << " group=" << candidate.hitGroup
+                << " distance=" << candidate.distance;
+            Logger::Info(candidateLogMessage.str());
+        }
+
+        if (IsCloserHit(candidate, selectedHit))
+        {
+            selectedHit = candidate;
+        }
+    };
 
     if (bTargetsEnabled)
     {
@@ -2131,16 +2535,18 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
                     HitscanRange,
                     hitDistance
                 )
-                && hitDistance < bestHit.distance
             )
             {
-                bestHit.type = HitscanHit::Type::Target;
-                bestHit.distance = hitDistance;
-                bestHit.targetId = targetId;
-                bestHit.victimPlayerId = 0;
-                bestHit.headshot = false;
-                bestHit.used2dFallback = false;
-                bestHit.damage = BodyDamage;
+                considerHit(BuildHitResult(
+                    "target",
+                    targetId,
+                    hitDistance,
+                    BodyDamage,
+                    false,
+                    "core",
+                    origin,
+                    direction
+                ));
             }
         }
     }
@@ -2155,6 +2561,7 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         }
 
         double hitDistance = 0.0;
+        HitscanHitResult botHit;
         const Vec3 headCenter{bot.x, bot.y, bot.z + bot.headHeight};
         if (
             RaySphereIntersection(
@@ -2165,66 +2572,74 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
                 HitscanRange,
                 hitDistance
             )
-            && hitDistance < bestHit.distance
         )
         {
-            bestHit.type = HitscanHit::Type::Bot;
-            bestHit.distance = hitDistance;
-            bestHit.targetId = 0;
-            bestHit.victimPlayerId = 0;
-            bestHit.botId = botId;
-            bestHit.headshot = true;
-            bestHit.used2dFallback = false;
-            bestHit.damage = HeadshotDamage;
-            continue;
-        }
-
-        const Vec3 bodyCenter{bot.x, bot.y, bot.z + bot.bodyHeight};
-        if (
-            RaySphereIntersection(
+            botHit = BuildHitResult(
+                "bot",
+                botId,
+                hitDistance,
+                HeadshotDamage,
+                true,
+                "head",
                 origin,
-                direction,
-                bodyCenter,
-                bot.bodyRadius,
-                HitscanRange,
-                hitDistance
-            )
-            && hitDistance < bestHit.distance
-        )
+                direction
+            );
+        }
+        else
         {
-            bestHit.type = HitscanHit::Type::Bot;
-            bestHit.distance = hitDistance;
-            bestHit.targetId = 0;
-            bestHit.victimPlayerId = 0;
-            bestHit.botId = botId;
-            bestHit.headshot = false;
-            bestHit.used2dFallback = false;
-            bestHit.damage = BodyDamage;
+            const Vec3 bodyCenter{bot.x, bot.y, bot.z + bot.bodyHeight};
+            if (
+                RaySphereIntersection(
+                    origin,
+                    direction,
+                    bodyCenter,
+                    bot.bodyRadius,
+                    HitscanRange,
+                    hitDistance
+                )
+            )
+            {
+                botHit = BuildHitResult(
+                    "bot",
+                    botId,
+                    hitDistance,
+                    BodyDamage,
+                    false,
+                    "body",
+                    origin,
+                    direction
+                );
+            }
         }
 
         double fallbackDistance = 0.0;
         if (
-            RayCircleIntersection2D(
+            !botHit.hit
+            && bEnableBot2DFallbackHit
+            && RayCircleIntersection2D(
                 origin,
                 direction,
                 bot.x,
                 bot.y,
-                bot.bodyRadius,
+                std::max(0.0, bot.bodyRadius * Bot2DFallbackRadiusScale),
                 HitscanRange,
                 fallbackDistance
             )
-            && fallbackDistance < bestHit.distance
         )
         {
-            bestHit.type = HitscanHit::Type::Bot;
-            bestHit.distance = fallbackDistance;
-            bestHit.targetId = 0;
-            bestHit.victimPlayerId = 0;
-            bestHit.botId = botId;
-            bestHit.headshot = false;
-            bestHit.used2dFallback = true;
-            bestHit.damage = BodyDamage;
+            botHit = BuildHitResult(
+                "bot",
+                botId,
+                fallbackDistance,
+                BodyDamage,
+                false,
+                "fallback_body",
+                origin,
+                direction
+            );
         }
+
+        considerHit(botHit);
     }
 
     for (const auto& [victimId, victim] : players)
@@ -2240,6 +2655,7 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         }
 
         double hitDistance = 0.0;
+        HitscanHitResult playerHit;
         const Vec3 headCenter{victim.x, victim.y, victim.z + victim.headHeight};
         if (
             RaySphereIntersection(
@@ -2250,90 +2666,109 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
                 HitscanRange,
                 hitDistance
             )
-            && hitDistance < bestHit.distance
         )
         {
-            bestHit.type = HitscanHit::Type::Player;
-            bestHit.distance = hitDistance;
-            bestHit.targetId = 0;
-            bestHit.victimPlayerId = victimId;
-            bestHit.headshot = true;
-            bestHit.used2dFallback = false;
-            bestHit.damage = HeadshotDamage;
-            continue;
+            playerHit = BuildHitResult(
+                "player",
+                victimId,
+                hitDistance,
+                HeadshotDamage,
+                true,
+                "head",
+                origin,
+                direction
+            );
+        }
+        else
+        {
+            const Vec3 bodyCenter{victim.x, victim.y, victim.z + victim.bodyHeight};
+            if (
+                RaySphereIntersection(
+                    origin,
+                    direction,
+                    bodyCenter,
+                    victim.bodyRadius,
+                    HitscanRange,
+                    hitDistance
+                )
+            )
+            {
+                playerHit = BuildHitResult(
+                    "player",
+                    victimId,
+                    hitDistance,
+                    BodyDamage,
+                    false,
+                    "body",
+                    origin,
+                    direction
+                );
+            }
         }
 
-        const Vec3 bodyCenter{victim.x, victim.y, victim.z + victim.bodyHeight};
-        if (
-            RaySphereIntersection(
-                origin,
-                direction,
-                bodyCenter,
-                victim.bodyRadius,
-                HitscanRange,
-                hitDistance
-            )
-            && hitDistance < bestHit.distance
-        )
-        {
-            bestHit.type = HitscanHit::Type::Player;
-            bestHit.distance = hitDistance;
-            bestHit.targetId = 0;
-            bestHit.victimPlayerId = victimId;
-            bestHit.headshot = false;
-            bestHit.used2dFallback = false;
-            bestHit.damage = BodyDamage;
-        }
+        considerHit(playerHit);
     }
 
-    if (bestHit.type == HitscanHit::Type::Target)
+    if (selectedHit.hit)
     {
-        const auto target = targets.find(bestHit.targetId);
+        std::ostringstream selectedLogMessage;
+        selectedLogMessage
+            << "Hitscan selected shooter=" << shooter.playerId
+            << " target=" << selectedHit.targetType << ":" << selectedHit.targetId
+            << " group=" << selectedHit.hitGroup
+            << " distance=" << selectedHit.distance
+            << " damage=" << selectedHit.damage;
+        Logger::Info(selectedLogMessage.str());
+    }
+    else
+    {
+        Logger::Info(
+            "Hitscan selected shooter=" + std::to_string(shooter.playerId)
+            + " target=none miss"
+        );
+    }
+
+    if (selectedHit.targetType == "target")
+    {
+        const auto target = targets.find(selectedHit.targetId);
         if (target == targets.end())
         {
             return;
         }
 
-        target->second.ApplyDamage(bestHit.damage);
+        target->second.ApplyDamage(selectedHit.damage);
 
         std::ostringstream hitLogMessage;
         hitLogMessage
             << "Hitscan target hit shooter=" << shooter.playerId
-            << " target=" << bestHit.targetId
-            << " damage=" << bestHit.damage
+            << " target=" << selectedHit.targetId
+            << " damage=" << selectedHit.damage
             << " hp=" << target->second.hp
             << "/" << target->second.maxHp;
         Logger::Info(hitLogMessage.str());
 
-        const Vec3 hitPoint = BuildHitPoint(origin, direction, bestHit.distance);
         CombatEvent shotEvent;
         shotEvent.type = "shot_hit_target";
         shotEvent.message = shooter.nickname
             + " hit CORE-"
-            + std::to_string(bestHit.targetId)
+            + std::to_string(selectedHit.targetId)
             + " for "
-            + std::to_string(bestHit.damage);
+            + std::to_string(selectedHit.damage);
         shotEvent.shortMessage = BuildShotShortMessage(
-            bestHit.type,
-            bestHit.targetId,
-            bestHit.damage,
-            bestHit.headshot
+            selectedHit.targetType,
+            selectedHit.targetId,
+            selectedHit.damage,
+            selectedHit.headshot
         );
         shotEvent.actorPlayerId = shooter.playerId;
-        shotEvent.targetId = bestHit.targetId;
-        shotEvent.damage = bestHit.damage;
-        shotEvent.hitGroup = "core";
-        shotEvent.hitX = hitPoint.x;
-        shotEvent.hitY = hitPoint.y;
-        shotEvent.hitZ = hitPoint.z;
+        shotEvent.targetId = selectedHit.targetId;
+        shotEvent.damage = selectedHit.damage;
+        shotEvent.hitGroup = selectedHit.hitGroup;
+        shotEvent.hitX = selectedHit.hitX;
+        shotEvent.hitY = selectedHit.hitY;
+        shotEvent.hitZ = selectedHit.hitZ;
         AddCombatEvent(shotEvent);
-        LogShotResult(
-            shooter.playerId,
-            true,
-            bestHit.type,
-            bestHit.damage,
-            bestHit.headshot
-        );
+        LogShotResult(shooter.playerId, selectedHit);
 
         if (!target->second.IsAlive())
         {
@@ -2342,85 +2777,80 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
 
             std::ostringstream destroyLogMessage;
             destroyLogMessage
-                << "Server target destroyed target_id=" << bestHit.targetId
+                << "Server target destroyed target_id=" << selectedHit.targetId
                 << " shooter=" << shooter.playerId
                 << " score=" << shooter.score;
             Logger::Info(destroyLogMessage.str());
 
             CombatEvent event;
             event.type = "target_destroyed";
-            event.message = shooter.nickname + " destroyed CORE-" + std::to_string(bestHit.targetId);
+            event.message = shooter.nickname + " destroyed CORE-" + std::to_string(selectedHit.targetId);
             event.actorPlayerId = shooter.playerId;
-            event.targetId = bestHit.targetId;
+            event.targetId = selectedHit.targetId;
             AddCombatEvent(event);
         }
 
         return;
     }
 
-    if (bestHit.type == HitscanHit::Type::Bot)
+    if (selectedHit.targetType == "bot")
     {
-        const auto bot = bots.find(bestHit.botId);
+        const auto bot = bots.find(selectedHit.targetId);
         if (bot == bots.end())
         {
             return;
         }
 
         BotState& hitBot = bot->second;
-        hitBot.ApplyDamage(bestHit.damage);
+        hitBot.ApplyDamage(selectedHit.damage);
 
         std::ostringstream hitLogMessage;
         hitLogMessage
             << "Hitscan bot hit shooter=" << shooter.playerId
             << " bot=" << hitBot.botId
-            << " headshot=" << (bestHit.headshot ? "true" : "false")
-            << " damage=" << bestHit.damage
+            << " group=" << selectedHit.hitGroup
+            << " damage=" << selectedHit.damage
             << " hp=" << hitBot.hp
-            << "/" << hitBot.maxHp;
+            << "/" << hitBot.maxHp
+            << " dir=(" << direction.x << "," << direction.y << "," << direction.z << ")";
         Logger::Info(hitLogMessage.str());
 
-        if (bestHit.used2dFallback)
+        if (selectedHit.hitGroup == "fallback_body")
         {
             std::ostringstream fallbackLogMessage;
             fallbackLogMessage
                 << "Hitscan bot body hit by 2D fallback shooter=" << shooter.playerId
                 << " bot=" << hitBot.botId
-                << " damage=" << bestHit.damage
+                << " damage=" << selectedHit.damage
                 << " hp=" << hitBot.hp
-                << "/" << hitBot.maxHp;
+                << "/" << hitBot.maxHp
+                << " radius_scale=" << Bot2DFallbackRadiusScale;
             Logger::Info(fallbackLogMessage.str());
         }
 
-        const Vec3 hitPoint = BuildHitPoint(origin, direction, bestHit.distance);
         CombatEvent shotEvent;
         shotEvent.type = "shot_hit_bot";
         shotEvent.message = shooter.nickname
-            + (bestHit.headshot ? " headshot " : " hit ")
+            + (selectedHit.headshot ? " headshot " : " hit ")
             + hitBot.name
             + " for "
-            + std::to_string(bestHit.damage);
+            + std::to_string(selectedHit.damage);
         shotEvent.shortMessage = BuildShotShortMessage(
-            bestHit.type,
+            selectedHit.targetType,
             hitBot.botId,
-            bestHit.damage,
-            bestHit.headshot
+            selectedHit.damage,
+            selectedHit.headshot
         );
         shotEvent.actorPlayerId = shooter.playerId;
         shotEvent.botId = hitBot.botId;
-        shotEvent.headshot = bestHit.headshot;
-        shotEvent.damage = bestHit.damage;
-        shotEvent.hitGroup = bestHit.headshot ? "head" : "body";
-        shotEvent.hitX = hitPoint.x;
-        shotEvent.hitY = hitPoint.y;
-        shotEvent.hitZ = hitPoint.z;
+        shotEvent.headshot = selectedHit.headshot;
+        shotEvent.damage = selectedHit.damage;
+        shotEvent.hitGroup = selectedHit.hitGroup;
+        shotEvent.hitX = selectedHit.hitX;
+        shotEvent.hitY = selectedHit.hitY;
+        shotEvent.hitZ = selectedHit.hitZ;
         AddCombatEvent(shotEvent);
-        LogShotResult(
-            shooter.playerId,
-            true,
-            bestHit.type,
-            bestHit.damage,
-            bestHit.headshot
-        );
+        LogShotResult(shooter.playerId, selectedHit);
 
         if (!hitBot.IsAlive())
         {
@@ -2439,11 +2869,11 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
             CombatEvent event;
             event.type = "bot_killed";
             event.message = shooter.nickname
-                + (bestHit.headshot ? " headshot " : " killed ")
+                + (selectedHit.headshot ? " headshot " : " killed ")
                 + hitBot.name;
             event.actorPlayerId = shooter.playerId;
             event.botId = hitBot.botId;
-            event.headshot = bestHit.headshot;
+            event.headshot = selectedHit.headshot;
             event.victimIsBot = true;
             event.killerIsPlayer = true;
             AddCombatEvent(event);
@@ -2452,57 +2882,50 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         return;
     }
 
-    if (bestHit.type == HitscanHit::Type::Player)
+    if (selectedHit.targetType == "player")
     {
-        const auto victim = players.find(bestHit.victimPlayerId);
+        const auto victim = players.find(selectedHit.targetId);
         if (victim == players.end())
         {
             return;
         }
 
         PlayerState& victimPlayer = victim->second;
-        victimPlayer.hp = std::max(0, victimPlayer.hp - bestHit.damage);
+        victimPlayer.hp = std::max(0, victimPlayer.hp - selectedHit.damage);
 
         std::ostringstream hitLogMessage;
         hitLogMessage
             << "Hitscan player hit shooter=" << shooter.playerId
             << " victim=" << victimPlayer.playerId
-            << " damage=" << bestHit.damage
-            << " headshot=" << (bestHit.headshot ? "true" : "false")
+            << " damage=" << selectedHit.damage
+            << " headshot=" << (selectedHit.headshot ? "true" : "false")
             << " hp=" << victimPlayer.hp
             << "/" << victimPlayer.maxHp;
         Logger::Info(hitLogMessage.str());
 
-        const Vec3 hitPoint = BuildHitPoint(origin, direction, bestHit.distance);
         CombatEvent shotEvent;
         shotEvent.type = "shot_hit_player";
         shotEvent.message = shooter.nickname
-            + (bestHit.headshot ? " headshot " : " hit ")
+            + (selectedHit.headshot ? " headshot " : " hit ")
             + victimPlayer.nickname
             + " for "
-            + std::to_string(bestHit.damage);
+            + std::to_string(selectedHit.damage);
         shotEvent.shortMessage = BuildShotShortMessage(
-            bestHit.type,
+            selectedHit.targetType,
             victimPlayer.playerId,
-            bestHit.damage,
-            bestHit.headshot
+            selectedHit.damage,
+            selectedHit.headshot
         );
         shotEvent.actorPlayerId = shooter.playerId;
         shotEvent.targetPlayerId = victimPlayer.playerId;
-        shotEvent.headshot = bestHit.headshot;
-        shotEvent.damage = bestHit.damage;
-        shotEvent.hitGroup = bestHit.headshot ? "head" : "body";
-        shotEvent.hitX = hitPoint.x;
-        shotEvent.hitY = hitPoint.y;
-        shotEvent.hitZ = hitPoint.z;
+        shotEvent.headshot = selectedHit.headshot;
+        shotEvent.damage = selectedHit.damage;
+        shotEvent.hitGroup = selectedHit.hitGroup;
+        shotEvent.hitX = selectedHit.hitX;
+        shotEvent.hitY = selectedHit.hitY;
+        shotEvent.hitZ = selectedHit.hitZ;
         AddCombatEvent(shotEvent);
-        LogShotResult(
-            shooter.playerId,
-            true,
-            bestHit.type,
-            bestHit.damage,
-            bestHit.headshot
-        );
+        LogShotResult(shooter.playerId, selectedHit);
 
         if (victimPlayer.hp <= 0)
         {
@@ -2523,18 +2946,18 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
             killLogMessage
                 << "Player killed killer=" << shooter.playerId
                 << " victim=" << victimPlayer.playerId
-                << " headshot=" << (bestHit.headshot ? "true" : "false")
+                << " headshot=" << (selectedHit.headshot ? "true" : "false")
                 << " killer_score=" << shooter.score;
             Logger::Info(killLogMessage.str());
 
             CombatEvent event;
             event.type = "player_killed";
             event.message = shooter.nickname
-                + (bestHit.headshot ? " headshot " : " killed ")
+                + (selectedHit.headshot ? " headshot " : " killed ")
                 + victimPlayer.nickname;
             event.actorPlayerId = shooter.playerId;
             event.targetPlayerId = victimPlayer.playerId;
-            event.headshot = bestHit.headshot;
+            event.headshot = selectedHit.headshot;
             event.victimIsPlayer = true;
             event.killerIsPlayer = true;
             AddCombatEvent(event);
@@ -2546,13 +2969,17 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
     Logger::Info(
         "Hitscan missed shooter=" + std::to_string(shooter.playerId)
         + " seq=" + std::to_string(input.seq)
+        + " dir=(" + std::to_string(direction.x)
+        + "," + std::to_string(direction.y)
+        + "," + std::to_string(direction.z)
+        + ")"
     );
 
     CombatEvent missEvent;
     missEvent.type = "shot_miss";
     missEvent.message = shooter.nickname + " missed";
     missEvent.shortMessage = BuildShotShortMessage(
-        HitscanHit::Type::None,
+        "",
         0,
         0,
         false
@@ -2563,13 +2990,7 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
     missEvent.hitY = origin.y;
     missEvent.hitZ = origin.z;
     AddCombatEvent(missEvent);
-    LogShotResult(
-        shooter.playerId,
-        false,
-        HitscanHit::Type::None,
-        0,
-        false
-    );
+    LogShotResult(shooter.playerId, selectedHit);
 }
 
 void GameRoom::UpdateProjectiles(double deltaSeconds)

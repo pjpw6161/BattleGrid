@@ -28,6 +28,7 @@ public:
 		const FVector& WorldLocation
 	);
 	int32 GetPlayerId() const;
+	FVector GetApproximateMuzzleWorldLocation() const;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Server Snapshot")
 	TObjectPtr<USceneComponent> SceneRoot;
@@ -65,6 +66,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Visual", meta = (ClampMin = "0.0"))
 	float LabelHeight;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual")
+	FVector MuzzleFallbackOffset;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual")
+	bool bShowMuzzleDebug;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon Visual", meta = (ClampMin = "0.0"))
+	float MuzzleDebugSphereRadius;
+
 private:
 	void ApplyVisualState(bool bIsAlive, bool bIsInvincible);
 
@@ -74,4 +84,6 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> DefaultMaterial;
+
+	mutable bool bLoggedServerGhostMuzzleFallback;
 };
