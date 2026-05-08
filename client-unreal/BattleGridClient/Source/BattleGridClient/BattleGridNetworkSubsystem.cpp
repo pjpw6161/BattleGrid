@@ -154,6 +154,8 @@ void UBattleGridNetworkSubsystem::Connect(const FString& InServerUrl, const FStr
 	SeenCombatEventIds.Empty();
 	LastShotResultMessage.Empty();
 	LastShotResultTimestampSeconds = -1000.0;
+	LastHealMessage.Empty();
+	LastHealMessageTimestampSeconds = -1000.0;
 	bHasMatchSnapshot = false;
 	bHasLoggedServerSummary = false;
 	InputAckLogCounter = 0;
@@ -202,6 +204,8 @@ void UBattleGridNetworkSubsystem::Disconnect()
 	SeenCombatEventIds.Empty();
 	LastShotResultMessage.Empty();
 	LastShotResultTimestampSeconds = -1000.0;
+	LastHealMessage.Empty();
+	LastHealMessageTimestampSeconds = -1000.0;
 	bHasMatchSnapshot = false;
 	bHasLoggedServerSummary = false;
 	InputAckLogCounter = 0;
@@ -1260,6 +1264,17 @@ bool UBattleGridNetworkSubsystem::HasRecentShotResult() const
 		&& FPlatformTime::Seconds() - LastShotResultTimestampSeconds <= LastShotResultDisplaySeconds;
 }
 
+FString UBattleGridNetworkSubsystem::GetRecentHealMessage() const
+{
+	return HasRecentHealMessage() ? LastHealMessage : FString();
+}
+
+bool UBattleGridNetworkSubsystem::HasRecentHealMessage() const
+{
+	return !LastHealMessage.IsEmpty()
+		&& FPlatformTime::Seconds() - LastHealMessageTimestampSeconds <= LastHealMessageDisplaySeconds;
+}
+
 FString UBattleGridNetworkSubsystem::GetServerScoreboardSummaryText() const
 {
 	if (!bHasMatchSnapshot)
@@ -1375,6 +1390,8 @@ void UBattleGridNetworkSubsystem::HandleClosed(
 	SeenCombatEventIds.Empty();
 	LastShotResultMessage.Empty();
 	LastShotResultTimestampSeconds = -1000.0;
+	LastHealMessage.Empty();
+	LastHealMessageTimestampSeconds = -1000.0;
 	LastDebugMessage.Empty();
 	bHasMatchSnapshot = false;
 	bHasLoggedServerSummary = false;
@@ -1473,6 +1490,8 @@ void UBattleGridNetworkSubsystem::HandleMessage(const FString& Message)
 		SeenCombatEventIds.Empty();
 		LastShotResultMessage.Empty();
 		LastShotResultTimestampSeconds = -1000.0;
+		LastHealMessage.Empty();
+		LastHealMessageTimestampSeconds = -1000.0;
 		bHasMatchSnapshot = false;
 
 		UE_LOG(
@@ -1493,6 +1512,8 @@ void UBattleGridNetworkSubsystem::HandleMessage(const FString& Message)
 		{
 			LastShotResultMessage.Empty();
 			LastShotResultTimestampSeconds = -1000.0;
+			LastHealMessage.Empty();
+			LastHealMessageTimestampSeconds = -1000.0;
 		}
 		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Server debug response: %s"), *LastDebugMessage);
 		return;
@@ -1727,6 +1748,7 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			double TargetIdValue = 0.0;
 			double HealthPackIdValue = 0.0;
 			double DamageValue = 0.0;
+			double HealAmountValue = 0.0;
 			double HitXValue = 0.0;
 			double HitYValue = 0.0;
 			double HitZValue = 0.0;
@@ -1752,6 +1774,7 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			EventObject->TryGetBoolField(TEXT("killer_is_bot"), bKillerIsBotValue);
 			EventObject->TryGetBoolField(TEXT("killer_is_player"), bKillerIsPlayerValue);
 			EventObject->TryGetNumberField(TEXT("damage"), DamageValue);
+			EventObject->TryGetNumberField(TEXT("heal_amount"), HealAmountValue);
 			EventObject->TryGetStringField(TEXT("hit_group"), Event.HitGroup);
 			EventObject->TryGetNumberField(TEXT("hit_x"), HitXValue);
 			EventObject->TryGetNumberField(TEXT("hit_y"), HitYValue);
@@ -1770,6 +1793,7 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 			Event.bKillerIsBot = bKillerIsBotValue;
 			Event.bKillerIsPlayer = bKillerIsPlayerValue;
 			Event.Damage = static_cast<int32>(DamageValue);
+			Event.HealAmount = static_cast<int32>(HealAmountValue);
 			Event.HitX = static_cast<float>(HitXValue);
 			Event.HitY = static_cast<float>(HitYValue);
 			Event.HitZ = static_cast<float>(HitZValue);
@@ -1803,6 +1827,25 @@ void UBattleGridNetworkSubsystem::HandleSnapshotMessage(const TSharedPtr<FJsonOb
 					Log,
 					TEXT("[BattleGrid] Server shot result: %s"),
 					*LastShotResultMessage
+				);
+			}
+
+			if (
+				Event.Type == TEXT("health_pack_picked")
+				&& Event.ActorPlayerId == PlayerId
+			)
+			{
+				LastHealMessage = !Event.ShortMessage.IsEmpty()
+					? Event.ShortMessage
+					: (Event.HealAmount > 0
+						? FString::Printf(TEXT("HEALED +%d"), Event.HealAmount)
+						: FString(TEXT("HEALED")));
+				LastHealMessageTimestampSeconds = FPlatformTime::Seconds();
+				UE_LOG(
+					LogTemp,
+					Log,
+					TEXT("[BattleGrid] Server heal result: %s"),
+					*LastHealMessage
 				);
 			}
 		}

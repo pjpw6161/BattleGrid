@@ -46,6 +46,8 @@ public:
 	FString GetDetailedNetworkStatusText() const;
 	FString GetServerCombatEventFeedText() const;
 	FString GetRecentServerShotResultText() const;
+	FString GetRecentServerHealText() const;
+	FString GetWeaponStatusHudText() const;
 	FString GetServerScoreboardText() const;
 	FString GetTopFiveRankingText() const;
 	void GetKillFeedLines(TArray<FBattleGridKillFeedLine>& OutLines) const;
@@ -278,8 +280,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
 	bool bShowKillFeed;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
+	bool bShowHealthPackPickupMessages;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD", meta = (ClampMin = "0.1"))
 	float ShotResultDisplayDurationSeconds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon")
+	bool bAutoReloadOnEmpty;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon")
+	bool bResetAmmoOnServerRespawn;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "BattleGrid|Combat")
 	TSubclassOf<ABattleGridProjectile> ProjectileClass;
@@ -488,6 +499,9 @@ private:
 	void UpdateServerHealthPackGhostsFromSnapshot();
 	void UpdateOwnServerPositionErrorAndCorrection(float DeltaTime);
 	void UpdateServerLifeStateFromSnapshot(float DeltaTime);
+	void UpdateWeaponReloadStatus();
+	void SetWeaponStatusMessage(const FString& Message, float DurationSeconds = 1.0f);
+	void LogFireBlocked(const TCHAR* ReasonText);
 
 	float LastFireTime;
 	float MaxPlayerHealth;
@@ -561,4 +575,9 @@ private:
 	FString LastServerDeathCauseText;
 	float LastServerRespawnTimer;
 	float LastServerInvincibleTimer;
+	FString WeaponStatusMessage;
+	float WeaponStatusMessageExpireTime;
+	bool bWasWeaponReloading;
+	FString LastFireBlockReason;
+	float LastFireBlockLogTime;
 };

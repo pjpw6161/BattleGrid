@@ -132,6 +132,30 @@ SERVER MISS
 
 Use the browser `Fire 5 Shots At Nearest Bot` button or the Unreal HUD hit marker text to verify server damage.
 
+## Health Pack Does Not Heal
+
+Check:
+
+- The player is alive and below max HP. Full-health players do not consume server health packs.
+- The health pack snapshot has `active=true`.
+- The player is within the server pickup radius, currently `120`.
+- Client position sync is enabled so the server player position matches the local pawn position.
+- The browser `healthPacksSummary` shows the pack as `H#:+35`, not a countdown.
+- `debug_room` reports `health_pack_pickup_radius=120` and `health_pack_respawn_seconds=15`.
+
+When pickup succeeds, the event feed should include `health_pack_picked`, the local HUD should briefly show `HEALED +35`, and the server HP snapshot should increase.
+
+## Health Pack Visual Stays Active After Pickup
+
+Check:
+
+- The snapshot `health_packs[*].active` flag changed to `false`.
+- The health pack ghost actor is receiving updated snapshots.
+- `bShowServerHealthPackGhosts=true` on the PlayerController.
+- The inactive ghost label should read `HPACK-# Ns` and use the smaller/dim inactive visual settings.
+
+If the server snapshot still says `active=true`, the player may be full HP, outside pickup radius, dead, or not sending client position to the server.
+
 ## Humanoid Mesh Or Weapon Does Not Appear
 
 Check:
@@ -943,7 +967,7 @@ The gameplay HUD therefore shows server state first:
 - Top 5 ranking in the top-right HUD area.
 - Kill feed on the left side.
 - Match/server status in small status text.
-- Temporary death/respawn, invincibility, and server shot results such as `SERVER HIT BOT-3 -20` in the message area.
+- Temporary death/respawn, invincibility, health pickup, reload/empty, and server shot results such as `SERVER HIT BOT-3 -20` in the message area.
 
 Local HP/score remains available for offline debugging, but it should not be used to explain server bot damage, match scoring, or winner state.
 
@@ -971,6 +995,26 @@ For the cleaner layout:
 - Enable `Is Variable`.
 - Place it near the bottom-center HP area.
 - Recompile the widget Blueprint.
+
+## Gun Does Not Fire
+
+Connected PvPvE mode blocks client fire before sending `fire=true` to the server when the local weapon cannot shoot.
+
+Check:
+
+- Ammo is above 0. Empty magazines show `EMPTY - PRESS R` unless auto-reload immediately starts.
+- The weapon is not reloading. While reloading, the center message can show `RELOADING...` and `AmmoText` should show `Reloading Ns`.
+- The server snapshot does not mark the player dead. Dead players cannot fire, reload, sprint, ADS, jump, or move until respawn.
+- Fire cooldown has elapsed. The default fire rate is 8 shots per second.
+- The active PlayerController has `BattleGrid|Weapon > bAutoReloadOnEmpty=true` if you expect empty magazines to reload automatically.
+
+Expected defaults:
+
+- `MagazineSize=30`
+- `CurrentAmmo=30`
+- `ReloadTimeSeconds=2.0`
+- `FireRatePerSecond=8.0`
+- `bResetAmmoOnServerRespawn=true`
 
 ## Ranking Not Visible
 

@@ -38,6 +38,7 @@ Use this checklist to run the current portfolio demo.
   - `bShowCombatEventFeed=false`.
   - `bShowTopFiveRanking=true`.
   - `bShowKillFeed=true`.
+  - `bShowHealthPackPickupMessages=true`.
   - `bUseServerPositionCorrection=false`.
   - `bUseGentleServerPositionCorrection=false` unless you are testing optional smoothing.
   - `bDrawServerArenaBounds=false` for recording; enable only while verifying invisible-wall/correction issues.
@@ -59,6 +60,8 @@ Use this checklist to run the current portfolio demo.
   - `bSpawnLegacyLocalProjectileWhenConnected=false`.
   - `bAllowLegacyLocalProjectileDamageWhenConnected=false`.
   - `bSpawnLegacyLocalProjectileWhenOffline=true`.
+  - `bAutoReloadOnEmpty=true`.
+  - `bResetAmmoOnServerRespawn=true`.
   - Gameplay HUD optional widgets are arranged for recording:
     - `HealthText` / `HealthBar` at the bottom center for HP.
     - `AmmoText` near HP for ammo/reload, or use the `ScoreText` fallback.
@@ -97,8 +100,11 @@ Use this checklist to run the current portfolio demo.
 - Show SERVER ECHO, bot ghosts, and HPACK ghosts. If debugging bot placement, briefly enable `bDrawServerBotAreaBounds` and verify bots are inside the green bot-area rectangle.
 - If humanoid assets are assigned, show the local player mesh and humanoid bot ghosts without changing the server gameplay explanation.
 - Show the crosshair tightening in ADS and widening during sprint/jump.
+- Ammo pass: fire several shots and verify ammo decreases, press R and verify `Reloading Ns`, confirm no shots are sent while reloading, and verify ammo refills to 30.
 - Shoot a bot in Unreal and show `SERVER HIT` or `SERVER MISS` in the HUD.
 - Optional danger pass: enable bot attacks on easy, let a bot kill the player, and verify `KILLED BY BOT-*`, `Respawn in Ns`, locked controls while dead, `INVINCIBLE Ns` after respawn, and HP restored.
+- After respawn, verify ammo resets to `Ammo 30 / 30`.
+- Health pack pass: take bot damage, walk into an active `HPACK-*`, verify HP increases, `HEALED +35` appears briefly, the pack becomes inactive with a countdown, and it respawns after about 15 seconds.
 - Verify the normal gameplay HUD is clean:
   - HP and ammo are bottom center.
   - Top 5 ranking is top right.
@@ -316,10 +322,13 @@ Use this checklist to run the current portfolio demo.
 14. If movement feels blocked by an invisible wall with correction enabled, temporarily enable `bDrawServerArenaBounds` and verify the cyan server rectangle matches the intended playable area.
 15. Aim with the mouse.
 16. Fire with left mouse button.
-17. Hold RMB ADS and verify the crosshair gap tightens.
-18. Hold Shift sprint and verify the crosshair gap widens.
-19. Jump/fall and verify the crosshair reaches its widest state.
-20. Reload or enter server-dead state and verify the crosshair dims if the Border widgets are present.
+17. Verify ammo decreases from `Ammo 30 / 30`, then press R and confirm `Reloading Ns` appears.
+18. While reloading, hold left mouse and verify no new server shot result appears until reload finishes.
+19. Fire until empty and verify `EMPTY - PRESS R` or auto-reload behavior, depending on `bAutoReloadOnEmpty`.
+20. Hold RMB ADS and verify the crosshair gap tightens.
+21. Hold Shift sprint and verify the crosshair gap widens.
+22. Jump/fall and verify the crosshair reaches its widest state.
+23. Reload or enter server-dead state and verify the crosshair dims if the Border widgets are present.
 21. Confirm connected server mode does not show the legacy local sphere projectile by default.
 22. Disconnect or switch to offline/local mode only if you need to show legacy local projectile and local target damage.
 23. Show local player hazard damage, death, and respawn only if explaining offline/local debug behavior.
@@ -336,6 +345,7 @@ Use this checklist to run the current portfolio demo.
 34. Verify the center message shows `KILLED BY BOT-*` and `Respawn in Ns`.
 35. Verify movement, firing, ADS, sprint, jump, and reload are blocked while the server snapshot says the player is dead.
 36. Verify the center message changes to `INVINCIBLE Ns` after respawn and HP returns.
+36. Verify ammo resets to `Ammo 30 / 30` after server respawn when `bResetAmmoOnServerRespawn=true`.
 37. Verify only the most recent 5 kill log lines remain visible.
 38. Aim at a bot body and verify `SERVER HIT BOT-* -20`.
 39. Aim at a bot head and verify `SERVER HEADSHOT BOT-* -40`; if needed, enable the bot ghost `BattleGrid|Debug > bShowServerHitVolumes` temporarily.

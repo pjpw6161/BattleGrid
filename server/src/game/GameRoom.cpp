@@ -37,6 +37,10 @@ constexpr double VisualTracerLength = 1800.0;
 constexpr double VisualTracerLifetimeSeconds = 0.35;
 constexpr double BotTracerLifetimeSeconds = 0.4;
 constexpr double PlayerRespawnSeconds = 8.0;
+constexpr int HealthPackHealAmount = 35;
+constexpr double HealthPackPickupRadius = 120.0;
+constexpr double HealthPackRespawnSeconds = 15.0;
+constexpr int MaxActiveHealthPacks = 3;
 constexpr int BotMaxHp = 100;
 constexpr double BotRespawnSeconds = 8.0;
 constexpr double BotInvincibleSeconds = 1.5;
@@ -1229,6 +1233,10 @@ nlohmann::json GameRoom::ToDebugJson() const
     json["walk_speed"] = WalkSpeed;
     json["sprint_speed"] = SprintSpeed;
     json["ads_walk_speed"] = AdsWalkSpeed;
+    json["health_pack_heal_amount"] = HealthPackHealAmount;
+    json["health_pack_pickup_radius"] = HealthPackPickupRadius;
+    json["health_pack_respawn_seconds"] = HealthPackRespawnSeconds;
+    json["max_active_health_packs"] = MaxActiveHealthPacks;
     json["health_pack_count"] = healthPacks.size();
     json["players"] = nlohmann::json::array();
     json["bots"] = nlohmann::json::array();
@@ -1682,10 +1690,10 @@ void GameRoom::InitializeDefaultHealthPacks() const
         healthPack.y = spawnPoint.second;
         healthPack.z = 0.0;
         healthPack.active = true;
-        healthPack.healAmount = 35;
-        healthPack.pickupRadius = 90.0;
+        healthPack.healAmount = HealthPackHealAmount;
+        healthPack.pickupRadius = HealthPackPickupRadius;
         healthPack.respawnTimerSeconds = 0.0;
-        healthPack.respawnDelaySeconds = 15.0;
+        healthPack.respawnDelaySeconds = HealthPackRespawnSeconds;
         healthPacks.emplace(healthPack.healthPackId, healthPack);
     }
 
@@ -2529,6 +2537,7 @@ void GameRoom::CheckHealthPackPickups()
                 continue;
             }
 
+            const int previousHp = player.hp;
             player.hp = std::min(player.maxHp, player.hp + healthPack.healAmount);
             healthPack.Deactivate();
 
@@ -2536,15 +2545,24 @@ void GameRoom::CheckHealthPackPickups()
             logMessage
                 << "Player picked health pack player_id=" << player.playerId
                 << " health_pack_id=" << healthPack.healthPackId
+                << " heal_amount=" << healthPack.healAmount
+                << " hp_before=" << previousHp
                 << " hp=" << player.hp
                 << "/" << player.maxHp;
             Logger::Info(logMessage.str());
 
             CombatEvent event;
             event.type = "health_pack_picked";
-            event.message = player.nickname + " picked up HealthPack +" + std::to_string(healthPack.healAmount);
+            event.message =
+                player.nickname
+                + " picked up HPACK-"
+                + std::to_string(healthPack.healthPackId)
+                + " +"
+                + std::to_string(healthPack.healAmount);
+            event.shortMessage = "HEALED +" + std::to_string(healthPack.healAmount);
             event.actorPlayerId = player.playerId;
             event.healthPackId = healthPack.healthPackId;
+            event.healAmount = healthPack.healAmount;
             AddCombatEvent(event);
             break;
         }

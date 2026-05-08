@@ -462,6 +462,10 @@
         event.type === "bot_killed_player";
     }
 
+    function isHealthPackEvent(event) {
+      return event.type === "health_pack_picked";
+    }
+
     function getShotTargetLabel(event) {
       if (event.bot_id) {
         return `BOT-${event.bot_id}`;
@@ -614,6 +618,7 @@
         `Pressure target/shoot=${latestDebugRoom.max_bots_targeting_one_player ?? "-"} / ${latestDebugRoom.max_bots_shooting_one_player ?? "-"}\n` +
         `Bot shot jitter=${latestDebugRoom.bot_shot_random_delay_min ?? 0.1}-${latestDebugRoom.bot_shot_random_delay_max ?? 0.35}s grace=${latestDebugRoom.bot_recent_damage_grace_seconds ?? 0.15}s\n` +
         `Respawn invincible=${latestDebugRoom.respawn_invincible_seconds ?? 2.0}s target reconsider=${latestDebugRoom.bot_target_reconsider_seconds ?? 1.0}s\n` +
+        `Health packs heal=${latestDebugRoom.health_pack_heal_amount ?? 35} radius=${latestDebugRoom.health_pack_pickup_radius ?? 120} respawn=${latestDebugRoom.health_pack_respawn_seconds ?? 15}s max_active=${latestDebugRoom.max_active_health_packs ?? 3}\n` +
         `Bot 2D fallback=${latestDebugRoom.enable_bot_2d_fallback_hit ?? true} radiusScale=${latestDebugRoom.bot_2d_fallback_radius_scale ?? 0.75}\n` +
         `Client fire origin=${latestDebugRoom.use_client_fire_origin_for_hitscan ?? true} warn=${latestDebugRoom.client_fire_origin_warning_distance ?? 300} max=${latestDebugRoom.max_accepted_client_fire_origin_distance ?? 2000}\n` +
         `Timer auto-end=${latestDebugRoom.auto_end_match_by_timer ?? true}\n` +
@@ -745,7 +750,7 @@
       const activeHealthPacks = healthPacks.filter((pack) => pack.active).length;
       const healthPackSummary = healthPacks
         .map((pack) =>
-          `H${pack.health_pack_id}:${pack.active ? "+" + pack.heal_amount : "respawn " + Number(pack.respawn_timer ?? 0).toFixed(1)}`
+          `H${pack.health_pack_id}:${pack.active ? "+" + (pack.heal_amount ?? 35) : Math.ceil(Number(pack.respawn_timer ?? 0)) + "s"}`
         )
         .join(" ");
       setText("healthPacksSummary", `${activeHealthPacks}/${healthPacks.length}\n${healthPackSummary || "-"}`);
@@ -799,6 +804,15 @@
         if (isShotResultEvent(event)) {
           latestShotResultMessage = formatShotResult(event);
           log(`${getShotResultLogPrefix(event)}: ${event.message || latestShotResultMessage}`);
+          continue;
+        }
+        if (isHealthPackEvent(event)) {
+          const healMessage = `HEAL: ${event.message || event.short_message || eventMessage}`;
+          recentEventMessages.push(healMessage);
+          if (recentEventMessages.length > 5) {
+            recentEventMessages.splice(0, recentEventMessages.length - 5);
+          }
+          log(healMessage);
           continue;
         }
         if (isKillFeedEvent(event)) {
@@ -924,6 +938,12 @@
             `reconsider=${message.bot_target_reconsider_seconds ?? 1.0} ` +
             `jitter=${message.bot_shot_random_delay_min ?? 0.1}-${message.bot_shot_random_delay_max ?? 0.35} ` +
             `damage_grace=${message.bot_recent_damage_grace_seconds ?? 0.15}`
+          );
+          log(
+            `health_pack_config heal=${message.health_pack_heal_amount ?? 35} ` +
+            `radius=${message.health_pack_pickup_radius ?? 120} ` +
+            `respawn=${message.health_pack_respawn_seconds ?? 15}s ` +
+            `max_active=${message.max_active_health_packs ?? 3}`
           );
           {
             const botCombatSummary = buildBotCombatStateSummary();

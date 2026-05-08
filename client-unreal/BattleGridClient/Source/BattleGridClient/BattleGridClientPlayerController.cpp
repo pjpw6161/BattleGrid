@@ -105,7 +105,10 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bShowCombatEventFeed = false;
 	bShowTopFiveRanking = true;
 	bShowKillFeed = true;
+	bShowHealthPackPickupMessages = true;
 	ShotResultDisplayDurationSeconds = 1.25f;
+	bAutoReloadOnEmpty = true;
+	bResetAmmoOnServerRespawn = true;
 	CombatMessageExpireTime = 0.0f;
 	bPlayerDead = false;
 	bHasWon = false;
@@ -185,6 +188,11 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	LastServerDeathCauseText.Empty();
 	LastServerRespawnTimer = 0.0f;
 	LastServerInvincibleTimer = 0.0f;
+	WeaponStatusMessage.Empty();
+	WeaponStatusMessageExpireTime = 0.0f;
+	bWasWeaponReloading = false;
+	LastFireBlockReason.Empty();
+	LastFireBlockLogTime = -1000.0f;
 }
 
 float ABattleGridClientPlayerController::GetMaxPlayerHealth() const
@@ -396,6 +404,40 @@ FString ABattleGridClientPlayerController::GetRecentServerShotResultText() const
 	}
 
 	return FString();
+}
+
+FString ABattleGridClientPlayerController::GetRecentServerHealText() const
+{
+	if (!bShowHealthPackPickupMessages)
+	{
+		return FString();
+	}
+
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetRecentHealMessage();
+		}
+	}
+
+	return FString();
+}
+
+FString ABattleGridClientPlayerController::GetWeaponStatusHudText() const
+{
+	const UWorld* World = GetWorld();
+	if (
+		!World
+		|| WeaponStatusMessage.IsEmpty()
+		|| World->GetTimeSeconds() >= WeaponStatusMessageExpireTime
+	)
+	{
+		return FString();
+	}
+
+	return WeaponStatusMessage;
 }
 
 FString ABattleGridClientPlayerController::GetServerScoreboardText() const
@@ -641,7 +683,10 @@ FString ABattleGridClientPlayerController::GetGameplayAmmoText() const
 
 	if (WeaponComponent->IsReloading())
 	{
-		return TEXT("Reloading...");
+		return FString::Printf(
+			TEXT("Reloading %.1fs"),
+			WeaponComponent->GetReloadRemainingSeconds()
+		);
 	}
 
 	return FString::Printf(
@@ -1529,6 +1574,7 @@ void ABattleGridClientPlayerController::PlayerTick(float DeltaTime)
 	{
 		TryFireWeapon();
 	}
+	UpdateWeaponReloadStatus();
 	SendInputToServerIfNeeded();
 	UpdateServerGhostsFromSnapshot();
 	UpdateServerProjectileGhostsFromSnapshot();
@@ -1716,6 +1762,11 @@ void ABattleGridClientPlayerController::ReloadStarted(const FInputActionValue& V
 
 	if (ShouldBlockServerGameplayInput())
 	{
+		if (IsServerDead())
+		{
+			SetWeaponStatusMessage(TEXT("DEAD"), 0.8f);
+			LogFireBlocked(TEXT("dead"));
+		}
 		return;
 	}
 
@@ -1733,10 +1784,26 @@ void ABattleGridClientPlayerController::ReloadStarted(const FInputActionValue& V
 		return;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Reload input."));
-	WeaponComponent->StartReload();
-	bPendingReloadInput = true;
-	SendInputToServer(true);
+	if (WeaponComponent->IsReloading())
+	{
+		SetWeaponStatusMessage(TEXT("RELOADING..."), 0.8f);
+		return;
+	}
+
+	if (WeaponComponent->GetCurrentAmmo() >= WeaponComponent->GetMagazineSize())
+	{
+		SetWeaponStatusMessage(TEXT("AMMO FULL"), 0.8f);
+		return;
+	}
+
+	if (WeaponComponent->StartReload())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Reload input."));
+		SetWeaponStatusMessage(TEXT("RELOADING..."), 1.0f);
+		bWasWeaponReloading = true;
+		bPendingReloadInput = true;
+		SendInputToServer(true);
+	}
 }
 
 void ABattleGridClientPlayerController::ScoreboardStarted(const FInputActionValue& Value)
@@ -1771,6 +1838,12 @@ void ABattleGridClientPlayerController::FireStarted(const FInputActionValue& Val
 	if (ShouldBlockServerGameplayInput())
 	{
 		bFireHeld = false;
+		bPendingFireInput = false;
+		if (IsServerDead())
+		{
+			SetWeaponStatusMessage(TEXT("DEAD"), 0.8f);
+			LogFireBlocked(TEXT("dead"));
+		}
 		return;
 	}
 
@@ -1790,6 +1863,11 @@ void ABattleGridClientPlayerController::TryFireWeapon()
 	if (ShouldBlockServerGameplayInput())
 	{
 		bFireHeld = false;
+		if (IsServerDead())
+		{
+			SetWeaponStatusMessage(TEXT("DEAD"), 0.8f);
+			LogFireBlocked(TEXT("dead"));
+		}
 		return;
 	}
 
@@ -1814,25 +1892,33 @@ void ABattleGridClientPlayerController::TryFireWeapon()
 		return;
 	}
 
+	if (WeaponComponent->IsReloading())
+	{
+		SetWeaponStatusMessage(TEXT("RELOADING..."), 0.8f);
+		LogFireBlocked(TEXT("reloading"));
+		return;
+	}
+
+	if (WeaponComponent->GetCurrentAmmo() <= 0)
+	{
+		LogFireBlocked(TEXT("empty"));
+		if (bAutoReloadOnEmpty && WeaponComponent->StartReload())
+		{
+			SetWeaponStatusMessage(TEXT("RELOADING..."), 1.0f);
+			bWasWeaponReloading = true;
+			bPendingReloadInput = true;
+			SendInputToServer(true);
+		}
+		else
+		{
+			SetWeaponStatusMessage(TEXT("EMPTY - PRESS R"), 1.0f);
+		}
+		return;
+	}
+
 	if (!WeaponComponent->TryConsumeAmmoForShot())
 	{
-		const bool bOutOfAmmo = WeaponComponent->GetCurrentAmmo() <= 0;
-		const bool bIsReloading = WeaponComponent->IsReloading();
-		if (bVerboseInputLogs || !bDemoMode || (bOutOfAmmo && !bIsReloading))
-		{
-			UE_LOG(
-				LogTemp,
-				Log,
-				TEXT("[BattleGrid] Cannot fire. Ammo=%d Reloading=%s"),
-				WeaponComponent->GetCurrentAmmo(),
-				bIsReloading ? TEXT("true") : TEXT("false")
-			);
-		}
-
-		if (bOutOfAmmo && !bIsReloading)
-		{
-			WeaponComponent->StartReload();
-		}
+		LogFireBlocked(TEXT("cooldown"));
 		return;
 	}
 
@@ -4135,6 +4221,66 @@ void ABattleGridClientPlayerController::UpdateOwnServerPositionErrorAndCorrectio
 	ControlledPawn->SetActorLocation(CorrectedLocation);
 }
 
+void ABattleGridClientPlayerController::UpdateWeaponReloadStatus()
+{
+	const ABattleGridClientCharacter* BattleGridCharacter =
+		Cast<ABattleGridClientCharacter>(GetPawn());
+	const UBattleGridWeaponComponent* WeaponComponent = BattleGridCharacter
+		? BattleGridCharacter->GetWeaponComponent()
+		: nullptr;
+	if (!WeaponComponent)
+	{
+		bWasWeaponReloading = false;
+		return;
+	}
+
+	const bool bIsReloadingNow = WeaponComponent->IsReloading();
+	if (
+		bWasWeaponReloading
+		&& !bIsReloadingNow
+		&& WeaponComponent->GetCurrentAmmo() >= WeaponComponent->GetMagazineSize()
+	)
+	{
+		SetWeaponStatusMessage(TEXT("RELOADED"), 1.0f);
+	}
+
+	bWasWeaponReloading = bIsReloadingNow;
+}
+
+void ABattleGridClientPlayerController::SetWeaponStatusMessage(
+	const FString& Message,
+	float DurationSeconds
+)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	WeaponStatusMessage = Message;
+	WeaponStatusMessageExpireTime =
+		World->GetTimeSeconds() + FMath::Max(0.1f, DurationSeconds);
+}
+
+void ABattleGridClientPlayerController::LogFireBlocked(const TCHAR* ReasonText)
+{
+	UWorld* World = GetWorld();
+	const float CurrentTime = World ? World->GetTimeSeconds() : 0.0f;
+	const FString ReasonString(ReasonText);
+	if (
+		LastFireBlockReason == ReasonString
+		&& CurrentTime - LastFireBlockLogTime < 1.0f
+	)
+	{
+		return;
+	}
+
+	LastFireBlockReason = ReasonString;
+	LastFireBlockLogTime = CurrentTime;
+	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Fire blocked: %s"), ReasonText);
+}
+
 void ABattleGridClientPlayerController::UpdateServerLifeStateFromSnapshot(float DeltaTime)
 {
 	static_cast<void>(DeltaTime);
@@ -4211,6 +4357,17 @@ void ABattleGridClientPlayerController::UpdateServerLifeStateFromSnapshot(float 
 		CurrentMoveRight = 0.0f;
 		ApplyMovementAndADSState();
 
+		if (ABattleGridClientCharacter* BattleGridCharacter =
+			Cast<ABattleGridClientCharacter>(ControlledPawn))
+		{
+			if (UBattleGridWeaponComponent* WeaponComponent =
+				BattleGridCharacter->GetWeaponComponent())
+			{
+				WeaponComponent->CancelReload();
+				bWasWeaponReloading = false;
+			}
+		}
+
 		if (ACharacter* ControlledCharacter = Cast<ACharacter>(ControlledPawn))
 		{
 			if (UCharacterMovementComponent* MovementComponent =
@@ -4223,6 +4380,21 @@ void ABattleGridClientPlayerController::UpdateServerLifeStateFromSnapshot(float 
 	else if (bWasDeadBeforeUpdate && !bIsServerDead)
 	{
 		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Server respawned local player."));
+
+		if (bResetAmmoOnServerRespawn)
+		{
+			if (ABattleGridClientCharacter* BattleGridCharacter =
+				Cast<ABattleGridClientCharacter>(ControlledPawn))
+			{
+				if (UBattleGridWeaponComponent* WeaponComponent =
+					BattleGridCharacter->GetWeaponComponent())
+				{
+					WeaponComponent->ResetAmmoToFull();
+					bWasWeaponReloading = false;
+					UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Ammo reset on respawn."));
+				}
+			}
+		}
 
 		if (bSnapLocalPawnToServerOnRespawn || bSnapLocalPawnOnServerRespawn)
 		{

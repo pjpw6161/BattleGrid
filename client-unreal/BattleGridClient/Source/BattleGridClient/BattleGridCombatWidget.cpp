@@ -53,6 +53,8 @@ void UBattleGridCombatWidget::UpdateHud(
 	const FString& TopFiveRankingText,
 	bool bShowRanking,
 	const FString& ServerCombatEventFeedText,
+	const FString& ServerHealMessageText,
+	const FString& WeaponStatusMessageText,
 	const FString& ServerShotResultText,
 	const TArray<FBattleGridKillFeedLine>& KillFeedLines,
 	bool bShowKillFeed,
@@ -137,13 +139,13 @@ void UBattleGridCombatWidget::UpdateHud(
 				? FString::Printf(TEXT("Ammo %s"), *AmmoValueText)
 				: GameplayAmmoText;
 			TArray<FString> ScoreParts;
-			if (KdText == nullptr && !GameplayKdText.IsEmpty())
-			{
-				ScoreParts.Add(GameplayKdText);
-			}
 			if (this->AmmoText == nullptr && !CompactAmmoText.IsEmpty())
 			{
 				ScoreParts.Add(CompactAmmoText);
+			}
+			if (KdText == nullptr && !GameplayKdText.IsEmpty())
+			{
+				ScoreParts.Add(GameplayKdText);
 			}
 			if (MatchText == nullptr && !GameplayMatchText.IsEmpty())
 			{
@@ -248,6 +250,14 @@ void UBattleGridCombatWidget::UpdateHud(
 		else if (bServerInvincible && !ServerLifeStateText.IsEmpty())
 		{
 			DisplayMessage = ServerLifeStateText;
+		}
+		else if (!ServerHealMessageText.IsEmpty())
+		{
+			DisplayMessage = ServerHealMessageText;
+		}
+		else if (!WeaponStatusMessageText.IsEmpty())
+		{
+			DisplayMessage = WeaponStatusMessageText;
 		}
 		else if (!ServerShotResultText.IsEmpty())
 		{

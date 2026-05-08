@@ -174,6 +174,8 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		BattleGridController->GetTopFiveRankingText(),
 		bShowTopFiveRanking,
 		ServerCombatEventFeedText,
+		BattleGridController->GetRecentServerHealText(),
+		BattleGridController->GetWeaponStatusHudText(),
 		BattleGridController->GetRecentServerShotResultText(),
 		KillFeedLines,
 		BattleGridController->bShowKillFeed,
@@ -328,17 +330,43 @@ void ABattleGridHUD::DrawHUD()
 	else if (
 		BattleGridController->IsServerDead()
 		|| BattleGridController->IsServerInvincible()
+		|| !BattleGridController->GetRecentServerHealText().IsEmpty()
+		|| !BattleGridController->GetWeaponStatusHudText().IsEmpty()
+		|| !BattleGridController->GetRecentServerShotResultText().IsEmpty()
 		|| BattleGridController->HasActiveCombatMessage()
 		|| BattleGridController->HasWon()
 	)
 	{
 		const FString ServerDeathRespawnText =
 			BattleGridController->GetServerDeathRespawnHudText();
-		const FString CombatDisplayMessage = !ServerDeathRespawnText.IsEmpty()
-			? ServerDeathRespawnText
-			: (BattleGridController->HasWon()
-			? FString(TEXT("Victory! Press F5/Enter to Restart"))
-			: BattleGridController->GetCombatMessage());
+		const FString ServerHealText = BattleGridController->GetRecentServerHealText();
+		const FString WeaponStatusText = BattleGridController->GetWeaponStatusHudText();
+		const FString ServerShotResultText = BattleGridController->GetRecentServerShotResultText();
+		FString CombatDisplayMessage;
+		if (!ServerDeathRespawnText.IsEmpty())
+		{
+			CombatDisplayMessage = ServerDeathRespawnText;
+		}
+		else if (!ServerHealText.IsEmpty())
+		{
+			CombatDisplayMessage = ServerHealText;
+		}
+		else if (!WeaponStatusText.IsEmpty())
+		{
+			CombatDisplayMessage = WeaponStatusText;
+		}
+		else if (!ServerShotResultText.IsEmpty())
+		{
+			CombatDisplayMessage = ServerShotResultText;
+		}
+		else if (BattleGridController->HasWon())
+		{
+			CombatDisplayMessage = TEXT("Victory! Press F5/Enter to Restart");
+		}
+		else
+		{
+			CombatDisplayMessage = BattleGridController->GetCombatMessage();
+		}
 
 		DrawText(
 			CombatDisplayMessage,

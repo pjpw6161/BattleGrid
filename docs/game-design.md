@@ -64,6 +64,9 @@ The current server has hitscan shot result events:
 - Magazine size: 30.
 - Reload time: 2 seconds.
 - Fire rate: 8 shots per second.
+- Firing is blocked while reloading, while empty, or while the server says the player is dead.
+- Empty magazines can auto-start reload for the demo, and manual reload is still bound to R.
+- Ammo resets to a full 30-round magazine after server respawn.
 - Hip spread: 3.5 degrees.
 - ADS spread: 0.8 degrees.
 - Sprint spread: 6.0 degrees.
@@ -124,7 +127,13 @@ Safe demo mode applies easy difficulty, disables bot attacks, disables timer-bas
 
 - Three health packs are active by default.
 - Heal amount: +35.
+- Pickup radius: 120 server units.
 - Respawn delay: 15 seconds.
+- Health packs are server-authoritative snapshot entities.
+- Alive damaged players pick up active packs by overlapping the pickup radius.
+- Players at full HP do not consume a pack.
+- Pickup shows short HUD feedback such as `HEALED +35`.
+- Inactive packs remain visible as dim/small ghosts with a countdown.
 - Only players pick up health packs for now.
 - Bots ignore health packs for now.
 
@@ -161,7 +170,7 @@ The default demo HUD is gameplay-first instead of a large debug overlay:
 - Left side: recent 5 kill/death events.
 - Center: dynamic spread-based crosshair.
 - Small status: match time and local/remote server connection state.
-- Temporary center message priority: scoreboard overlay, server death with last killer and respawn countdown, post-respawn invincibility countdown, server shot result, then game over.
+- Temporary center message priority: scoreboard overlay, server death with last killer and respawn countdown, post-respawn invincibility countdown, health-pack pickup, reload/empty status, server shot result, then game over.
 
 Death UX examples:
 

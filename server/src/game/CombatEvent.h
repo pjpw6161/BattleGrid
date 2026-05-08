@@ -25,6 +25,7 @@ struct CombatEvent
     bool killerIsBot = false;
     bool killerIsPlayer = false;
     int damage = 0;
+    int healAmount = 0;
     std::string hitGroup;
     double hitX = 0.0;
     double hitY = 0.0;

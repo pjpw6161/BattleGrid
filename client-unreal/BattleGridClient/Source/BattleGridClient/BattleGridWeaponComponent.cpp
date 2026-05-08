@@ -13,6 +13,7 @@ UBattleGridWeaponComponent::UBattleGridWeaponComponent()
 	bInfiniteReserveAmmo = true;
 	ReloadTimeSeconds = 2.0f;
 	bIsReloading = false;
+	ReloadTimerSeconds = 0.0f;
 	FireRatePerSecond = 8.0f;
 	LastFireTime = -999.0f;
 	BodyDamage = 20;
@@ -57,20 +58,21 @@ bool UBattleGridWeaponComponent::TryConsumeAmmoForShot()
 	return true;
 }
 
-void UBattleGridWeaponComponent::StartReload()
+bool UBattleGridWeaponComponent::StartReload()
 {
 	if (bIsReloading || CurrentAmmo >= MagazineSize)
 	{
-		return;
+		return false;
 	}
 
 	bIsReloading = true;
+	ReloadTimerSeconds = ReloadTimeSeconds;
 	UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Reload started."));
 
 	if (ReloadTimeSeconds <= 0.0f)
 	{
 		FinishReload();
-		return;
+		return true;
 	}
 
 	if (UWorld* World = GetWorld())
@@ -87,12 +89,15 @@ void UBattleGridWeaponComponent::StartReload()
 	{
 		FinishReload();
 	}
+
+	return true;
 }
 
 void UBattleGridWeaponComponent::FinishReload()
 {
 	CurrentAmmo = MagazineSize;
 	bIsReloading = false;
+	ReloadTimerSeconds = 0.0f;
 
 	if (UWorld* World = GetWorld())
 	{
@@ -106,6 +111,24 @@ void UBattleGridWeaponComponent::FinishReload()
 		CurrentAmmo,
 		MagazineSize
 	);
+}
+
+void UBattleGridWeaponComponent::CancelReload()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ReloadTimerHandle);
+	}
+
+	bIsReloading = false;
+	ReloadTimerSeconds = 0.0f;
+}
+
+void UBattleGridWeaponComponent::ResetAmmoToFull()
+{
+	CancelReload();
+	CurrentAmmo = MagazineSize;
+	LastFireTime = -999.0f;
 }
 
 bool UBattleGridWeaponComponent::IsReloading() const
@@ -133,10 +156,13 @@ float UBattleGridWeaponComponent::GetReloadRemainingSeconds() const
 	const UWorld* World = GetWorld();
 	if (!World)
 	{
-		return 0.0f;
+		return FMath::Max(0.0f, ReloadTimerSeconds);
 	}
 
-	return FMath::Max(0.0f, World->GetTimerManager().GetTimerRemaining(ReloadTimerHandle));
+	const float TimerRemaining = World->GetTimerManager().GetTimerRemaining(ReloadTimerHandle);
+	return TimerRemaining >= 0.0f
+		? FMath::Max(0.0f, TimerRemaining)
+		: FMath::Max(0.0f, ReloadTimerSeconds);
 }
 
 float UBattleGridWeaponComponent::CalculateCurrentSpread(

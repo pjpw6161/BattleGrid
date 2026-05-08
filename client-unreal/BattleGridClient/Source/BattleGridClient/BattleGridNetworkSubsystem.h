@@ -357,6 +357,9 @@ struct BATTLEGRIDCLIENT_API FBattleGridServerCombatEvent
 	int32 Damage = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
+	int32 HealAmount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
 	FString HitGroup;
 
 	UPROPERTY(BlueprintReadOnly, Category = "BattleGrid|Server Events")
@@ -481,6 +484,8 @@ public:
 	FString GetLastDeathCauseText() const;
 	FString GetLastShotResultMessage() const;
 	bool HasRecentShotResult() const;
+	FString GetRecentHealMessage() const;
+	bool HasRecentHealMessage() const;
 	bool GetOwnPlayerSnapshot(FBattleGridServerPlayerSnapshot& OutSnapshot) const;
 	int32 GetOwnServerScore() const;
 	int32 GetOwnServerHP() const;
@@ -533,6 +538,9 @@ private:
 	FString LastShotResultMessage;
 	double LastShotResultTimestampSeconds = -1000.0;
 	float LastShotResultDisplaySeconds = 1.25f;
+	FString LastHealMessage;
+	double LastHealMessageTimestampSeconds = -1000.0;
+	float LastHealMessageDisplaySeconds = 1.5f;
 	bool bHasMatchSnapshot = false;
 	bool bHasLoggedServerSummary = false;
 	bool bVerboseNetworkLogs = false;

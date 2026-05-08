@@ -130,7 +130,7 @@ The room starts with three active health packs at spawn points 1, 3, and 5.
 Each health pack starts with:
 
 - `healAmount = 35`
-- `pickupRadius = 90`
+- `pickupRadius = 120`
 - `respawnDelaySeconds = 15`
 - `active = true`
 
@@ -280,6 +280,7 @@ Each event stores:
 - bot ID
 - target ID
 - health pack ID
+- heal amount
 - headshot flag
 
 Events are generated when:
@@ -347,6 +348,7 @@ Each tick:
 4. Full-health players do not consume health packs.
 5. Damaged players within pickup radius heal by 35 HP, clamped to max HP.
 6. Picked health packs deactivate and start a 15 second respawn timer.
+7. Pickup events include `health_pack_id`, `heal_amount`, and a compact `HEALED +35` short message for HUD feedback.
 
 Bots ignore health packs in this step.
 
@@ -409,6 +411,6 @@ This is for browser testing.
 - No binary protocol.
 - Demo player movement can trust client pawn position to match Unreal collision; this is not production movement validation or anti-cheat.
 - Bot AI is direct and deterministic for debugging, with hitscan shooting but no pathfinding, cover, or animation state.
-- Health packs are server snapshot entities only; no pickup effects, sounds, or production meshes yet.
+- Health packs are server snapshot entities with HUD pickup feedback; no pickup effects, sounds, or production meshes yet.
 - Legacy targets/cores are disabled by default.
 - No deployment automation yet.

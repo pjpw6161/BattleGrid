@@ -17,8 +17,10 @@ public:
 
 	bool CanFire() const;
 	bool TryConsumeAmmoForShot();
-	void StartReload();
+	bool StartReload();
+	void CancelReload();
 	void FinishReload();
+	void ResetAmmoToFull();
 	bool IsReloading() const;
 	int32 GetCurrentAmmo() const;
 	int32 GetMagazineSize() const;
@@ -44,6 +46,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Weapon|Reload", meta = (AllowPrivateAccess = "true"))
 	bool bIsReloading;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Weapon|Reload", meta = (AllowPrivateAccess = "true"))
+	float ReloadTimerSeconds;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Weapon|Fire", meta = (AllowPrivateAccess = "true", ClampMin = "0.01"))
 	float FireRatePerSecond;

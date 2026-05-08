@@ -12,7 +12,7 @@ struct HealthPackState
     double z = 0.0;
     bool active = true;
     int healAmount = 35;
-    double pickupRadius = 90.0;
+    double pickupRadius = 120.0;
     double respawnTimerSeconds = 0.0;
     double respawnDelaySeconds = 15.0;
 

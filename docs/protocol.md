@@ -195,6 +195,10 @@ Expected response:
   "sprint_speed": 850.0,
   "ads_walk_speed": 400.0,
   "auto_end_match_by_timer": true,
+  "health_pack_heal_amount": 35,
+  "health_pack_pickup_radius": 120.0,
+  "health_pack_respawn_seconds": 15.0,
+  "max_active_health_packs": 3,
   "health_pack_count": 3,
   "active_health_pack_count": 3,
   "match": {},
@@ -386,6 +390,10 @@ When disabled, the match timer can reach zero without forcing `game_over`. The k
   "bot_2d_fallback_radius_scale": 0.75,
   "verbose_hitscan_candidate_logs": false,
   "auto_end_match_by_timer": true,
+  "health_pack_heal_amount": 35,
+  "health_pack_pickup_radius": 120.0,
+  "health_pack_respawn_seconds": 15.0,
+  "max_active_health_packs": 3,
   "health_pack_count": 3,
   "active_health_pack_count": 3,
   "match": {
@@ -716,6 +724,7 @@ Combat event fields:
 - `killer_is_bot`: true when the event actor is a bot.
 - `killer_is_player`: true when the event actor is a player.
 - `damage`: damage amount for shot result events, or `0` when not applicable.
+- `heal_amount`: HP restored by `health_pack_picked`, or `0` when not applicable.
 - `hit_group`: shot result hit group such as `head`, `body`, `fallback_body`, `core`, or `miss`.
 - `hit_x`, `hit_y`, `hit_z`: approximate server-space hit position for shot result/debug display.
 
@@ -741,6 +750,8 @@ Current event types:
 Shot result events are emitted once per processed player `fire=true` input sequence while the match is not `game_over`. They are intended for browser/Unreal hit confirmation and do not replace the scoreboard or kill events. A bot headshot can produce both a `shot_hit_bot` event and, if HP reaches zero, a later `bot_killed` event in the same snapshot event feed.
 
 Bot shooter events are emitted when bot hitscan fire damages or kills a player. Bot miss events are intentionally quiet by default because several bots can fire at once.
+
+Health pack pickup events are emitted only when an alive damaged player consumes an active pack. They include `health_pack_id`, `actor_player_id`, `heal_amount`, and a compact `short_message` such as `HEALED +35` for the Unreal HUD.
 
 Example shot result event:
 
@@ -804,6 +815,13 @@ Health pack fields:
 - `active`: whether the pack can currently be picked up.
 - `heal_amount`: amount of HP restored on pickup.
 - `respawn_timer`: seconds remaining until it respawns when inactive.
+
+Health pack debug config fields:
+
+- `health_pack_heal_amount`: current heal amount, default `35`.
+- `health_pack_pickup_radius`: server pickup radius, default `120`.
+- `health_pack_respawn_seconds`: respawn delay, default `15`.
+- `max_active_health_packs`: active pack count used by the current demo layout, default `3`.
 
 Projectile fields:
 
@@ -897,7 +915,7 @@ Mismatched player ID:
 - No real multiple-room support.
 - Demo movement can accept client pawn position for Unreal collision alignment; this is not production movement validation or anti-cheat.
 - Bot behavior is simple hitscan shooter AI with no pathfinding, animations, or advanced target selection.
-- Health packs are server-side snapshot entities only; there are no local pickup effects, sounds, or imported models yet.
+- Health packs are server-side snapshot entities with HUD pickup feedback. There are no local pickup effects, sounds, or imported models yet.
 - No lag compensation or advanced hit validation yet.
 - Legacy targets/cores are disabled by default and kept only as debug compatibility data.
 - No authoritative synchronization with Unreal-placed local targets.

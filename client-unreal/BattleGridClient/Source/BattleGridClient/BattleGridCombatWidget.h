@@ -55,6 +55,8 @@ public:
 		const FString& TopFiveRankingText,
 		bool bShowRanking,
 		const FString& ServerCombatEventFeedText,
+		const FString& ServerHealMessageText,
+		const FString& WeaponStatusMessageText,
 		const FString& ServerShotResultText,
 		const TArray<FBattleGridKillFeedLine>& KillFeedLines,
 		bool bShowKillFeed,
