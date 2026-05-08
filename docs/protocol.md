@@ -167,11 +167,21 @@ Expected response:
   "bot_count": 8,
   "bot_attacks_enabled": true,
   "bot_difficulty": "normal",
-  "bot_attack_damage": 20,
-  "bot_attack_cooldown": 1.0,
-  "bot_detect_range": 1500.0,
-  "bot_attack_range": 900.0,
-  "bot_move_speed": 500.0,
+  "bot_attack_damage": 10,
+  "bot_headshot_damage": 20,
+  "bot_attack_cooldown": 0.75,
+  "bot_detect_range": 1600.0,
+  "bot_attack_range": 1300.0,
+  "bot_move_speed": 450.0,
+  "bot_fire_interval": 0.75,
+  "bot_aim_spread": 13.0,
+  "max_bots_targeting_one_player": 8,
+  "max_bots_shooting_one_player": 3,
+  "respawn_invincible_seconds": 2.0,
+  "bot_target_reconsider_seconds": 1.0,
+  "bot_shot_random_delay_min": 0.1,
+  "bot_shot_random_delay_max": 0.35,
+  "bot_recent_damage_grace_seconds": 0.15,
   "enable_bot_2d_fallback_hit": true,
   "bot_2d_fallback_radius_scale": 0.75,
   "verbose_hitscan_candidate_logs": false,
@@ -277,6 +287,14 @@ Supported values:
 - `normal`
 - `hard`
 
+Current pressure values:
+
+| Difficulty | Body / Head | Fire Interval | Spread | Detect | Attack Range | Speed | Max Targeting | Max Shooting | Respawn Invincible |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `easy` | 10 / 20 | 1.0s | 18 deg | 1400 | 1100 | 380 | 8 | 2 | 2.5s |
+| `normal` | 10 / 20 | 0.75s | 13 deg | 1600 | 1300 | 450 | 8 | 3 | 2.0s |
+| `hard` | 10 / 20 | 0.5s | 8 deg | 1900 | 1600 | 550 | 8 | 4 | 1.5s |
+
 Expected response:
 
 ```json
@@ -353,11 +371,17 @@ When disabled, the match timer can reach zero without forcing `game_over`. The k
   "bot_count": 8,
   "bot_attacks_enabled": true,
   "bot_difficulty": "normal",
-  "bot_attack_damage": 20,
-  "bot_attack_cooldown": 1.0,
-  "bot_detect_range": 1500.0,
-  "bot_attack_range": 900.0,
-  "bot_move_speed": 500.0,
+  "bot_attack_damage": 10,
+  "bot_headshot_damage": 20,
+  "bot_attack_cooldown": 0.75,
+  "bot_detect_range": 1600.0,
+  "bot_attack_range": 1300.0,
+  "bot_move_speed": 450.0,
+  "bot_fire_interval": 0.75,
+  "bot_aim_spread": 13.0,
+  "max_bots_targeting_one_player": 8,
+  "max_bots_shooting_one_player": 3,
+  "respawn_invincible_seconds": 2.0,
   "enable_bot_2d_fallback_hit": true,
   "bot_2d_fallback_radius_scale": 0.75,
   "verbose_hitscan_candidate_logs": false,
@@ -855,15 +879,16 @@ Mismatched player ID:
 - Server bot kills award +1 kill and increment `bot_kills`.
 - Server player kills award +1 kill and increment `player_kills`.
 - Legacy target kills do not affect primary ranking while targets are disabled.
-- Dead players respawn after 8 seconds and are invincible for 1.5 seconds.
+- Dead players respawn after 8 seconds and receive difficulty-tuned invincibility.
 - Dead bots respawn after 8 seconds and are invincible for 1.5 seconds.
-- Bots use simple server AI: move toward the nearest alive non-invincible player inside detect range, otherwise wander through fixed waypoints inside the smaller demo bot area bounds `x=-1500..1500`, `y=-900..900`.
+- Bots use simple server AI: detect nearby alive non-invincible players, face/chase/aim/shoot based on range and pressure caps, otherwise wander through fixed waypoints inside the smaller demo bot area bounds `x=-1500..1500`, `y=-900..900`.
 - Bot attacks are server hitscan gun shots with ammo, reload, low accuracy, and visual tracer projectiles.
 - Bot body damage is 10 and bot headshot damage is 20.
 - Debug bot difficulty tunes bot shooter AI:
-  - `easy`: body/head 10/20, fire interval 0.75s, spread 18 degrees, detect range 1000, attack range 1200, speed 400.
-  - `normal`: body/head 10/20, fire interval 0.5s, spread 12 degrees, detect range 1500, attack range 1400, speed 500.
-  - `hard`: body/head 10/20, fire interval 0.35s, spread 7 degrees, detect range 1800, attack range 1600, speed 600.
+  - `easy`: body/head 10/20, fire interval 1.0s, spread 18 degrees, detect range 1400, attack range 1100, speed 380, max shooting 2.
+  - `normal`: body/head 10/20, fire interval 0.75s, spread 13 degrees, detect range 1600, attack range 1300, speed 450, max shooting 3.
+  - `hard`: body/head 10/20, fire interval 0.5s, spread 8 degrees, detect range 1900, attack range 1600, speed 550, max shooting 4.
+- `debug_room.bots[*]` includes `combat_state`, `fire_block_reason`, `distance_to_target`, `wants_to_shoot`, and `allowed_to_shoot` for bot combat diagnosis.
 - Three server health packs spawn from predefined points.
 - Alive players below max HP pick up active health packs by overlapping their pickup radius.
 - Health packs heal +35 HP, do not overheal above max HP, disappear on pickup, and respawn after 15 seconds.

@@ -51,11 +51,21 @@ public:
 	void GetKillFeedLines(TArray<FBattleGridKillFeedLine>& OutLines) const;
 	bool ShouldShowScoreboard() const;
 	bool UseServerAuthoritativeHud() const;
+	bool UseGameplayHudLayout() const;
 	bool ShowLocalDebugHud() const;
+	bool ShowDebugHud() const;
+	bool ShowControlsHelp() const;
+	bool ShowSmallServerStatus() const;
 	bool ShowServerDebugDetails() const;
 	bool ShowCombatEventFeed() const;
 	FString GetServerPrimaryHudText() const;
 	FString GetLocalDebugHudText() const;
+	FString GetGameplayHpText() const;
+	FString GetGameplayAmmoText() const;
+	FString GetGameplayMatchText() const;
+	FString GetGameplayKdText() const;
+	FString GetSmallServerStatusText() const;
+	FString GetDebugHudText() const;
 	bool IsServerConnected() const;
 	bool HasJoinedServer() const;
 	int32 GetServerPlayerId() const;
@@ -238,6 +248,18 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
 	bool bUseServerAuthoritativeHud;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
+	bool bUseGameplayHudLayout;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
+	bool bShowDebugHud;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
+	bool bShowControlsHelp;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
+	bool bShowSmallServerStatus;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|HUD")
 	bool bShowLocalDebugHud;

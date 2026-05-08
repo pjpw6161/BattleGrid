@@ -610,6 +610,121 @@ FString UBattleGridNetworkSubsystem::GetServerCombatEventFeedText() const
 	return FString::Join(EventLines, TEXT("\n"));
 }
 
+FString UBattleGridNetworkSubsystem::GetGameplayHpText() const
+{
+	FBattleGridServerPlayerSnapshot OwnSnapshot;
+	if (GetOwnPlayerSnapshot(OwnSnapshot))
+	{
+		return FString::Printf(
+			TEXT("HP %d / %d"),
+			FMath::Max(0, OwnSnapshot.HP),
+			FMath::Max(0, OwnSnapshot.MaxHP)
+		);
+	}
+
+	return TEXT("HP -- / --");
+}
+
+FString UBattleGridNetworkSubsystem::GetGameplayMatchText() const
+{
+	if (!bIsConnected || !bHasJoined || !bHasMatchSnapshot)
+	{
+		return TEXT("Match --:--");
+	}
+
+	if (LatestMatchSnapshot.bGameOver)
+	{
+		return TEXT("GAME OVER");
+	}
+
+	const int32 TotalSeconds = FMath::Max(0, FMath::RoundToInt(LatestMatchSnapshot.TimeLeft));
+	const int32 Minutes = TotalSeconds / 60;
+	const int32 Seconds = TotalSeconds % 60;
+	return FString::Printf(TEXT("Match %02d:%02d"), Minutes, Seconds);
+}
+
+FString UBattleGridNetworkSubsystem::GetGameplayKdText() const
+{
+	for (const FBattleGridServerScoreboardEntry& Entry : LatestScoreboard)
+	{
+		if (Entry.PlayerId == PlayerId)
+		{
+			return FString::Printf(
+				TEXT("K/D %d / %d | Bots %d | PvP %d"),
+				Entry.Kills,
+				Entry.Deaths,
+				Entry.BotKills,
+				Entry.PlayerKills
+			);
+		}
+	}
+
+	FBattleGridServerPlayerSnapshot OwnSnapshot;
+	if (GetOwnPlayerSnapshot(OwnSnapshot))
+	{
+		return FString::Printf(
+			TEXT("K/D %d / %d | Bots %d | PvP %d"),
+			OwnSnapshot.Kills,
+			OwnSnapshot.Deaths,
+			OwnSnapshot.BotKills,
+			OwnSnapshot.PlayerKills
+		);
+	}
+
+	return TEXT("K/D -- / -- | Bots -- | PvP --");
+}
+
+FString UBattleGridNetworkSubsystem::GetSmallServerStatusText() const
+{
+	if (!bIsConnected)
+	{
+		return TEXT("Server: Disconnected");
+	}
+
+	return bHasJoined ? TEXT("Connected") : TEXT("Connected | Joining...");
+}
+
+FString UBattleGridNetworkSubsystem::GetDebugHudText() const
+{
+	TArray<FString> Lines;
+	Lines.Add(FString::Printf(
+		TEXT("Server Debug | Player %d | Room %d | Tick %d"),
+		PlayerId,
+		RoomId,
+		LastSnapshotTick
+	));
+
+	if (bHasMatchSnapshot)
+	{
+		Lines.Add(FString::Printf(
+			TEXT("Match %d | State %s | GameOver %s"),
+			LatestMatchSnapshot.MatchId,
+			*LatestMatchSnapshot.State,
+			LatestMatchSnapshot.bGameOver ? TEXT("true") : TEXT("false")
+		));
+	}
+
+	Lines.Add(GetServerWorldCountsText());
+	if (LatestArenaBounds.bHasBounds)
+	{
+		Lines.Add(GetServerArenaBoundsText());
+	}
+	if (LatestBotAreaBounds.bHasBounds)
+	{
+		Lines.Add(GetServerBotAreaBoundsText());
+	}
+	if (!LastDebugMessage.IsEmpty())
+	{
+		Lines.Add(FString::Printf(TEXT("Debug: %s"), *LastDebugMessage));
+	}
+	if (!LastError.IsEmpty())
+	{
+		Lines.Add(FString::Printf(TEXT("Last Error: %s"), *LastError));
+	}
+
+	return FString::Join(Lines, TEXT("\n"));
+}
+
 FString UBattleGridNetworkSubsystem::GetServerSummaryText() const
 {
 	TArray<FString> Lines;

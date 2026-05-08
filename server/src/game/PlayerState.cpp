@@ -30,6 +30,7 @@ PlayerState::PlayerState(
       botKills(0),
       respawnTimerSeconds(0.0),
       invincibleTimerSeconds(0.0),
+      botRecentDamageGraceTimerSeconds(0.0),
       bodyRadius(60.0),
       headRadius(35.0),
       bodyHeight(90.0),

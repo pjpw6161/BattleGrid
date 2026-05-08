@@ -123,6 +123,13 @@ private:
     bool bUseClientPositionForPlayerMovement;
     double MaxClientPositionDeltaPerSecond;
     double MaxClientPositionSnapDistance;
+    int MaxBotsTargetingOnePlayer;
+    int MaxBotsShootingOnePlayer;
+    double BotTargetReconsiderSeconds;
+    double BotShotRandomDelayMin;
+    double BotShotRandomDelayMax;
+    double BotRecentDamageGraceSeconds;
+    double respawnInvincibleSeconds;
     mutable bool targetsInitialized;
     mutable bool botsInitialized;
     mutable bool healthPacksInitialized;

@@ -550,6 +550,42 @@
       );
     }
 
+    function buildBotCombatStateSummary() {
+      const bots = latestDebugRoom && Array.isArray(latestDebugRoom.bots)
+        ? latestDebugRoom.bots
+        : [];
+      if (bots.length === 0) {
+        return "";
+      }
+
+      const reasonLabels = {
+        bot_attacks_disabled: "off",
+        no_target: "no target",
+        target_dead: "dead target",
+        target_invincible: "inv target",
+        out_of_detect_range: "detect",
+        out_of_attack_range: "range",
+        shooting_cap: "cap",
+        cooldown: "cd",
+        reloading: "reload",
+        no_ammo: "ammo",
+        line_of_fire_optional: "lof"
+      };
+
+      return bots
+        .slice(0, 8)
+        .map((bot) => {
+          const state = bot.combat_state || (bot.alive ? "snapshot" : "dead");
+          const target = bot.target_player_id ? ` P${bot.target_player_id}` : "";
+          const distance = Number(bot.distance_to_target ?? 0);
+          const distanceText = distance > 0 ? ` d=${distance.toFixed(0)}` : "";
+          const reason = bot.fire_block_reason || "";
+          const reasonText = reason ? ` ${reasonLabels[reason] || reason}` : "";
+          return `B${bot.bot_id}: ${state}${target}${distanceText}${reasonText}`;
+        })
+        .join("\n");
+    }
+
     function buildCombatTuningSummary() {
       if (!latestDebugRoom) {
         return "Click Send Debug Room";
@@ -559,7 +595,10 @@
         `Damage body/head=${latestDebugRoom.body_damage ?? 20}/${latestDebugRoom.headshot_damage ?? 40}\n` +
         `Bot shots body/head=${latestDebugRoom.bot_body_damage ?? latestDebugRoom.bot_attack_damage ?? 10}/${latestDebugRoom.bot_headshot_damage ?? 20}\n` +
         `Difficulty=${latestDebugRoom.bot_difficulty ?? "normal"} attacks=${latestDebugRoom.bot_attacks_enabled ?? true}\n` +
-        `Bot fire=${latestDebugRoom.bot_fire_interval ?? latestDebugRoom.bot_attack_cooldown ?? 0.5}s spread=${latestDebugRoom.bot_aim_spread ?? 12}deg\n` +
+        `Bot fire=${latestDebugRoom.bot_fire_interval ?? latestDebugRoom.bot_attack_cooldown ?? 0.75}s spread=${latestDebugRoom.bot_aim_spread ?? 13}deg\n` +
+        `Pressure target/shoot=${latestDebugRoom.max_bots_targeting_one_player ?? "-"} / ${latestDebugRoom.max_bots_shooting_one_player ?? "-"}\n` +
+        `Bot shot jitter=${latestDebugRoom.bot_shot_random_delay_min ?? 0.1}-${latestDebugRoom.bot_shot_random_delay_max ?? 0.35}s grace=${latestDebugRoom.bot_recent_damage_grace_seconds ?? 0.15}s\n` +
+        `Respawn invincible=${latestDebugRoom.respawn_invincible_seconds ?? 2.0}s target reconsider=${latestDebugRoom.bot_target_reconsider_seconds ?? 1.0}s\n` +
         `Bot 2D fallback=${latestDebugRoom.enable_bot_2d_fallback_hit ?? true} radiusScale=${latestDebugRoom.bot_2d_fallback_radius_scale ?? 0.75}\n` +
         `Client fire origin=${latestDebugRoom.use_client_fire_origin_for_hitscan ?? true} warn=${latestDebugRoom.client_fire_origin_warning_distance ?? 300} max=${latestDebugRoom.max_accepted_client_fire_origin_distance ?? 2000}\n` +
         `Timer auto-end=${latestDebugRoom.auto_end_match_by_timer ?? true}\n` +
@@ -613,7 +652,7 @@
         setText("matchSummary", "No snapshot yet");
         setText("scoreboardSummary", "-");
         setText("playersSummary", "-");
-        setText("botsSummary", "-");
+        setText("botsSummary", buildBotCombatStateSummary() || "-");
         setText("botAreaSummary", buildBotAreaSummary());
         setText("targetsSummary", "disabled");
         setText("healthPacksSummary", "-");
@@ -652,7 +691,11 @@
         .slice(0, 8)
         .map((bot) => `B${bot.bot_id}:${bot.alive ? bot.hp + "/" + bot.max_hp : "DEAD"}`)
         .join(" ");
-      setText("botsSummary", `${aliveBots}/${bots.length}\n${botSummary || "-"}`);
+      const botCombatSummary = buildBotCombatStateSummary();
+      setText(
+        "botsSummary",
+        `${aliveBots}/${bots.length}\n${botSummary || "-"}${botCombatSummary ? "\n" + botCombatSummary : ""}`
+      );
       setText("botAreaSummary", buildBotAreaSummary());
 
       const aliveTargets = targets.filter((target) => target.alive).length;
@@ -832,13 +875,27 @@
           log(
             `bot_config damage=${message.bot_attack_damage ?? 20} ` +
             `head=${message.bot_headshot_damage ?? 20} ` +
-            `cooldown=${message.bot_attack_cooldown ?? 1} ` +
-            `detect=${message.bot_detect_range ?? 1500} ` +
-            `attack_range=${message.bot_attack_range ?? 900} ` +
-            `speed=${message.bot_move_speed ?? 500} ` +
-            `fire=${message.bot_fire_interval ?? 0.5} ` +
-            `spread=${message.bot_aim_spread ?? 12}`
+            `cooldown=${message.bot_attack_cooldown ?? 0.75} ` +
+            `detect=${message.bot_detect_range ?? 1600} ` +
+            `attack_range=${message.bot_attack_range ?? 1300} ` +
+            `speed=${message.bot_move_speed ?? 450} ` +
+            `fire=${message.bot_fire_interval ?? 0.75} ` +
+            `spread=${message.bot_aim_spread ?? 13} ` +
+            `max_target=${message.max_bots_targeting_one_player ?? "-"} ` +
+            `max_shoot=${message.max_bots_shooting_one_player ?? "-"}`
           );
+          log(
+            `bot_pressure invincible=${message.respawn_invincible_seconds ?? 1.5} ` +
+            `reconsider=${message.bot_target_reconsider_seconds ?? 1.0} ` +
+            `jitter=${message.bot_shot_random_delay_min ?? 0.1}-${message.bot_shot_random_delay_max ?? 0.35} ` +
+            `damage_grace=${message.bot_recent_damage_grace_seconds ?? 0.15}`
+          );
+          {
+            const botCombatSummary = buildBotCombatStateSummary();
+            if (botCombatSummary) {
+              log(`bot_states ${botCombatSummary.replace(/\n/g, " | ")}`);
+            }
+          }
           log(
             `combat_tuning body=${message.body_damage ?? 20} ` +
             `head=${message.headshot_damage ?? 40} ` +

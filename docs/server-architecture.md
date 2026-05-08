@@ -222,6 +222,7 @@ The current combat tuning values are centralized in `GameRoom.cpp` for demo read
 - bot max HP: `100`
 - bot respawn: `8s`
 - bot invincibility after respawn: `1.5s`
+- player respawn invincibility: difficulty tuned, `2.5s` easy, `2.0s` normal, `1.5s` hard
 - bot kill score: `+1`
 - player kill score: `+1`
 - legacy target/core kill score: `0`
@@ -303,22 +304,26 @@ Each tick, bot logic is intentionally simple:
 
 1. Dead bots count down an 8 second respawn timer.
 2. Respawned bots return with full HP and 1.5 seconds of invincibility.
-3. Alive bots find the nearest alive non-invincible player within the configured detect range.
-4. If a player is found, the bot faces that player and moves toward the preferred combat range.
-5. In attack range, the bot fires low-accuracy hitscan shots when bot attacks are enabled and its weapon can fire.
-6. Bot weapons have 30-round magazines, infinite reserve ammo, 2.5 second reloads, and difficulty-controlled fire interval/spread.
-7. Bot body hits deal 10 damage and bot headshots deal 20 damage.
-8. If no player is found, the bot wanders through fixed waypoint points inside the smaller demo bot area.
-9. Bot chase movement is clamped to the bot area. If a player leaves the bot area, bots can still aim/shoot if the player is in range, but they do not walk outside their demo bounds.
-10. Basic stuck detection picks a new waypoint when a bot tries to move but has not moved meaningfully for about 2 seconds.
+3. Alive bots select alive non-invincible players within the configured detect range.
+4. Target awareness is separate from fire permission: nearby bots can still face/aim at a detected player even when pressure caps prevent them from firing.
+5. If a player is found, the bot faces that player and moves toward the preferred combat range.
+6. In attack range, only a capped number of bots may fire at the same player during a short window.
+7. Bot shots add small deterministic cooldown jitter after firing to avoid synchronized volleys.
+8. Bot weapons have 30-round magazines, infinite reserve ammo, 2.5 second reloads, and difficulty-controlled fire interval/spread.
+9. Bot body hits deal 10 damage and bot headshots deal 20 damage.
+10. If no player is found, the bot wanders through fixed waypoint points inside the smaller demo bot area.
+11. Bot chase movement is clamped to the bot area. If a player leaves the bot area, bots can still aim/shoot if the player is in range, but they do not walk outside their demo bounds.
+12. Basic stuck detection picks a new waypoint when a bot tries to move but has not moved meaningfully for about 2 seconds.
 
 `GameRoom::ApplyBotDifficulty` supports the current debug/demo profiles:
 
-| Difficulty | Body / Head | Fire Interval | Spread | Detect Range | Attack Range | Speed |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Easy | 10 / 20 | 0.75s | 18 deg | 1000 | 1200 | 400 |
-| Normal | 10 / 20 | 0.5s | 12 deg | 1500 | 1400 | 500 |
-| Hard | 10 / 20 | 0.35s | 7 deg | 1800 | 1600 | 600 |
+| Difficulty | Body / Head | Fire Interval | Spread | Detect Range | Attack Range | Speed | Max Targeting | Max Shooting | Player Invincible |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Easy | 10 / 20 | 1.0s | 18 deg | 1400 | 1100 | 380 | 8 | 2 | 2.5s |
+| Normal | 10 / 20 | 0.75s | 13 deg | 1600 | 1300 | 450 | 8 | 3 | 2.0s |
+| Hard | 10 / 20 | 0.5s | 8 deg | 1900 | 1600 | 550 | 8 | 4 | 1.5s |
+
+The body/head damage values stay fixed at `10/20` on every difficulty. The pressure profile changes cadence, accuracy, range, speed, shooting cap, and respawn recovery time. `debug_room.bots[*].combat_state` and `fire_block_reason` explain whether each bot is wandering, chasing, aiming, shooting, reloading, or suppressed by pressure caps.
 
 `debug_set_bot_attacks` can disable bot shooting while leaving bot movement, chasing, respawn, snapshots, and ghost visualization active.
 

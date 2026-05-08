@@ -184,7 +184,17 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		BattleGridController->IsCrosshairReloading(),
 		BattleGridController->IsServerDead(),
 		BattleGridController->ShouldShowCrosshair(),
-		BattleGridController->GetLocalDebugHudText()
+		BattleGridController->GetLocalDebugHudText(),
+		BattleGridController->GetGameplayHpText(),
+		BattleGridController->GetGameplayAmmoText(),
+		BattleGridController->GetGameplayMatchText(),
+		BattleGridController->GetGameplayKdText(),
+		BattleGridController->GetSmallServerStatusText(),
+		BattleGridController->GetDebugHudText(),
+		BattleGridController->UseGameplayHudLayout(),
+		BattleGridController->ShowDebugHud(),
+		BattleGridController->ShowControlsHelp(),
+		BattleGridController->ShowSmallServerStatus()
 	);
 }
 

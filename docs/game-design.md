@@ -45,7 +45,7 @@ ADS moves the camera slightly to the right, reduces weapon spread, and lowers mo
   - headshot: 20
 - Bot accuracy is intentionally low for readable demos.
 - Death starts an 8 second respawn timer.
-- Respawn grants 1.5 seconds of invincibility.
+- Respawn grants difficulty-tuned invincibility, with easy giving the player more recovery time.
 - Health packs heal +35 and cannot raise HP above max.
 
 The current server has hitscan shot result events:
@@ -92,17 +92,22 @@ The current C++ HUD supports optional `CrosshairTop`, `CrosshairBottom`, `Crossh
 - Bots detect nearest alive non-invincible players, face the target, and fire low-accuracy server hitscan shots.
 - Bots have 30-round magazines, infinite reserve ammo, and 2.5 second reloads.
 - Bot shots can spawn visual-only server tracer projectiles for ghost visualization.
+- Bot pressure is capped per player so the whole bot squad does not shoot one player at once.
+- Bots that are near a player but blocked by the pressure cap can still face/aim at the player in an `aim` or `suppressed` combat state.
+- Bot shots include small randomized cooldown jitter to avoid synchronized volleys.
 - Bots are constrained to a smaller demo bot area (`x=-1500..1500`, `y=-900..900`) because the server does not yet know Unreal map collision or NavMesh.
 - When not chasing a player, bots move between fixed demo waypoints inside that area. Basic stuck detection picks a new waypoint if a bot cannot make progress.
 - If bot attacks are disabled for safe demos, bots still move/chase/wander but do not shoot players.
 
 Debug/demo difficulty values:
 
-| Difficulty | Body / Head | Fire Interval | Spread | Detect Range | Attack Range | Speed |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Easy | 10 / 20 | 0.75s | 18 deg | 1000 | 1200 | 400 |
-| Normal | 10 / 20 | 0.5s | 12 deg | 1500 | 1400 | 500 |
-| Hard | 10 / 20 | 0.35s | 7 deg | 1800 | 1600 | 600 |
+| Difficulty | Body / Head | Fire Interval | Spread | Detect Range | Attack Range | Speed | Max Targeting | Max Shooting | Respawn Invincible |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Easy | 10 / 20 | 1.0s | 18 deg | 1400 | 1100 | 380 | 8 | 2 | 2.5s |
+| Normal | 10 / 20 | 0.75s | 13 deg | 1600 | 1300 | 450 | 8 | 3 | 2.0s |
+| Hard | 10 / 20 | 0.5s | 8 deg | 1900 | 1600 | 550 | 8 | 4 | 1.5s |
+
+All difficulties keep bot damage at 10 body / 20 headshot. Difficulty changes pressure through accuracy, fire interval, movement speed, range, maximum concurrent bot shooting, and respawn recovery time.
 
 Safe demo mode applies easy difficulty, disables bot attacks, disables timer-based match end, clears stale game-over state, resets players/bots/health packs, and keeps the match in progress.
 
@@ -146,31 +151,30 @@ The left-side kill log should prioritize server-authoritative kill/death events:
 
 Current implementation supports optional `KillFeedLine1` through `KillFeedLine5` TextBlocks for color-coded lines, with a fallback text block when those widgets have not been added yet.
 
-## HUD Requirements
+## HUD Layout
 
-Primary HUD:
+The default demo HUD is gameplay-first instead of a large debug overlay:
 
-- Server HP.
-- Server kills / goal.
-- Top-right Top 5 ranking based on total kills.
-- Ammo and reload state.
-- Match timer.
-- Bot and health pack counts.
-- Recent server shot result.
-- Left-side recent kill log events.
-- Dynamic spread-based crosshair.
+- Bottom center: server HP and local weapon ammo/reload state.
+- Top right: Top 5 player ranking based on total kills.
+- Left side: recent 5 kill/death events.
+- Center: dynamic spread-based crosshair.
+- Small status: match time and local/remote server connection state.
+- Temporary center message: scoreboard, server death/respawn, server shot result, or game over.
 
-Optional debug HUD:
+Debug details are hidden by default. Enable the PlayerController HUD debug options only when comparing local/offline state with server state.
+
+Optional debug HUD content:
 
 - Local offline HP/score.
 - Server position error.
 - Correction state.
-- Server profile.
+- Client-position sync state.
+- Server profile, snapshot tick, arena bounds, and bot-area bounds.
 
 Future HUD:
 
-- Bottom HP/ammo presentation.
-- More polished top-5 ranking panel.
+- More polished top-5 ranking panel art.
 - Large-map minimap / radar.
 
 ## Legacy Target/Core System

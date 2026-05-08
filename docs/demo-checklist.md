@@ -23,13 +23,21 @@ Use this checklist to run the current portfolio demo.
   - `use_client_fire_origin_for_hitscan=true`
   - `use_client_position_for_player_movement=true`
   - `min_player_z=-1000` and `max_player_z=5000`
+  - easy bot pressure values: `bot_fire_interval=1.0`, `bot_aim_spread=18`, `max_bots_targeting_one_player=8`, `max_bots_shooting_one_player=2`, and `respawn_invincible_seconds=2.5`
   - `bot_area_bounds` is approximately `x=-1500..1500`, `y=-900..900`
 - `bot_attacks_enabled=false` means bots still move but do not shoot players.
 - Active Unreal PlayerController Blueprint defaults:
   - `bUseRemoteServer=false` for a local Docker demo.
   - `bApplySafeDemoModeOnJoin=true`.
   - `bUseServerAuthoritativeHud=true`.
+  - `bUseGameplayHudLayout=true`.
+  - `bShowDebugHud=false`.
+  - `bShowControlsHelp=false`.
+  - `bShowSmallServerStatus=true`.
   - `bShowLocalDebugHud=false`.
+  - `bShowCombatEventFeed=false`.
+  - `bShowTopFiveRanking=true`.
+  - `bShowKillFeed=true`.
   - `bUseServerPositionCorrection=false`.
   - `bUseGentleServerPositionCorrection=false` unless you are testing optional smoothing.
   - `bDrawServerArenaBounds=false` for recording; enable only while verifying invisible-wall/correction issues.
@@ -48,6 +56,13 @@ Use this checklist to run the current portfolio demo.
   - `bSpawnLegacyLocalProjectileWhenConnected=false`.
   - `bAllowLegacyLocalProjectileDamageWhenConnected=false`.
   - `bSpawnLegacyLocalProjectileWhenOffline=true`.
+  - Gameplay HUD optional widgets are arranged for recording:
+    - `HealthText` / `HealthBar` at the bottom center for HP.
+    - `AmmoText` near HP for ammo/reload, or use the `ScoreText` fallback.
+    - `MatchText` and `SmallServerStatusText` as compact status text.
+    - `RankingText` at the top right.
+    - `KillFeedLine1` through `KillFeedLine5` on the left side.
+    - `DebugText` hidden unless `bShowDebugHud=true`.
   - Dynamic crosshair Border widgets are present, or the fallback `CrosshairText` is acceptable for the current recording.
 - If humanoid assets are assigned for the recording:
   - Player Skeletal Mesh appears correctly in `BP_BattleGridCharacter`.
@@ -80,6 +95,12 @@ Use this checklist to run the current portfolio demo.
 - If humanoid assets are assigned, show the local player mesh and humanoid bot ghosts without changing the server gameplay explanation.
 - Show the crosshair tightening in ADS and widening during sprint/jump.
 - Shoot a bot in Unreal and show `SERVER HIT` or `SERVER MISS` in the HUD.
+- Verify the normal gameplay HUD is clean:
+  - HP and ammo are bottom center.
+  - Top 5 ranking is top right.
+  - Kill feed is left side.
+  - Crosshair is centered.
+  - Large debug text and controls help are hidden.
 - Verify SERVER ECHO remains close to the local pawn while walking into visible Unreal walls; it should stop with the pawn instead of continuing through the wall.
 - Jump and verify SERVER ECHO follows the local pawn height.
 - Stand on any available ramp or raised platform and verify SERVER ECHO height follows.
@@ -117,7 +138,7 @@ Use this checklist to run the current portfolio demo.
 8. Keep `Log Raw Snapshots` unchecked so the page shows compact summaries without freezing.
 9. Click `Fire 5 Shots At Nearest Bot` and verify BOT HP decreases or a bot kill event appears.
 10. Open Unreal Editor.
-11. In the PlayerController Blueprint defaults, use the remote profile and confirm the HUD shows `Profile: Remote`, `Server: Connected`, and server-authoritative `SERVER HP` / `SERVER Kills` as the primary state.
+11. In the PlayerController Blueprint defaults, use the remote profile and confirm the gameplay HUD shows compact server HP, ammo, match status, Top 5 ranking, and kill feed with debug text hidden.
 12. Move with WASD.
 13. Show the local character and the server player ghost moving together.
 14. Fire with left mouse button and show the server tracer ghost plus `SERVER HIT` / `SERVER MISS`; the legacy local sphere projectile should not be visible while connected and joined.
@@ -143,10 +164,11 @@ Use this checklist to run the current portfolio demo.
 21. Verify the server combat event feed appears after a bot/player event and that shot results are distinct from local projectile overlap logs.
 22. Hold Tab and verify the server scoreboard overlay appears; release Tab and verify the normal HUD returns.
 23. Optional: enable bot attacks on easy to show server shooter danger after the stable shooting demo. Bots should fire low-accuracy hitscan shots rather than applying proximity damage.
-24. Walk into the hazard and show local HP decrease, death, and respawn only as an offline/local debug layer.
-25. Toggle `bShowLocalDebugHud` if you need to show local HP/score and position error during explanation.
-26. Toggle optional server position correction on/off if useful for the recording.
-27. Stop the server or switch back to the Local profile and show that offline gameplay still runs.
+24. While moving on easy, verify the player can usually survive at least 15-30 seconds. If the player stands still in range, bots should still be able to kill the player and produce a `bot_killed_player` event.
+25. Walk into the hazard and show local HP decrease, death, and respawn only as an offline/local debug layer.
+26. Toggle `bShowLocalDebugHud` if you need to show local HP/score and position error during explanation.
+27. Toggle optional server position correction on/off if useful for the recording.
+28. Stop the server or switch back to the Local profile and show that offline gameplay still runs.
 
 ## Server Smoke Test
 
@@ -184,7 +206,7 @@ Use this checklist to run the current portfolio demo.
 15. Click `Send Fire At Nearest Bot` and verify the `Shot Result` card shows `SERVER HIT BOT-* -20` or `SERVER MISS`.
 16. Click `Send Headshot At Nearest Bot` and verify the `Shot Result` card shows `SERVER HEADSHOT BOT-* -40`.
 17. Click `Fire 5 Shots At Nearest Bot` and verify bot HP drops quickly. A 100 HP bot should be killed by five body hits at 20 damage each unless shots miss or the match is over.
-18. Verify the combat tuning summary shows player body/head damage `20/40`, bot body/head damage `10/20`, easy bot difficulty, bot attacks disabled, timer auto-end disabled, kill score values `1/1`, and client fire origin enabled.
+18. Verify the combat tuning summary shows player body/head damage `20/40`, bot body/head damage `10/20`, easy bot difficulty, pressure `target/shoot=8/2`, respawn invincibility `2.5s`, bot attacks disabled, timer auto-end disabled, kill score values `1/1`, and client fire origin enabled.
 19. Verify the arena layout values from the first snapshot output:
    - bounds `x=-5000..5000`, `y=-5000..5000`
    - player spawns at `(-1200,0)`, `(1200,0)`, `(0,900)`, `(0,-900)`
@@ -223,7 +245,9 @@ Use this checklist to run the current portfolio demo.
 6. Watch bot HP and server kills change after server hits.
 7. Click `Enable Bot Attacks` to test Bot Shooter AI v2.
 8. Stand near a bot and verify bot shot events appear as `BOT-* hit player* -10`, `BOT-* headshot player* -20`, or `BOT-* killed player*`.
-9. Confirm projectile snapshots include `owner_type`, `visual_only`, `start_*`, and `end_*` fields.
+9. Click `Send Debug Room` and verify bots show readable combat states such as `shoot`, `aim`, `suppressed`, `chase`, `wander`, and `reload`.
+10. On easy, keep moving and verify the bot pressure is readable: nearby bots face/aim at the player, only about 1-2 bots fire at the same time, and respawn invincibility gives recovery time.
+11. Confirm projectile snapshots include `owner_type`, `visual_only`, `start_*`, and `end_*` fields.
 
 ### Option C: Remote GCP Server
 

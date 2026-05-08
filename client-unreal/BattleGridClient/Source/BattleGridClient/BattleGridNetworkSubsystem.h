@@ -489,6 +489,11 @@ public:
 	FString GetServerWorldCountsText() const;
 	FString GetServerScoreboardCompactText() const;
 	FString GetServerCombatEventFeedText() const;
+	FString GetGameplayHpText() const;
+	FString GetGameplayMatchText() const;
+	FString GetGameplayKdText() const;
+	FString GetSmallServerStatusText() const;
+	FString GetDebugHudText() const;
 	FString GetServerSummaryText() const;
 
 private:

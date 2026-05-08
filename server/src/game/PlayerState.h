@@ -33,6 +33,7 @@ struct PlayerState
     int botKills = 0;
     double respawnTimerSeconds = 0.0;
     double invincibleTimerSeconds = 0.0;
+    double botRecentDamageGraceTimerSeconds = 0.0;
     double bodyRadius = 60.0;
     double headRadius = 35.0;
     double bodyHeight = 90.0;

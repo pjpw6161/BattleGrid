@@ -63,7 +63,17 @@ void UBattleGridCombatWidget::UpdateHud(
 	bool bCrosshairReloading,
 	bool bCrosshairServerDead,
 	bool bShowCrosshair,
-	const FString& LocalDebugHudText
+	const FString& LocalDebugHudText,
+	const FString& GameplayHpText,
+	const FString& GameplayAmmoText,
+	const FString& GameplayMatchText,
+	const FString& GameplayKdText,
+	const FString& SmallServerStatusDisplayText,
+	const FString& DebugHudText,
+	bool bUseGameplayHudLayout,
+	bool bShowDebugHud,
+	bool bShowControlsHelp,
+	bool bShowSmallServerStatus
 )
 {
 	static_cast<void>(ServerPositionError);
@@ -81,6 +91,7 @@ void UBattleGridCombatWidget::UpdateHud(
 	const float HealthPercent = DisplayMaxHealth > 0.0f
 		? FMath::Clamp(DisplayHealth / DisplayMaxHealth, 0.0f, 1.0f)
 		: 0.0f;
+	const bool bEffectiveShowDebugHud = bShowDebugHud || bShowLocalDebugHud;
 
 	if (HealthBar)
 	{
@@ -89,7 +100,11 @@ void UBattleGridCombatWidget::UpdateHud(
 
 	if (HealthText)
 	{
-		if (bShowServerHudValues)
+		if (bUseGameplayHudLayout && !GameplayHpText.IsEmpty())
+		{
+			HealthText->SetText(FText::FromString(GameplayHpText));
+		}
+		else if (bShowServerHudValues)
 		{
 			const FString LifeSuffix = bServerDead
 				? FString(TEXT(" | DEAD"))
@@ -113,10 +128,36 @@ void UBattleGridCombatWidget::UpdateHud(
 
 	if (ScoreText)
 	{
-		const FString AmmoText = bIsReloading
+		const FString AmmoValueText = bIsReloading
 			? FString(TEXT("Reloading..."))
 			: FString::Printf(TEXT("%d/%d"), CurrentAmmo, MagazineSize);
-		if (bShowServerHudValues)
+		if (bUseGameplayHudLayout)
+		{
+			const FString CompactAmmoText = GameplayAmmoText.IsEmpty()
+				? FString::Printf(TEXT("Ammo %s"), *AmmoValueText)
+				: GameplayAmmoText;
+			TArray<FString> ScoreParts;
+			if (KdText == nullptr && !GameplayKdText.IsEmpty())
+			{
+				ScoreParts.Add(GameplayKdText);
+			}
+			if (this->AmmoText == nullptr && !CompactAmmoText.IsEmpty())
+			{
+				ScoreParts.Add(CompactAmmoText);
+			}
+			if (MatchText == nullptr && !GameplayMatchText.IsEmpty())
+			{
+				ScoreParts.Add(GameplayMatchText);
+			}
+			const FString GameplayScoreText = FString::Join(ScoreParts, TEXT(" | "));
+			ScoreText->SetText(FText::FromString(GameplayScoreText));
+			ScoreText->SetVisibility(
+				!GameplayScoreText.IsEmpty()
+					? ESlateVisibility::Visible
+					: ESlateVisibility::Collapsed
+			);
+		}
+		else if (bShowServerHudValues)
 		{
 			ScoreText->SetText(FText::FromString(FString::Printf(
 				TEXT("SERVER Kills: %d / %d | K/D %d/%d | Bots %d | PvP %d | Ammo %s"),
@@ -126,8 +167,9 @@ void UBattleGridCombatWidget::UpdateHud(
 				ServerDeaths,
 				ServerBotKills,
 				ServerPlayerKills,
-				*AmmoText
+				*AmmoValueText
 			)));
+			ScoreText->SetVisibility(ESlateVisibility::Visible);
 		}
 		else
 		{
@@ -135,10 +177,61 @@ void UBattleGridCombatWidget::UpdateHud(
 				TEXT("Local Score: %d / %d | Ammo: %s | Spread: %.1f"),
 				Score,
 				TargetScore,
-				*AmmoText,
+				*AmmoValueText,
 				LastShotSpreadDegrees
 			)));
+			ScoreText->SetVisibility(ESlateVisibility::Visible);
 		}
+	}
+
+	if (AmmoText != nullptr)
+	{
+		AmmoText->SetText(FText::FromString(GameplayAmmoText));
+		AmmoText->SetVisibility(
+			bUseGameplayHudLayout && !GameplayAmmoText.IsEmpty()
+				? ESlateVisibility::Visible
+				: ESlateVisibility::Collapsed
+		);
+	}
+
+	if (MatchText != nullptr)
+	{
+		MatchText->SetText(FText::FromString(GameplayMatchText));
+		MatchText->SetVisibility(
+			bUseGameplayHudLayout && !GameplayMatchText.IsEmpty()
+				? ESlateVisibility::Visible
+				: ESlateVisibility::Collapsed
+		);
+	}
+
+	if (KdText != nullptr)
+	{
+		KdText->SetText(FText::FromString(GameplayKdText));
+		KdText->SetVisibility(
+			bUseGameplayHudLayout && !GameplayKdText.IsEmpty()
+				? ESlateVisibility::Visible
+				: ESlateVisibility::Collapsed
+		);
+	}
+
+	if (SmallServerStatusText != nullptr)
+	{
+		SmallServerStatusText->SetText(FText::FromString(SmallServerStatusDisplayText));
+		SmallServerStatusText->SetVisibility(
+			bUseGameplayHudLayout && bShowSmallServerStatus && !SmallServerStatusDisplayText.IsEmpty()
+				? ESlateVisibility::Visible
+				: ESlateVisibility::Collapsed
+		);
+	}
+
+	if (DebugText != nullptr)
+	{
+		DebugText->SetText(FText::FromString(DebugHudText));
+		DebugText->SetVisibility(
+			bEffectiveShowDebugHud && !DebugHudText.IsEmpty()
+				? ESlateVisibility::Visible
+				: ESlateVisibility::Collapsed
+		);
 	}
 
 	if (CombatMessageText)
@@ -152,6 +245,14 @@ void UBattleGridCombatWidget::UpdateHud(
 		{
 			DisplayMessage = ServerLifeStateText;
 		}
+		else if (!ServerShotResultText.IsEmpty())
+		{
+			DisplayMessage = ServerShotResultText;
+		}
+		else if (bServerInvincible && !ServerLifeStateText.IsEmpty())
+		{
+			DisplayMessage = ServerLifeStateText;
+		}
 		else if (bServerGameOver)
 		{
 			DisplayMessage = TEXT("SERVER GAME OVER");
@@ -160,14 +261,6 @@ void UBattleGridCombatWidget::UpdateHud(
 		{
 			DisplayMessage = TEXT("Victory! Press F5/Enter to Restart");
 		}
-		else if (bServerInvincible && !ServerLifeStateText.IsEmpty())
-		{
-			DisplayMessage = ServerLifeStateText;
-		}
-		else if (!ServerShotResultText.IsEmpty())
-		{
-			DisplayMessage = ServerShotResultText;
-		}
 		else if (bShowCombatEventFeed && !ServerCombatEventFeedText.IsEmpty())
 		{
 			DisplayMessage = FString::Printf(
@@ -175,7 +268,7 @@ void UBattleGridCombatWidget::UpdateHud(
 				*ServerCombatEventFeedText
 			);
 		}
-		else if (bShowCombatMessage)
+		else if (bShowCombatMessage && (!bUseGameplayHudLayout || !bUseServerAuthoritativeHud))
 		{
 			DisplayMessage = CombatMessage;
 		}
@@ -195,13 +288,28 @@ void UBattleGridCombatWidget::UpdateHud(
 			? FString(TEXT("Victory! Press F5/Enter to Restart"))
 			: FString(TEXT("WASD Move | Mouse Look | LMB Fire | RMB ADS | Shift Sprint | Space Jump | R Reload | F5/Enter Restart | Tab Scoreboard"));
 		TArray<FString> ControlLines;
-		if (!PolishedNetworkStatusText.IsEmpty())
+		const bool bHasSmallStatusWidget = SmallServerStatusText != nullptr;
+		const bool bHasDebugWidget = DebugText != nullptr;
+		if (!bUseGameplayHudLayout && !PolishedNetworkStatusText.IsEmpty())
 		{
 			ControlLines.Add(PolishedNetworkStatusText);
 		}
-		if (bShowLocalDebugHud && !LocalDebugHudText.IsEmpty())
+		else if (
+			bUseGameplayHudLayout
+			&& bShowSmallServerStatus
+			&& !bHasSmallStatusWidget
+			&& !SmallServerStatusDisplayText.IsEmpty()
+		)
+		{
+			ControlLines.Add(SmallServerStatusDisplayText);
+		}
+		if (!bUseGameplayHudLayout && bShowLocalDebugHud && !LocalDebugHudText.IsEmpty())
 		{
 			ControlLines.Add(LocalDebugHudText);
+		}
+		if (bUseGameplayHudLayout && bEffectiveShowDebugHud && !bHasDebugWidget && !DebugHudText.IsEmpty())
+		{
+			ControlLines.Add(DebugHudText);
 		}
 		if (bShowRanking && RankingText == nullptr && !TopFiveRankingText.IsEmpty())
 		{
@@ -223,10 +331,18 @@ void UBattleGridCombatWidget::UpdateHud(
 			}
 			ControlLines.Add(FString::Join(KillFeedTextLines, TEXT("\n")));
 		}
-		ControlLines.Add(BaseControlsMessage);
+		if (!bUseGameplayHudLayout || bShowControlsHelp)
+		{
+			ControlLines.Add(BaseControlsMessage);
+		}
 		const FString FullControlsMessage = FString::Join(ControlLines, TEXT("\n"));
 
 		ControlsText->SetText(FText::FromString(FullControlsMessage));
+		ControlsText->SetVisibility(
+			!FullControlsMessage.IsEmpty()
+				? ESlateVisibility::Visible
+				: ESlateVisibility::Collapsed
+		);
 	}
 
 	if (RankingText != nullptr)

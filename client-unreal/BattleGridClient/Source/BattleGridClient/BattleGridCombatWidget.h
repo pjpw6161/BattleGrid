@@ -65,7 +65,17 @@ public:
 		bool bCrosshairReloading,
 		bool bCrosshairServerDead,
 		bool bShowCrosshair,
-		const FString& LocalDebugHudText
+		const FString& LocalDebugHudText,
+		const FString& GameplayHpText,
+		const FString& GameplayAmmoText,
+		const FString& GameplayMatchText,
+		const FString& GameplayKdText,
+		const FString& SmallServerStatusDisplayText,
+		const FString& DebugHudText,
+		bool bUseGameplayHudLayout,
+		bool bShowDebugHud,
+		bool bShowControlsHelp,
+		bool bShowSmallServerStatus
 	);
 
 protected:
@@ -92,6 +102,21 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	UTextBlock* ScoreText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> AmmoText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> MatchText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> KdText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> SmallServerStatusText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> DebugText;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	UTextBlock* CombatMessageText;

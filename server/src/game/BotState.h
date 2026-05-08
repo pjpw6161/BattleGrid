@@ -25,6 +25,14 @@ struct BotState
     double bodyHeight = 90.0;
     double headHeight = 160.0;
     std::uint64_t targetPlayerId = 0;
+    std::string combatState = "wander";
+    std::string fireBlockReason;
+    double distanceToTarget = 0.0;
+    bool hasLineOfFire = true;
+    bool wantsToShoot = false;
+    bool allowedToShoot = false;
+    int currentShootersForTarget = 0;
+    double targetReconsiderTimerSeconds = 0.0;
     double wanderTargetX = 0.0;
     double wanderTargetY = 0.0;
     double decisionTimerSeconds = 0.0;

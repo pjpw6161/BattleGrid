@@ -96,9 +96,13 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bDemoAutoEndMatchByTimer = false;
 	bScoreboardToggleMode = false;
 	bUseServerAuthoritativeHud = true;
+	bUseGameplayHudLayout = true;
+	bShowDebugHud = false;
+	bShowControlsHelp = false;
+	bShowSmallServerStatus = true;
 	bShowLocalDebugHud = false;
 	bShowServerDebugDetails = true;
-	bShowCombatEventFeed = true;
+	bShowCombatEventFeed = false;
 	bShowTopFiveRanking = true;
 	bShowKillFeed = true;
 	ShotResultDisplayDurationSeconds = 1.25f;
@@ -459,9 +463,29 @@ bool ABattleGridClientPlayerController::UseServerAuthoritativeHud() const
 	return bUseServerAuthoritativeHud;
 }
 
+bool ABattleGridClientPlayerController::UseGameplayHudLayout() const
+{
+	return bUseGameplayHudLayout;
+}
+
 bool ABattleGridClientPlayerController::ShowLocalDebugHud() const
 {
 	return bShowLocalDebugHud;
+}
+
+bool ABattleGridClientPlayerController::ShowDebugHud() const
+{
+	return bShowDebugHud;
+}
+
+bool ABattleGridClientPlayerController::ShowControlsHelp() const
+{
+	return bShowControlsHelp;
+}
+
+bool ABattleGridClientPlayerController::ShowSmallServerStatus() const
+{
+	return bShowSmallServerStatus;
 }
 
 bool ABattleGridClientPlayerController::ShowServerDebugDetails() const
@@ -572,6 +596,141 @@ FString ABattleGridClientPlayerController::GetLocalDebugHudText() const
 	}
 
 	return DebugText;
+}
+
+FString ABattleGridClientPlayerController::GetGameplayHpText() const
+{
+	if (bUseServerAuthoritativeHud)
+	{
+		if (const UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+				GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+			{
+				return NetworkSubsystem->GetGameplayHpText();
+			}
+		}
+
+		return TEXT("HP -- / --");
+	}
+
+	return FString::Printf(
+		TEXT("HP %.0f / %.0f"),
+		GetCurrentPlayerHealth(),
+		GetMaxPlayerHealth()
+	);
+}
+
+FString ABattleGridClientPlayerController::GetGameplayAmmoText() const
+{
+	const ABattleGridClientCharacter* BattleGridCharacter =
+		Cast<ABattleGridClientCharacter>(GetPawn());
+	if (!BattleGridCharacter)
+	{
+		return TEXT("Ammo -- / --");
+	}
+
+	const UBattleGridWeaponComponent* WeaponComponent =
+		BattleGridCharacter->GetWeaponComponent();
+	if (!WeaponComponent)
+	{
+		return TEXT("Ammo -- / --");
+	}
+
+	if (WeaponComponent->IsReloading())
+	{
+		return TEXT("Reloading...");
+	}
+
+	return FString::Printf(
+		TEXT("Ammo %d / %d"),
+		WeaponComponent->GetCurrentAmmo(),
+		WeaponComponent->GetMagazineSize()
+	);
+}
+
+FString ABattleGridClientPlayerController::GetGameplayMatchText() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetGameplayMatchText();
+		}
+	}
+
+	return TEXT("Match --:--");
+}
+
+FString ABattleGridClientPlayerController::GetGameplayKdText() const
+{
+	if (bUseServerAuthoritativeHud)
+	{
+		if (const UGameInstance* GameInstance = GetGameInstance())
+		{
+			if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+				GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+			{
+				return NetworkSubsystem->GetGameplayKdText();
+			}
+		}
+
+		return TEXT("K/D -- / -- | Bots -- | PvP --");
+	}
+
+	return FString::Printf(TEXT("Local Score %d / %d"), GetScore(), GetTargetScore());
+}
+
+FString ABattleGridClientPlayerController::GetSmallServerStatusText() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			if (!NetworkSubsystem->IsConnected())
+			{
+				return TEXT("Server: Disconnected");
+			}
+
+			return FString::Printf(
+				TEXT("%s | %s"),
+				*ResolveServerProfileLabel(),
+				*NetworkSubsystem->GetSmallServerStatusText()
+			);
+		}
+	}
+
+	return TEXT("Server: Disconnected");
+}
+
+FString ABattleGridClientPlayerController::GetDebugHudText() const
+{
+	TArray<FString> Lines;
+
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			Lines.Add(NetworkSubsystem->GetDebugHudText());
+		}
+	}
+
+	const FString CorrectionText = GetServerCorrectionModeText();
+	const FString ErrorText = bShowServerPositionError && HasOwnServerWorldLocation()
+		? FString::Printf(TEXT("%.1f"), GetLastServerPositionError())
+		: FString(TEXT("-"));
+	Lines.Add(FString::Printf(
+		TEXT("Server Error: %s | Correction: %s | ClientPos Sync: %s"),
+		*ErrorText,
+		*CorrectionText,
+		bSendClientPositionToServer ? TEXT("On") : TEXT("Off")
+	));
+	Lines.Add(GetLocalDebugHudText());
+
+	return FString::Join(Lines, TEXT("\n"));
 }
 
 FString ABattleGridClientPlayerController::GetDetailedNetworkStatusText() const

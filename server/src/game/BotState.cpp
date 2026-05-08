@@ -38,6 +38,12 @@ void BotState::Kill()
     alive = false;
     invincible = false;
     hp = 0;
+    combatState = "dead";
+    fireBlockReason.clear();
+    distanceToTarget = 0.0;
+    wantsToShoot = false;
+    allowedToShoot = false;
+    currentShootersForTarget = 0;
 }
 
 void BotState::Respawn(double newX, double newY)
@@ -51,6 +57,14 @@ void BotState::Respawn(double newX, double newY)
     invincibleTimerSeconds = 1.5;
     respawnTimerSeconds = 0.0;
     targetPlayerId = 0;
+    combatState = "wander";
+    fireBlockReason.clear();
+    distanceToTarget = 0.0;
+    hasLineOfFire = true;
+    wantsToShoot = false;
+    allowedToShoot = false;
+    currentShootersForTarget = 0;
+    targetReconsiderTimerSeconds = 0.0;
     stuckTimerSeconds = 0.0;
     lastXForStuck = x;
     lastYForStuck = y;

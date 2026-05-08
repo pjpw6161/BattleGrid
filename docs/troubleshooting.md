@@ -616,8 +616,11 @@ Use the debug/demo controls from `tools/websocket-test.html`:
    - `bot_difficulty=easy`
    - `bot_attack_damage=10`
    - `bot_headshot_damage=20`
-   - `bot_fire_interval=0.75`
+   - `bot_fire_interval=1.0`
    - `bot_aim_spread=18`
+   - `max_bots_targeting_one_player=8`
+   - `max_bots_shooting_one_player=2`
+   - `respawn_invincible_seconds=2.5`
 
 The equivalent JSON commands are:
 
@@ -628,6 +631,37 @@ The equivalent JSON commands are:
 ```json
 { "type": "debug_set_bot_attacks", "enabled": false }
 ```
+
+If you still want bots to shoot but need a playable demo, keep attacks enabled on easy. Easy mode deliberately limits pressure: nearby bots can still aim at the player, but only a small number can fire during the same short window, bot shots have wider spread, and bot fire cooldowns include small jitter so volleys do not land together.
+
+If easy is still too punishing during recording:
+
+- Keep moving; standing still should still be dangerous.
+- Click `Disable Bot Attacks` for visual-only movement tests.
+- In code, reduce `MaxBotsShootingOnePlayer`, increase `botAimSpreadDegrees`, or increase `BotShotRandomDelayMax`.
+
+## Bot In Front Of Me Does Not Shoot
+
+Bot shooting can be blocked for valid debug reasons even when the bot sees the player.
+
+Use `tools/websocket-test.html`:
+
+1. Click `Send Debug Room`.
+2. Check the `Bots` summary or the `bot_states` log line.
+3. Look for each bot's `combat_state` and `fire_block_reason`.
+
+Common states and reasons:
+
+- `shoot`: bot is firing this tick.
+- `aim` + `cooldown`: bot sees the player but its weapon is waiting on fire cooldown.
+- `aim` + `bot_attacks_disabled`: safe/demo setting prevents damage.
+- `suppressed` + `shooting_cap`: bot sees and faces the player, but the per-player shooting cap is already full.
+- `reload` + `reloading` or `no_ammo`: bot is reloading its 30-round magazine.
+- `chase` + `out_of_attack_range`: bot sees the player but is not close enough to fire.
+- `wander` + `out_of_detect_range`: no valid player is inside detect range.
+- `wander` + `target_invincible`: the player is alive but currently protected after respawn.
+
+In the current demo tuning, easy mode uses `MaxBotsTargetingOnePlayer=8` so nearby bots should generally react, face, chase, aim, or suppress instead of wandering away. `MaxBotsShootingOnePlayer=2` keeps the player from being deleted by every bot at once.
 
 ## Game Starts In `game_over`
 
@@ -855,14 +889,68 @@ If the server says the player is dead, local movement/fire can be locked even if
 
 The PvPvE demo is meant to show server-authoritative match state. The server owns player HP, deaths, respawn timers, kills, bot/health-pack state, match timer, scoreboard, and combat events.
 
-The HUD therefore shows server state first:
+The gameplay HUD therefore shows server state first:
 
-- `SERVER HP` in the health area.
-- `SERVER Kills` and K/D in the score area.
-- Match time, bots, health packs, and projectiles in the controls/status area.
-- Recent server combat events in the message area.
+- HP and ammo in the bottom HUD area.
+- Top 5 ranking in the top-right HUD area.
+- Kill feed on the left side.
+- Match/server status in small status text.
+- Temporary server shot results such as `SERVER HIT BOT-3 -20` in the message area.
 
 Local HP/score remains available for offline debugging, but it should not be used to explain server bot damage, match scoring, or winner state.
+
+## HUD Still Shows Large Debug Text
+
+The final demo layout is controlled from the active PlayerController Blueprint under `BattleGrid|HUD`.
+
+For a clean recording, set:
+
+- `bUseGameplayHudLayout=true`
+- `bShowDebugHud=false`
+- `bShowControlsHelp=false`
+- `bShowCombatEventFeed=false`
+- `bShowLocalDebugHud=false`
+
+If a large block still appears, check whether the active widget is missing optional gameplay bindings. Without `RankingText`, `KillFeedLine1-5`, `AmmoText`, `MatchText`, or `SmallServerStatusText`, the C++ fallback may place compact fallback text into `ControlsText`.
+
+## Ammo Text Missing
+
+`AmmoText` is optional. If it is missing, the HUD falls back to `ScoreText` and shows ammo beside K/D or match text.
+
+For the cleaner layout:
+
+- Add a TextBlock named `AmmoText` to the active combat HUD widget.
+- Enable `Is Variable`.
+- Place it near the bottom-center HP area.
+- Recompile the widget Blueprint.
+
+## Ranking Not Visible
+
+The Top 5 ranking uses the optional `RankingText` TextBlock.
+
+Check:
+
+- Add a TextBlock named `RankingText`.
+- Enable `Is Variable`.
+- Place it at the top right.
+- In the active PlayerController Blueprint, keep `BattleGrid|HUD > bShowTopFiveRanking=true`.
+- Confirm the server has joined and scoreboard data exists.
+
+If `RankingText` is missing, the C++ fallback can append ranking text to `ControlsText`, but the result looks more like a debug overlay.
+
+## Kill Feed Not Visible In Gameplay Layout
+
+The left-side kill feed uses optional TextBlocks named `KillFeedLine1` through `KillFeedLine5`.
+
+Check:
+
+- Add all five TextBlocks.
+- Enable `Is Variable` on each.
+- Place them vertically on the left side.
+- In the active PlayerController Blueprint, keep `BattleGrid|HUD > bShowKillFeed=true`.
+- Confirm the server sends kill events such as `bot_killed`, `player_killed`, or `bot_killed_player`.
+
+Shot events such as `shot_hit_bot` and `shot_miss` are temporary hit marker text, not persistent kill feed lines.
 
 ## SERVER ECHO Follows But Starts Far Away
 
