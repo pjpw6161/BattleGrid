@@ -46,6 +46,7 @@ ADS moves the camera slightly to the right, reduces weapon spread, and lowers mo
 - Bot accuracy is intentionally low for readable demos.
 - Death starts an 8 second respawn timer.
 - Respawn grants difficulty-tuned invincibility, with easy giving the player more recovery time.
+- While dead, server death state locks movement, fire, ADS, sprint, jump, and reload input for the local player.
 - Health packs heal +35 and cannot raise HP above max.
 
 The current server has hitscan shot result events:
@@ -160,7 +161,13 @@ The default demo HUD is gameplay-first instead of a large debug overlay:
 - Left side: recent 5 kill/death events.
 - Center: dynamic spread-based crosshair.
 - Small status: match time and local/remote server connection state.
-- Temporary center message: scoreboard, server death/respawn, server shot result, or game over.
+- Temporary center message priority: scoreboard overlay, server death with last killer and respawn countdown, post-respawn invincibility countdown, server shot result, then game over.
+
+Death UX examples:
+
+- `KILLED BY BOT-6`
+- `Respawn in 7.3s`
+- `INVINCIBLE 1.4s`
 
 Debug details are hidden by default. Enable the PlayerController HUD debug options only when comparing local/offline state with server state.
 
@@ -187,6 +194,7 @@ When disabled:
 - Target kills do not affect primary score.
 - Unreal target/core ghosts are hidden by default.
 - Browser test treats target data as debug-only.
+- Local `BP_BattleGridDamageableTarget` actors are offline/debug targets only. In connected server-authoritative mode, local projectile damage to these targets is ignored by default.
 
 ## Current Limitations
 

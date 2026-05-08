@@ -245,13 +245,13 @@ void UBattleGridCombatWidget::UpdateHud(
 		{
 			DisplayMessage = ServerLifeStateText;
 		}
-		else if (!ServerShotResultText.IsEmpty())
-		{
-			DisplayMessage = ServerShotResultText;
-		}
 		else if (bServerInvincible && !ServerLifeStateText.IsEmpty())
 		{
 			DisplayMessage = ServerLifeStateText;
+		}
+		else if (!ServerShotResultText.IsEmpty())
+		{
+			DisplayMessage = ServerShotResultText;
 		}
 		else if (bServerGameOver)
 		{

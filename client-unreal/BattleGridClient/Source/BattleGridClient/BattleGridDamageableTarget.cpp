@@ -72,6 +72,8 @@ ABattleGridClientPlayerController* FindBattleGridController(
 ABattleGridDamageableTarget::ABattleGridDamageableTarget()
 {
 	PrimaryActorTick.bCanEverTick = false;
+	bAllowDamageInServerMode = false;
+	bLoggedIgnoredServerModeDamage = false;
 
 	CollisionComponent = CreateDefaultSubobject<UBoxComponent>(TEXT("CollisionComponent"));
 	CollisionComponent->SetBoxExtent(FVector(50.0f, 50.0f, 50.0f));
@@ -111,6 +113,27 @@ float ABattleGridDamageableTarget::TakeDamage(
 	if (!HealthComponent)
 	{
 		return AppliedDamage;
+	}
+
+	if (!bAllowDamageInServerMode)
+	{
+		if (ABattleGridClientPlayerController* BattleGridController =
+			FindBattleGridController(EventInstigator, DamageCauser))
+		{
+			if (BattleGridController->IsServerConnected() && BattleGridController->HasJoinedServer())
+			{
+				if (!bLoggedIgnoredServerModeDamage)
+				{
+					bLoggedIgnoredServerModeDamage = true;
+					UE_LOG(
+						LogTemp,
+						Log,
+						TEXT("[BattleGrid] Ignored local target damage in server-authoritative mode.")
+					);
+				}
+				return 0.0f;
+			}
+		}
 	}
 
 	HealthComponent->ApplyDamage(DamageAmount);

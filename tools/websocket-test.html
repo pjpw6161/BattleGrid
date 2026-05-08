@@ -71,6 +71,17 @@
       word-break: break-word;
     }
 
+    .debug-summary {
+      max-width: 1180px;
+      margin: 8px 0 16px;
+    }
+
+    .debug-summary summary {
+      cursor: pointer;
+      font-weight: 700;
+      color: #374151;
+    }
+
     pre {
       min-height: 280px;
       max-height: 520px;
@@ -143,13 +154,17 @@
     <div class="summary-card"><strong>Players</strong><span id="playersSummary">-</span></div>
     <div class="summary-card"><strong>Bots</strong><span id="botsSummary">-</span></div>
     <div class="summary-card"><strong>Bot Area</strong><span id="botAreaSummary">Click Send Debug Room</span></div>
-    <div class="summary-card"><strong>Targets Debug</strong><span id="targetsSummary">disabled</span></div>
     <div class="summary-card"><strong>Health Packs</strong><span id="healthPacksSummary">-</span></div>
     <div class="summary-card"><strong>Projectiles</strong><span id="projectilesSummary">-</span></div>
     <div class="summary-card"><strong>Shot Result</strong><span id="shotResultSummary">-</span></div>
     <div class="summary-card"><strong>Combat Tuning</strong><span id="combatTuningSummary">Click Send Debug Room</span></div>
     <div class="summary-card"><strong>Recent Kill Events</strong><span id="eventsSummary">-</span></div>
   </section>
+
+  <details class="debug-summary">
+    <summary>Legacy Target/Core Debug</summary>
+    <div class="summary-card"><strong>Targets Debug</strong><span id="targetsSummary">disabled</span></div>
+  </details>
 
   <pre id="log"></pre>
 
@@ -606,6 +621,33 @@
       );
     }
 
+    function buildLegacyTargetDebugSummary(snapshotTargets = []) {
+      const debugTargets = latestDebugRoom && Array.isArray(latestDebugRoom.targets_debug)
+        ? latestDebugRoom.targets_debug
+        : [];
+      const targets = debugTargets.length > 0 ? debugTargets : snapshotTargets;
+      const targetCount = latestDebugRoom && Number.isFinite(Number(latestDebugRoom.targets_debug_count))
+        ? Number(latestDebugRoom.targets_debug_count)
+        : targets.length;
+      const targetsEnabled = latestDebugRoom
+        ? latestDebugRoom.targets_enabled === true
+        : false;
+
+      if (targetCount <= 0 && targets.length <= 0) {
+        return targetsEnabled ? "legacy/debug enabled, no targets initialized" : "disabled";
+      }
+
+      const aliveTargets = targets.filter((target) => target.alive).length;
+      const targetSummary = targets
+        .slice(0, 8)
+        .map((target) => `T${target.target_id}:${target.alive ? target.hp + "/" + target.max_hp : "DEAD"}`)
+        .join(" ");
+      return (
+        `legacy/debug enabled=${targetsEnabled} count=${targetCount}` +
+        (targets.length > 0 ? ` alive=${aliveTargets}/${targets.length}\n${targetSummary || "-"}` : "")
+      );
+    }
+
     function summarizeScoreboard(scoreboard) {
       if (!Array.isArray(scoreboard) || scoreboard.length === 0) {
         return "-";
@@ -654,7 +696,7 @@
         setText("playersSummary", "-");
         setText("botsSummary", buildBotCombatStateSummary() || "-");
         setText("botAreaSummary", buildBotAreaSummary());
-        setText("targetsSummary", "disabled");
+        setText("targetsSummary", buildLegacyTargetDebugSummary());
         setText("healthPacksSummary", "-");
         setText("projectilesSummary", "-");
         setText("shotResultSummary", latestShotResultMessage);
@@ -698,14 +740,7 @@
       );
       setText("botAreaSummary", buildBotAreaSummary());
 
-      const aliveTargets = targets.filter((target) => target.alive).length;
-      const targetSummary = targets
-        .map((target) => `T${target.target_id}:${target.alive ? target.hp + "/" + target.max_hp : "DEAD"}`)
-        .join(" ");
-      setText(
-        "targetsSummary",
-        targets.length > 0 ? `legacy/debug ${aliveTargets}/${targets.length}\n${targetSummary || "-"}` : "disabled"
-      );
+      setText("targetsSummary", buildLegacyTargetDebugSummary(targets));
 
       const activeHealthPacks = healthPacks.filter((pack) => pack.active).length;
       const healthPackSummary = healthPacks
@@ -911,6 +946,7 @@
           );
           logArenaLayout(message);
           logEvents(message);
+          scheduleSummaryUpdate(true);
           break;
         case "error":
           log(`server error: ${message.message ?? rawData}`);

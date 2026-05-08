@@ -45,6 +45,9 @@ Use this checklist to run the current portfolio demo.
   - `bSendClientPositionToServer=true`.
   - `bSnapLocalPawnToServerOnJoin=true`.
   - `bSnapLocalPawnToServerOnRespawn=true`.
+  - `bRespectServerDeathState=true`.
+  - `bServerDeathLocksInput=true`.
+  - `bShowServerDeathStatus=true`.
   - `JoinSnapDelaySeconds=0.2`.
   - `NormalMoveSpeed=600`, `SprintMoveSpeed=850`, `ADSMoveSpeed=400`.
   - `bAutoCalibrateServerSnapshotOrigin=true`.
@@ -95,6 +98,7 @@ Use this checklist to run the current portfolio demo.
 - If humanoid assets are assigned, show the local player mesh and humanoid bot ghosts without changing the server gameplay explanation.
 - Show the crosshair tightening in ADS and widening during sprint/jump.
 - Shoot a bot in Unreal and show `SERVER HIT` or `SERVER MISS` in the HUD.
+- Optional danger pass: enable bot attacks on easy, let a bot kill the player, and verify `KILLED BY BOT-*`, `Respawn in Ns`, locked controls while dead, `INVINCIBLE Ns` after respawn, and HP restored.
 - Verify the normal gameplay HUD is clean:
   - HP and ammo are bottom center.
   - Top 5 ranking is top right.
@@ -143,32 +147,33 @@ Use this checklist to run the current portfolio demo.
 13. Show the local character and the server player ghost moving together.
 14. Fire with left mouse button and show the server tracer ghost plus `SERVER HIT` / `SERVER MISS`; the legacy local sphere projectile should not be visible while connected and joined.
 15. Confirm server target/core ghosts are hidden by default for the kill race demo.
-16. Hit a local target only after switching to offline/local test mode if you want to explain the legacy layer.
-17. Validate the dynamic crosshair:
+16. Confirm ranking updates only from bot/player kills. Target/core kills and `target_kills` are legacy/debug-only and should not affect the Top 5.
+17. Hit a local target only after switching to offline/local test mode if you want to explain the legacy layer; local `BP_BattleGridDamageableTarget` damage should be ignored during the connected server demo.
+18. Validate the dynamic crosshair:
    - idle hip fire: medium gap
    - hold RMB ADS: tight gap
    - hold Shift sprint: wider gap
    - jump/fall: widest gap
    - reload or server dead: dimmed/unavailable color if the optional Border widgets are present
-18. Hit a server bot and show the explicit server shot result:
+19. Hit a server bot and show the explicit server shot result:
    - Browser `Shot Result`: `SERVER HIT BOT-* -20`, `SERVER HEADSHOT BOT-* -40`, or `SERVER MISS`.
    - Unreal HUD hit marker text: `SERVER HIT ...` or `SERVER MISS` for about 1.25 seconds by default.
    - Server kills / HP changes in the HUD and browser summaries when the hit deals damage.
-19. Validate visual placeholder readability:
+20. Validate visual placeholder readability:
    - `SERVER ECHO` label is visible on the server player ghost.
    - `BOT-*` labels are visible and dead bots read as `DOWN`.
    - `HPACK-*` labels are visible and inactive packs show a countdown.
    - local objects and server ghost objects are visually distinguishable.
    - player-fired and bot-fired tracers are visually distinguishable if `PlayerProjectileMaterial` and `BotProjectileMaterial` are assigned
-20. Validate the arena layout: P1/P2/P3/P4 spawns sit on the four sides, bots spawn inside the smaller demo bot area, and health packs are near the perimeter.
-21. Verify the server combat event feed appears after a bot/player event and that shot results are distinct from local projectile overlap logs.
-22. Hold Tab and verify the server scoreboard overlay appears; release Tab and verify the normal HUD returns.
-23. Optional: enable bot attacks on easy to show server shooter danger after the stable shooting demo. Bots should fire low-accuracy hitscan shots rather than applying proximity damage.
-24. While moving on easy, verify the player can usually survive at least 15-30 seconds. If the player stands still in range, bots should still be able to kill the player and produce a `bot_killed_player` event.
-25. Walk into the hazard and show local HP decrease, death, and respawn only as an offline/local debug layer.
-26. Toggle `bShowLocalDebugHud` if you need to show local HP/score and position error during explanation.
-27. Toggle optional server position correction on/off if useful for the recording.
-28. Stop the server or switch back to the Local profile and show that offline gameplay still runs.
+21. Validate the arena layout: P1/P2/P3/P4 spawns sit on the four sides, bots spawn inside the smaller demo bot area, and health packs are near the perimeter.
+22. Verify the server combat event feed appears after a bot/player event and that shot results are distinct from local projectile overlap logs.
+23. Hold Tab and verify the server scoreboard overlay appears; release Tab and verify the normal HUD returns.
+24. Optional: enable bot attacks on easy to show server shooter danger after the stable shooting demo. Bots should fire low-accuracy hitscan shots rather than applying proximity damage.
+25. While moving on easy, verify the player can usually survive at least 15-30 seconds. If the player stands still in range, bots should still be able to kill the player and produce a `bot_killed_player` event.
+26. Walk into the hazard and show local HP decrease, death, and respawn only as an offline/local debug layer.
+27. Toggle `bShowLocalDebugHud` if you need to show local HP/score and position error during explanation.
+28. Toggle optional server position correction on/off if useful for the recording.
+29. Stop the server or switch back to the Local profile and show that offline gameplay still runs.
 
 ## Server Smoke Test
 
@@ -328,16 +333,19 @@ Use this checklist to run the current portfolio demo.
 31. Verify the top-right ranking updates after a bot kill and highlights the local player with `YOU`.
 32. Kill a bot and verify the kill log shows your kill in green.
 33. If useful, enable easy bot attacks and let a bot kill the player; verify the kill log shows that player death in red.
-34. Verify only the most recent 5 kill log lines remain visible.
-35. Aim at a bot body and verify `SERVER HIT BOT-* -20`.
-36. Aim at a bot head and verify `SERVER HEADSHOT BOT-* -40`; if needed, enable the bot ghost `BattleGrid|Debug > bShowServerHitVolumes` temporarily.
-37. Aim between two nearby bots and verify only the closest valid ray hit loses HP.
-38. If hit selection is unclear, temporarily enable PlayerController `BattleGrid|Debug > bShowServerShotDebug` and bot ghost `BattleGrid|Debug > bShowServerHitVolumes`, then compare the purple shot ray against the cyan/magenta server hit spheres.
-39. Validate polished server placeholder labels:
+34. Verify the center message shows `KILLED BY BOT-*` and `Respawn in Ns`.
+35. Verify movement, firing, ADS, sprint, jump, and reload are blocked while the server snapshot says the player is dead.
+36. Verify the center message changes to `INVINCIBLE Ns` after respawn and HP returns.
+37. Verify only the most recent 5 kill log lines remain visible.
+38. Aim at a bot body and verify `SERVER HIT BOT-* -20`.
+39. Aim at a bot head and verify `SERVER HEADSHOT BOT-* -40`; if needed, enable the bot ghost `BattleGrid|Debug > bShowServerHitVolumes` temporarily.
+40. Aim between two nearby bots and verify only the closest valid ray hit loses HP.
+41. If hit selection is unclear, temporarily enable PlayerController `BattleGrid|Debug > bShowServerShotDebug` and bot ghost `BattleGrid|Debug > bShowServerHitVolumes`, then compare the purple shot ray against the cyan/magenta server hit spheres.
+42. Validate polished server placeholder labels:
    - player ghost: `SERVER ECHO P#`
    - bot ghost: `BOT-# hp/max`, `BOT-# INV`, or `BOT-# DOWN`
    - health pack ghost: `HPACK-# +35` or `HPACK-# Ns`
-40. Optional humanoid visual checks:
+43. Optional humanoid visual checks:
    - player mesh aligns with the capsule
    - player mesh faces forward while moving
    - player simple Idle/Run/JumpStart/JumpLoop/JumpLand animations work if enabled
@@ -356,16 +364,16 @@ Use this checklist to run the current portfolio demo.
    - bot muzzle socket or fallback offset is plausible
    - `BOT-*` labels stay above the head and remain readable
    - no visible T-pose if an AnimBP is assigned
-41. Validate the server layout against the Unreal map:
+44. Validate the server layout against the Unreal map:
    - player ghosts remain inside the intended arena bounds
    - bot ghosts start inside the smaller demo bot area
    - when `bDrawServerBotAreaBounds=true`, the green bot-area rectangle surrounds the bot spawns and wander area
    - health pack ghosts appear near outer lanes
-42. Switch from local mode to remote mode and show the HUD profile label changing.
-43. Show server ghosts driven by the remote GCP server.
-44. Hold Tab and verify the detailed server scoreboard overlay appears. It should also show automatically when the server match is `game_over`.
-45. Toggle optional server position correction in the PlayerController Blueprint defaults if needed, then compare error behavior.
-46. Stop the server and verify local offline gameplay still works.
+45. Switch from local mode to remote mode and show the HUD profile label changing.
+46. Show server ghosts driven by the remote GCP server.
+47. Hold Tab and verify the detailed server scoreboard overlay appears. It should also show automatically when the server match is `game_over`.
+48. Toggle optional server position correction in the PlayerController Blueprint defaults if needed, then compare error behavior.
+49. Stop the server and verify local offline gameplay still works.
 
 ## Victory And Restart
 

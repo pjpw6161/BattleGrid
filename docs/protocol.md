@@ -513,16 +513,7 @@ When disabled, the match timer can reach zero without forcing `game_over`. The k
       "end_z": 100.0
     }
   ],
-  "targets": [
-    {
-      "target_id": 1,
-      "x": 600.0,
-      "y": 0.0,
-      "hp": 100,
-      "max_hp": 100,
-      "alive": true
-    }
-  ]
+  "targets": []
 }
 ```
 
@@ -678,7 +669,7 @@ Snapshots are broadcast to joined sessions at the configured tick rate.
       "end_z": 100.0
     }
   ],
-  "targets_debug": []
+  "targets": []
 }
 ```
 
@@ -689,8 +680,8 @@ Match fields:
 - `duration`: configured match duration in seconds.
 - `target_score`: kill goal needed for immediate win.
 - `game_over`: true after score or timer win condition is reached.
-- `winner_player_id`: server player ID of the winner, or `0` while in progress.
-- `winner_nickname`: winner display name, or empty while in progress.
+- `winner_player_id`: server player ID of the winner, or `0` while in progress or when a timer-ended match has no kill winner.
+- `winner_nickname`: winner display name, or empty while in progress or when there is no winner.
 - `match_id`: process-local match counter.
 
 Scoreboard fields:
@@ -734,11 +725,11 @@ Current event types:
 
 - `shot_hit_bot`
 - `shot_hit_player`
-- `shot_hit_target` legacy/debug only while targets are disabled
+- `shot_hit_target` legacy/debug only; not emitted in normal gameplay while `targets_enabled=false`
 - `shot_miss`
 - `bot_shot_hit_player`
 - `bot_shot_miss` optional/verbose; suppressed by default to avoid miss-event spam
-- `target_destroyed`
+- `target_destroyed` legacy/debug only; not emitted in normal gameplay while `targets_enabled=false`
 - `bot_killed`
 - `player_killed`
 - `bot_killed_player`

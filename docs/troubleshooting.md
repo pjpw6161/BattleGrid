@@ -377,6 +377,23 @@ In connected PvPvE server mode, the server tracer is the primary visual. The act
 
 With those defaults, the old sphere bullet is not spawned while connected and joined, so it cannot visually disagree with the server tracer or damage local test targets during a server demo. If you intentionally enable `bSpawnLegacyLocalProjectileWhenConnected` for debugging, keep `bAllowLegacyLocalProjectileDamageWhenConnected=false` unless you specifically want to test the old local damage layer.
 
+## Local Projectile Damages BP_BattleGridDamageableTarget In Server Mode
+
+`BP_BattleGridDamageableTarget` is an offline/debug target actor. It should not contribute to the connected PvPvE demo.
+
+Check:
+
+- Active PlayerController has `bUseServerAuthoritativeFireVisuals=true`.
+- Active PlayerController has `bSpawnLegacyLocalProjectileWhenConnected=false`.
+- Active PlayerController has `bAllowLegacyLocalProjectileDamageWhenConnected=false`.
+- The target actor has `bAllowDamageInServerMode=false`.
+
+Expected behavior:
+
+- While connected and joined, the legacy sphere projectile is not spawned by default.
+- If a legacy projectile exists for debugging, local damageable targets ignore damage unless the target is explicitly allowed to take server-mode damage.
+- Server combat should be verified through `SERVER HIT`, `SERVER HEADSHOT`, bot/player HP changes, ranking, and kill feed events.
+
 ## Local Player And SERVER ECHO Drift Apart
 
 The local pawn uses Unreal movement and collision. The server does not know the Unreal map collision, so pure input simulation can let `SERVER ECHO` continue through a wall after the local pawn has stopped. For the current prototype/demo, the Unreal client can send its local pawn position to the server so `PlayerState` follows the actual visible character.
@@ -885,6 +902,37 @@ This is expected during the transition from local prototype gameplay to server-a
 
 If the server says the player is dead, local movement/fire can be locked even if the local pawn still appears alive. Use `Apply Safe Demo Mode` if the server state needs to be reset for testing.
 
+## I Die But No Respawn Message Appears
+
+The center death/respawn message uses the existing `CombatMessageText` binding.
+
+Check:
+
+- The active combat HUD widget has a TextBlock named `CombatMessageText`.
+- `CombatMessageText` has `Is Variable` enabled.
+- The active PlayerController has `BattleGrid|Server State > bShowServerDeathStatus=true`.
+- The own player snapshot includes `alive=false`, `respawn_timer`, `invincible`, and `invincible_timer`.
+- `BattleGrid|HUD > bUseGameplayHudLayout=true` is okay; C++ makes `CombatMessageText` visible whenever it has death, respawn, invincibility, or shot-result text.
+
+Expected center messages:
+
+- `KILLED BY BOT-*`
+- `Respawn in Ns`
+- `INVINCIBLE Ns`
+
+## I Can Move While Dead
+
+Server death input lock is controlled by the active PlayerController.
+
+Check:
+
+- `BattleGrid|Server State > bRespectServerDeathState=true`.
+- `BattleGrid|Server State > bServerDeathLocksInput=true`.
+- `debug_room` or the browser snapshot shows the own player as `alive=false`.
+- The active Blueprint is using the rebuilt C++ PlayerController class.
+
+When the server marks the player dead, movement, fire, ADS, sprint, jump, and reload input should be cleared or ignored until the server snapshot returns to `alive=true`.
+
 ## Why SERVER HUD Is Primary
 
 The PvPvE demo is meant to show server-authoritative match state. The server owns player HP, deaths, respawn timers, kills, bot/health-pack state, match timer, scoreboard, and combat events.
@@ -895,7 +943,7 @@ The gameplay HUD therefore shows server state first:
 - Top 5 ranking in the top-right HUD area.
 - Kill feed on the left side.
 - Match/server status in small status text.
-- Temporary server shot results such as `SERVER HIT BOT-3 -20` in the message area.
+- Temporary death/respawn, invincibility, and server shot results such as `SERVER HIT BOT-3 -20` in the message area.
 
 Local HP/score remains available for offline debugging, but it should not be used to explain server bot damage, match scoring, or winner state.
 
@@ -980,13 +1028,13 @@ Check:
 - `debug_room` includes `targets_enabled=false` and `targets_debug_count`.
 - The running server process is the rebuilt executable, not an old process.
 
-Expected snapshot field:
+Expected normal snapshot field:
 
 ```json
-"targets": [
-  { "target_id": 1, "x": 600.0, "y": 0.0, "hp": 100, "max_hp": 100, "alive": true }
-]
+"targets": []
 ```
+
+Use `debug_room.targets_debug` when intentionally inspecting the legacy target/core system.
 
 ## `server/build` Should Not Be Committed
 

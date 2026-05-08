@@ -478,6 +478,7 @@ public:
 	void GetRecentCombatEvents(TArray<FBattleGridServerCombatEvent>& OutEvents) const;
 	FString GetCombatEventFeedText() const;
 	void GetKillFeedLines(TArray<FBattleGridKillFeedLine>& OutLines) const;
+	FString GetLastDeathCauseText() const;
 	FString GetLastShotResultMessage() const;
 	bool HasRecentShotResult() const;
 	bool GetOwnPlayerSnapshot(FBattleGridServerPlayerSnapshot& OutSnapshot) const;

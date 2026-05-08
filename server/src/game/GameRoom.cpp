@@ -1225,6 +1225,7 @@ nlohmann::json GameRoom::ToDebugJson() const
     json["bot_kill_score"] = BotKillScore;
     json["player_kill_score"] = PlayerKillScore;
     json["target_kill_score"] = TargetKillScore;
+    json["legacy_target_kill_score"] = TargetKillScore;
     json["walk_speed"] = WalkSpeed;
     json["sprint_speed"] = SprintSpeed;
     json["ads_walk_speed"] = AdsWalkSpeed;
@@ -2605,9 +2606,25 @@ nlohmann::json GameRoom::BuildEventsJson() const
 
 void GameRoom::CheckMatchEndCondition()
 {
-    if (matchState.IsGameOver() && matchState.winnerPlayerId != 0)
+    if (matchState.IsGameOver())
     {
-        return;
+        if (matchState.winnerPlayerId != 0)
+        {
+            return;
+        }
+
+        const bool bNoWinnerEventAlreadyAdded = std::any_of(
+            recentEvents.begin(),
+            recentEvents.end(),
+            [](const CombatEvent& event)
+            {
+                return event.type == "match_ended" && event.actorPlayerId == 0;
+            }
+        );
+        if (bNoWinnerEventAlreadyAdded)
+        {
+            return;
+        }
     }
 
     bool bShouldEndMatch = matchState.IsGameOver();
@@ -2648,8 +2665,10 @@ void GameRoom::CheckMatchEndCondition()
 
     CombatEvent event;
     event.type = "match_ended";
-    event.message = "Match ended. Winner: "
-        + (winnerNickname.empty() ? std::string("P") + std::to_string(winnerPlayerId) : winnerNickname);
+    event.message = winnerPlayerId == 0 || winnerScore <= 0
+        ? "Match ended. No winner"
+        : "Match ended. Winner: "
+            + (winnerNickname.empty() ? std::string("P") + std::to_string(winnerPlayerId) : winnerNickname);
     event.actorPlayerId = winnerPlayerId;
     AddCombatEvent(event);
 }
@@ -2708,7 +2727,9 @@ std::uint64_t GameRoom::DetermineWinnerPlayerId() const
         }
     }
 
-    return bestPlayerId;
+    return bestPlayer && CalculateKillRaceScore(*bestPlayer) > 0
+        ? bestPlayerId
+        : 0;
 }
 
 nlohmann::json GameRoom::BuildScoreboardJson() const
@@ -3067,7 +3088,7 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         );
     }
 
-    if (selectedHit.targetType == "target")
+    if (bTargetsEnabled && selectedHit.targetType == "target")
     {
         const auto target = targets.find(selectedHit.targetId);
         if (target == targets.end())

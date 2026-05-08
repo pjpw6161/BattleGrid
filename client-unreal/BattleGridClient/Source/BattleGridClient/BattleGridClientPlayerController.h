@@ -91,7 +91,9 @@ public:
 	bool IsServerInvincible() const;
 	float GetLastServerRespawnTimer() const;
 	float GetLastServerInvincibleTimer() const;
+	FString GetLastDeathCauseText() const;
 	FString GetServerLifeStateText() const;
+	FString GetServerDeathRespawnHudText() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Input")
 	TObjectPtr<UInputMappingContext> BattleGridMappingContext;
@@ -555,6 +557,8 @@ private:
 	bool bWasServerAlive;
 	bool bIsServerDead;
 	bool bWasServerInvincible;
+	bool bLoggedServerFireModeLegacyProjectileDisabled;
+	FString LastServerDeathCauseText;
 	float LastServerRespawnTimer;
 	float LastServerInvincibleTimer;
 };

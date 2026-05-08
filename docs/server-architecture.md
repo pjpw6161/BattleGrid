@@ -256,6 +256,8 @@ Winner selection:
 4. Fewer deaths.
 5. Lower player ID.
 
+If a timer-ended match has no connected player with any kill score, the server ends with `winner_player_id=0` and emits `Match ended. No winner` instead of inventing a winner from a zero-score scoreboard.
+
 Snapshots include a `match` object and a sorted `scoreboard` array. The scoreboard is sorted by the same tie breaker rules, so clients can show a concise top-player list without recomputing rank order.
 
 `debug_restart_match` is available for browser and demo testing. It resets match state, player scores and combat counters, projectiles, legacy targets, bots, and health packs, then increments `matchId`. It is not a production rematch/lobby system.
@@ -361,6 +363,8 @@ Snapshots include:
 - health_packs
 - projectiles
 - targets as an empty legacy/debug array by default
+
+Unreal-placed local damageable targets and legacy local sphere projectile damage are offline/debug systems. They are not part of the connected PvPvE server loop; server snapshots, server tracers, and server shot result events are the authoritative combat surface.
 
 Only joined sessions receive snapshots. `WebSocketServer` keeps weak pointers to active sessions, removes expired sessions, and broadcasts the same compact JSON string to each joined session.
 

@@ -162,7 +162,7 @@ void ABattleGridHUD::Tick(float DeltaSeconds)
 		BattleGridController->GetCombatMessage(),
 		BattleGridController->HasActiveCombatMessage(),
 		BattleGridController->HasWon(),
-		BattleGridController->GetServerLifeStateText(),
+		BattleGridController->GetServerDeathRespawnHudText(),
 		BattleGridController->IsServerDead(),
 		BattleGridController->GetServerPrimaryHudText(),
 		BattleGridController->GetLastServerPositionError(),
@@ -327,12 +327,15 @@ void ABattleGridHUD::DrawHUD()
 	}
 	else if (
 		BattleGridController->IsServerDead()
+		|| BattleGridController->IsServerInvincible()
 		|| BattleGridController->HasActiveCombatMessage()
 		|| BattleGridController->HasWon()
 	)
 	{
-		const FString CombatDisplayMessage = BattleGridController->IsServerDead()
-			? BattleGridController->GetServerLifeStateText()
+		const FString ServerDeathRespawnText =
+			BattleGridController->GetServerDeathRespawnHudText();
+		const FString CombatDisplayMessage = !ServerDeathRespawnText.IsEmpty()
+			? ServerDeathRespawnText
 			: (BattleGridController->HasWon()
 			? FString(TEXT("Victory! Press F5/Enter to Restart"))
 			: BattleGridController->GetCombatMessage());

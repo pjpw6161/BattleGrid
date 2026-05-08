@@ -1190,6 +1190,65 @@ void UBattleGridNetworkSubsystem::GetKillFeedLines(TArray<FBattleGridKillFeedLin
 	}
 }
 
+FString UBattleGridNetworkSubsystem::GetLastDeathCauseText() const
+{
+	auto GetPlayerDisplayName = [this](int32 InPlayerId) -> FString
+	{
+		if (const FBattleGridServerPlayerSnapshot* PlayerSnapshot =
+			LatestPlayerSnapshots.Find(InPlayerId))
+		{
+			if (!PlayerSnapshot->Nickname.IsEmpty())
+			{
+				return PlayerSnapshot->Nickname;
+			}
+		}
+
+		for (const FBattleGridServerScoreboardEntry& Entry : LatestScoreboard)
+		{
+			if (Entry.PlayerId == InPlayerId && !Entry.Nickname.IsEmpty())
+			{
+				return Entry.Nickname;
+			}
+		}
+
+		if (InPlayerId == PlayerId && !Nickname.IsEmpty())
+		{
+			return Nickname;
+		}
+
+		return InPlayerId > 0
+			? FString::Printf(TEXT("P%d"), InPlayerId)
+			: FString(TEXT("unknown"));
+	};
+
+	for (int32 Index = RecentCombatEvents.Num() - 1; Index >= 0; --Index)
+	{
+		const FBattleGridServerCombatEvent& Event = RecentCombatEvents[Index];
+		if (Event.TargetPlayerId != PlayerId)
+		{
+			continue;
+		}
+
+		if (Event.Type == TEXT("bot_killed_player"))
+		{
+			const FString BotLabel = Event.BotId > 0
+				? FString::Printf(TEXT("BOT-%d"), Event.BotId)
+				: FString(TEXT("BOT"));
+			return FString::Printf(TEXT("KILLED BY %s"), *BotLabel);
+		}
+
+		if (Event.Type == TEXT("player_killed"))
+		{
+			return FString::Printf(
+				TEXT("KILLED BY %s"),
+				*GetPlayerDisplayName(Event.ActorPlayerId)
+			);
+		}
+	}
+
+	return TEXT("YOU DIED");
+}
+
 FString UBattleGridNetworkSubsystem::GetLastShotResultMessage() const
 {
 	return HasRecentShotResult() ? LastShotResultMessage : FString();

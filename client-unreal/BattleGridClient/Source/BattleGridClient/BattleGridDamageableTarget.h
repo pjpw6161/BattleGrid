@@ -28,6 +28,9 @@ public:
 	) override;
 
 private:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BattleGrid|Target", meta = (AllowPrivateAccess = "true"))
+	bool bAllowDamageInServerMode;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Target", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UBoxComponent> CollisionComponent;
 
@@ -36,4 +39,6 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BattleGrid|Target", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UBattleGridHealthComponent> HealthComponent;
+
+	bool bLoggedIgnoredServerModeDamage;
 };

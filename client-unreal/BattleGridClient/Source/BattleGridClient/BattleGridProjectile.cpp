@@ -108,13 +108,24 @@ void ABattleGridProjectile::OnHit(
 		);
 	}
 
-	UE_LOG(
-		LogTemp,
-		Log,
-		TEXT("[BattleGrid] Projectile hit: %s damage_enabled=%s"),
-		*GetNameSafe(OtherActor),
-		bDamageEnabled ? TEXT("true") : TEXT("false")
-	);
+	if (bDamageEnabled)
+	{
+		UE_LOG(
+			LogTemp,
+			Log,
+			TEXT("[BattleGrid] Legacy local projectile hit: %s"),
+			*GetNameSafe(OtherActor)
+		);
+	}
+	else
+	{
+		UE_LOG(
+			LogTemp,
+			Verbose,
+			TEXT("[BattleGrid] Legacy local projectile hit ignored in server-authoritative mode: %s"),
+			*GetNameSafe(OtherActor)
+		);
+	}
 
 	Destroy();
 }

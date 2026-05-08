@@ -181,6 +181,8 @@ ABattleGridClientPlayerController::ABattleGridClientPlayerController()
 	bWasServerAlive = true;
 	bIsServerDead = false;
 	bWasServerInvincible = false;
+	bLoggedServerFireModeLegacyProjectileDisabled = false;
+	LastServerDeathCauseText.Empty();
 	LastServerRespawnTimer = 0.0f;
 	LastServerInvincibleTimer = 0.0f;
 }
@@ -1109,6 +1111,20 @@ float ABattleGridClientPlayerController::GetLastServerInvincibleTimer() const
 	return LastServerInvincibleTimer;
 }
 
+FString ABattleGridClientPlayerController::GetLastDeathCauseText() const
+{
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UBattleGridNetworkSubsystem* NetworkSubsystem =
+			GameInstance->GetSubsystem<UBattleGridNetworkSubsystem>())
+		{
+			return NetworkSubsystem->GetLastDeathCauseText();
+		}
+	}
+
+	return TEXT("YOU DIED");
+}
+
 FString ABattleGridClientPlayerController::GetServerLifeStateText() const
 {
 	if (!bShowServerDeathStatus)
@@ -1143,6 +1159,41 @@ FString ABattleGridClientPlayerController::GetServerLifeStateText() const
 	}
 
 	return TEXT("Server Life: Alive");
+}
+
+FString ABattleGridClientPlayerController::GetServerDeathRespawnHudText() const
+{
+	if (!bShowServerDeathStatus || !bRespectServerDeathState)
+	{
+		return FString();
+	}
+
+	if (!IsServerConnected() || !HasJoinedServer())
+	{
+		return FString();
+	}
+
+	if (IsServerDead())
+	{
+		const FString DeathCauseText = LastServerDeathCauseText.IsEmpty()
+			? GetLastDeathCauseText()
+			: LastServerDeathCauseText;
+		return FString::Printf(
+			TEXT("%s\nRespawn in %.1fs"),
+			*DeathCauseText,
+			LastServerRespawnTimer
+		);
+	}
+
+	if (IsServerInvincible() && LastServerInvincibleTimer > 0.0f)
+	{
+		return FString::Printf(
+			TEXT("INVINCIBLE %.1fs"),
+			LastServerInvincibleTimer
+		);
+	}
+
+	return FString();
 }
 
 void ABattleGridClientPlayerController::BeginPlay()
@@ -1916,7 +1967,15 @@ void ABattleGridClientPlayerController::TryFireWeapon()
 	}
 	else if (bServerFireMode)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Server fire mode: skipped legacy local projectile."));
+		if (!bLoggedServerFireModeLegacyProjectileDisabled)
+		{
+			bLoggedServerFireModeLegacyProjectileDisabled = true;
+			UE_LOG(
+				LogTemp,
+				Log,
+				TEXT("[BattleGrid] Server-authoritative fire mode active; legacy local projectile disabled.")
+			);
+		}
 	}
 
 	if (bShouldSpawnLegacyLocalProjectile && !bLegacyLocalProjectileSpawned && !bServerFireMode)
@@ -4085,6 +4144,7 @@ void ABattleGridClientPlayerController::UpdateServerLifeStateFromSnapshot(float 
 		bIsServerDead = false;
 		bWasServerAlive = true;
 		bWasServerInvincible = false;
+		LastServerDeathCauseText.Empty();
 		LastServerRespawnTimer = 0.0f;
 		LastServerInvincibleTimer = 0.0f;
 		return;
@@ -4108,6 +4168,7 @@ void ABattleGridClientPlayerController::UpdateServerLifeStateFromSnapshot(float 
 		bIsServerDead = false;
 		bWasServerAlive = true;
 		bWasServerInvincible = false;
+		LastServerDeathCauseText.Empty();
 		LastServerRespawnTimer = 0.0f;
 		LastServerInvincibleTimer = 0.0f;
 		return;
@@ -4131,10 +4192,12 @@ void ABattleGridClientPlayerController::UpdateServerLifeStateFromSnapshot(float 
 
 	if (!bWasDeadBeforeUpdate && bIsServerDead)
 	{
+		LastServerDeathCauseText = GetLastDeathCauseText();
 		UE_LOG(
 			LogTemp,
 			Log,
-			TEXT("[BattleGrid] Server says player died. RespawnTimer=%.1f"),
+			TEXT("[BattleGrid] Server says player died. Cause=%s RespawnTimer=%.1f"),
+			*LastServerDeathCauseText,
 			LastServerRespawnTimer
 		);
 
@@ -4159,12 +4222,21 @@ void ABattleGridClientPlayerController::UpdateServerLifeStateFromSnapshot(float 
 	}
 	else if (bWasDeadBeforeUpdate && !bIsServerDead)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Server says player respawned."));
+		UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Server respawned local player."));
 
 		if (bSnapLocalPawnToServerOnRespawn || bSnapLocalPawnOnServerRespawn)
 		{
 			SnapLocalPawnToOwnServerSnapshot(TEXT("server respawn"));
 			UE_LOG(LogTemp, Log, TEXT("[BattleGrid] Snapped local pawn to server respawn."));
+		}
+
+		if (ACharacter* ControlledCharacter = Cast<ACharacter>(ControlledPawn))
+		{
+			if (UCharacterMovementComponent* MovementComponent =
+				ControlledCharacter->GetCharacterMovement())
+			{
+				MovementComponent->StopMovementImmediately();
+			}
 		}
 
 		CurrentMoveForward = 0.0f;
