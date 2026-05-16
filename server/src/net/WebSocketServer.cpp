@@ -203,21 +203,80 @@ void WebSocketServer::HandleGameTick(const boost::system::error_code& error)
     const double deltaSeconds = std::chrono::duration<double>(tickInterval).count();
     roomManager->TickAll(deltaSeconds, tickNumber);
 
-    const nlohmann::json snapshotJson =
-        roomManager->BuildDefaultRoomSnapshotJson(tickNumber);
-    BroadcastSnapshot(snapshotJson.dump());
+    BroadcastTickMessages();
 
     if (tickNumber % 30 == 0)
     {
-        Logger::Info(
-            "Snapshot tick=" + std::to_string(tickNumber)
-            + " players=" + std::to_string(snapshotJson["players"].size())
-        );
+        Logger::Info("Snapshot tick=" + std::to_string(tickNumber));
     }
 
     if (acceptor.is_open())
     {
         StartGameTickTimer();
+    }
+}
+
+void WebSocketServer::BroadcastTickMessages()
+{
+    std::lock_guard lock(sessionsMutex);
+
+    auto iterator = sessions.begin();
+    while (iterator != sessions.end())
+    {
+        if (std::shared_ptr<Session> session = iterator->lock())
+        {
+            if (session->IsJoined())
+            {
+                const std::uint64_t roomId = session->GetRoomId();
+                const nlohmann::json roomStateJson = roomManager->BuildRoomStateJson(roomId);
+                const std::string roomState = roomStateJson.value(
+                    "state",
+                    std::string("waiting")
+                );
+                if (roomState != "waiting")
+                {
+                    const nlohmann::json snapshotJson =
+                        roomManager->BuildRoomSnapshotJson(roomId, tickNumber);
+                    if (!snapshotJson.empty())
+                    {
+                        session->SendText(snapshotJson.dump());
+                    }
+                    if (
+                        roomState == "match_ending"
+                        && snapshotJson.contains("match")
+                        && snapshotJson["match"].is_object()
+                    )
+                    {
+                        const nlohmann::json& matchJson = snapshotJson["match"];
+                        const int matchId = matchJson.value("match_id", 0);
+                        if (session->MarkMatchEndedSent(matchId))
+                        {
+                            nlohmann::json matchEndedJson;
+                            matchEndedJson["type"] = "match_ended";
+                            matchEndedJson["winner_player_id"] =
+                                matchJson.value("winner_player_id", 0);
+                            matchEndedJson["winner_nickname"] =
+                                matchJson.value("winner_nickname", std::string());
+                            matchEndedJson["score"] =
+                                matchJson.value("winner_score", 0);
+                            matchEndedJson["return_to_room_seconds"] = 5;
+                            session->SendText(matchEndedJson.dump());
+                        }
+                    }
+                }
+
+                if (tickNumber % 10 == 0)
+                {
+                    session->SendText(roomStateJson.dump());
+                }
+            }
+
+            ++iterator;
+        }
+        else
+        {
+            iterator = sessions.erase(iterator);
+        }
     }
 }
 

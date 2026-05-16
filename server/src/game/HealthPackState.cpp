@@ -13,11 +13,11 @@ void HealthPackState::Deactivate()
     respawnTimerSeconds = respawnDelaySeconds;
 }
 
-void HealthPackState::Respawn(double newX, double newY)
+void HealthPackState::Respawn(double newX, double newY, double newZ)
 {
     x = newX;
     y = newY;
-    z = 0.0;
+    z = newZ;
     active = true;
     respawnTimerSeconds = 0.0;
 }

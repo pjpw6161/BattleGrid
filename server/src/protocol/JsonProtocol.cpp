@@ -98,11 +98,54 @@ std::string JsonProtocol::RoomState(const nlohmann::json& roomState)
         "bot_difficulty",
         std::string("normal")
     );
-    response["bot_attack_damage"] = roomState.value("bot_attack_damage", 20);
-    response["bot_attack_cooldown"] = roomState.value("bot_attack_cooldown", 1.0);
-    response["bot_detect_range"] = roomState.value("bot_detect_range", 1500.0);
-    response["bot_attack_range"] = roomState.value("bot_attack_range", 900.0);
+    response["bot_attack_damage"] = roomState.value("bot_attack_damage", 4);
+    response["bot_headshot_damage"] = roomState.value("bot_headshot_damage", 8);
+    response["bot_attack_cooldown"] = roomState.value("bot_attack_cooldown", 0.5);
+    response["bot_config"] = roomState.value(
+        "bot_config",
+        nlohmann::json{
+            {"damage", 4},
+            {"head", 8},
+            {"cooldown", 0.5},
+        }
+    );
+    response["bot_body_hitbox_scale"] = roomState.value("bot_body_hitbox_scale", 0.64);
+    response["bot_head_hitbox_scale"] = roomState.value("bot_head_hitbox_scale", 0.64);
+    response["player_body_hitbox_scale"] =
+        roomState.value("player_body_hitbox_scale", 0.64);
+    response["player_headshot_hitbox_scale"] =
+        roomState.value("player_headshot_hitbox_scale", 0.64);
+    response["hitbox_config"] = roomState.value(
+        "hitbox_config",
+        nlohmann::json{
+            {"bot_body_scale", 0.64},
+            {"bot_head_scale", 0.64},
+            {"player_body_scale", 0.64},
+            {"player_head_scale", 0.64},
+        }
+    );
+    response["bot_hitbox"] = roomState.value("bot_hitbox", nlohmann::json::object());
+    response["player_hitbox"] = roomState.value("player_hitbox", nlohmann::json::object());
+    response["bot_detect_range"] = roomState.value("bot_detect_range", 1000.0);
+    response["bot_attack_range"] = roomState.value("bot_attack_range", 950.0);
     response["bot_move_speed"] = roomState.value("bot_move_speed", 500.0);
+    response["bot_fire_interval"] = roomState.value("bot_fire_interval", 0.5);
+    response["bot_fire_chance"] = roomState.value("bot_fire_chance", 0.55);
+    response["bot_aim_spread"] = roomState.value("bot_aim_spread", 12.0);
+    response["max_bots_targeting_one_player"] =
+        roomState.value("max_bots_targeting_one_player", 4);
+    response["max_bots_shooting_one_player"] =
+        roomState.value("max_bots_shooting_one_player", 2);
+    response["bot_wander_radius"] = roomState.value("bot_wander_radius", 350.0);
+    response["bot_wander_step_min"] = roomState.value("bot_wander_step_min", 120.0);
+    response["bot_wander_step_max"] = roomState.value("bot_wander_step_max", 350.0);
+    response["bot_wander_wait_min"] = roomState.value("bot_wander_wait_min", 0.6);
+    response["bot_wander_wait_max"] = roomState.value("bot_wander_wait_max", 1.8);
+    response["bot_repath_interval"] = roomState.value("bot_repath_interval", 0.8);
+    response["use_client_hit_claims_for_bots"] =
+        roomState.value("use_client_hit_claims_for_bots", true);
+    response["use_client_hit_claims_for_players"] =
+        roomState.value("use_client_hit_claims_for_players", true);
     response["auto_end_match_by_timer"] = roomState.value("auto_end_match_by_timer", true);
     response["health_pack_count"] = roomState.value("health_pack_count", 0);
     response["active_health_pack_count"] = roomState.value("active_health_pack_count", 0);

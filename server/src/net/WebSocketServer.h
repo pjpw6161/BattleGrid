@@ -40,6 +40,7 @@ private:
     void StartGameTickTimer();
     void HandleGameTick(const boost::system::error_code& error);
     void BroadcastSnapshot(const std::string& snapshot);
+    void BroadcastTickMessages();
 
     ServerConfig config;
     boost::asio::io_context ioContext;

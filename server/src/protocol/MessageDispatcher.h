@@ -9,6 +9,7 @@
 
 namespace battlegrid
 {
+class GameRoom;
 class RoomManager;
 
 struct SessionState
@@ -32,15 +33,27 @@ public:
 
 private:
     std::string DispatchParsedMessage(const nlohmann::json& message);
+    std::string HandleSetNickname(const nlohmann::json& message);
+    std::string HandleListRooms();
+    std::string HandleCreateRoom();
+    std::string HandleJoinRoom(const nlohmann::json& message);
+    std::string HandleLeaveRoom(bool bLeaveToLobby);
+    std::string HandleSetReady(const nlohmann::json& message);
+    std::string HandleStartMatch();
     std::string HandleJoin(const nlohmann::json& message);
     std::string HandleInput(const nlohmann::json& message);
+    std::string HandleClientHitClaim(const nlohmann::json& message);
     std::string HandleDebugRoom();
     std::string HandleDebugRestartMatch();
     std::string HandleDebugApplyDemoMode();
     std::string HandleDebugApplyDemoPreset(const nlohmann::json& message);
+    std::string HandleDebugSetMapMarkers(const nlohmann::json& message);
     std::string HandleDebugSetBotAttacks(const nlohmann::json& message);
     std::string HandleDebugSetBotDifficulty(const nlohmann::json& message);
+    std::string HandleDebugSetBotConfig(const nlohmann::json& message);
+    std::string HandleDebugSetHitboxConfig(const nlohmann::json& message);
     std::string HandleDebugSetMatchTimer(const nlohmann::json& message);
+    std::shared_ptr<GameRoom> GetActiveRoomOrDefault() const;
 
     SessionState& sessionState;
     std::shared_ptr<RoomManager> roomManager;

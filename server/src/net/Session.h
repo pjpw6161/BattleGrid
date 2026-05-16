@@ -31,6 +31,9 @@ public:
     void Start();
     void SendText(const std::string& message);
     bool IsJoined() const;
+    std::uint64_t GetPlayerId() const;
+    std::uint64_t GetRoomId() const;
+    bool MarkMatchEndedSent(int matchId);
 
 private:
     void OnAccept(const boost::system::error_code& error);
@@ -48,5 +51,6 @@ private:
     std::shared_ptr<RoomManager> roomManager;
     std::function<std::uint64_t()> allocatePlayerId;
     std::deque<std::string> outgoingMessages;
+    int lastMatchEndedMatchIdSent;
 };
 }

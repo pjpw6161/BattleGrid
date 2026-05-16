@@ -14,6 +14,7 @@ PlayerState::PlayerState(
       nickname(std::move(inNickname)),
       latestInput(),
       connected(true),
+      ready(false),
       alive(true),
       invincible(false),
       x(static_cast<double>(inPlayerId) * 100.0),
@@ -35,7 +36,10 @@ PlayerState::PlayerState(
       headRadius(35.0),
       bodyHeight(90.0),
       headHeight(160.0),
-      lastProcessedFireSeq(0)
+      lastProcessedFireSeq(0),
+      lastProcessedClientHitClaimShotId(0),
+      lastClientHitClaimTimeSeconds(-1000.0),
+      scoreReachedTimeSeconds(0.0)
 {
 }
 }

@@ -29,5 +29,11 @@ struct PlayerInput
     double clientX = 0.0;
     double clientY = 0.0;
     double clientZ = 0.0;
+    bool hasClientWorldPosition = false;
+    double clientWorldX = 0.0;
+    double clientWorldY = 0.0;
+    double clientWorldZ = 0.0;
+    bool hasClientYaw = false;
+    double clientYaw = 0.0;
 };
 }

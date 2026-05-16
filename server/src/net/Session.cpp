@@ -37,7 +37,8 @@ Session::Session(
       sessionState(),
       roomManager(std::move(inRoomManager)),
       allocatePlayerId(std::move(inAllocatePlayerId)),
-      outgoingMessages()
+      outgoingMessages(),
+      lastMatchEndedMatchIdSent(0)
 {
     boost::system::error_code error;
     const tcp::endpoint endpoint = webSocket.next_layer().remote_endpoint(error);
@@ -102,6 +103,27 @@ void Session::SendText(const std::string& message)
 bool Session::IsJoined() const
 {
     return sessionState.joined;
+}
+
+std::uint64_t Session::GetPlayerId() const
+{
+    return sessionState.playerId;
+}
+
+std::uint64_t Session::GetRoomId() const
+{
+    return sessionState.roomId;
+}
+
+bool Session::MarkMatchEndedSent(int matchId)
+{
+    if (matchId <= 0 || lastMatchEndedMatchIdSent == matchId)
+    {
+        return false;
+    }
+
+    lastMatchEndedMatchIdSent = matchId;
+    return true;
 }
 
 void Session::Read()
@@ -197,17 +219,18 @@ void Session::OnWrite(
 
 void Session::HandleDisconnect()
 {
-    if (!sessionState.joined)
+    if (sessionState.playerId == 0)
     {
         return;
     }
 
     if (roomManager)
     {
-        if (std::shared_ptr<GameRoom> room = roomManager->GetDefaultRoom())
+        if (sessionState.joined && sessionState.roomId != 0)
         {
-            room->RemovePlayer(sessionState.playerId);
+            roomManager->RemovePlayerFromRoom(sessionState.playerId, sessionState.roomId);
         }
+        roomManager->UnregisterPlayer(sessionState.playerId);
     }
 
     Logger::Info(

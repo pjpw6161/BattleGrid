@@ -46,11 +46,11 @@ void BotState::Kill()
     currentShootersForTarget = 0;
 }
 
-void BotState::Respawn(double newX, double newY)
+void BotState::Respawn(double newX, double newY, double newZ)
 {
     x = newX;
     y = newY;
-    z = 0.0;
+    z = newZ;
     hp = maxHp;
     alive = true;
     invincible = true;

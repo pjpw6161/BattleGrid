@@ -18,6 +18,6 @@ struct HealthPackState
 
     bool IsActive() const;
     void Deactivate();
-    void Respawn(double newX, double newY);
+    void Respawn(double newX, double newY, double newZ = 0.0);
 };
 }

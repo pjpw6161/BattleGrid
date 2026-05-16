@@ -17,11 +17,13 @@ struct PlayerState
     std::string nickname;
     PlayerInput latestInput;
     bool connected = true;
+    bool ready = false;
     bool alive = true;
     bool invincible = false;
     double x = 0.0;
     double y = 0.0;
     double z = 0.0;
+    double yaw = 0.0;
     double speed = 600.0;
     int maxHp = 100;
     int hp = 100;
@@ -39,5 +41,8 @@ struct PlayerState
     double bodyHeight = 90.0;
     double headHeight = 160.0;
     std::uint64_t lastProcessedFireSeq = 0;
+    std::uint64_t lastProcessedClientHitClaimShotId = 0;
+    double lastClientHitClaimTimeSeconds = -1000.0;
+    double scoreReachedTimeSeconds = 0.0;
 };
 }
