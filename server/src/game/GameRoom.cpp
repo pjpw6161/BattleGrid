@@ -848,13 +848,15 @@ void GameRoom::ApplyRuntimeMapMarkersUnlocked(
 
     std::ostringstream logMessage;
     logMessage
-        << "[BattleGridServer] Runtime map markers applied shared="
+        << "[BattleGridServer] runtime map markers applied room_id="
+        << roomId
+        << " shared_spawns="
         << runtimeSharedSpawnPoints.size()
-        << " heal=" << runtimeHealSpawnPoints.size()
-        << " profile=" << mapProfile
+        << " heal_spawns=" << runtimeHealSpawnPoints.size()
+        << " map_profile=" << mapProfile
         << " coordinate_mode=identity"
-        << " arena x=" << arenaBounds.minX << ".." << arenaBounds.maxX
-        << " y=" << arenaBounds.minY << ".." << arenaBounds.maxY
+        << " bounds=(" << arenaBounds.minX << "," << arenaBounds.minY
+        << ")-(" << arenaBounds.maxX << "," << arenaBounds.maxY << ")"
         << " bot_area x=" << botAreaBounds.minX << ".." << botAreaBounds.maxX
         << " y=" << botAreaBounds.minY << ".." << botAreaBounds.maxY;
     Logger::Info(logMessage.str());
@@ -900,6 +902,7 @@ GameRoom::GameRoom(std::uint64_t inRoomId)
       runtimeSharedSpawnPoints(),
       runtimeHealSpawnPoints(),
       bHasRuntimeMapMarkers(false),
+      lastSnapshotArenaBoundsLogSignature(),
       nextProjectileId(1),
       healthPackRespawnCounter(0),
       recentEvents(),
@@ -1649,6 +1652,25 @@ nlohmann::json GameRoom::BuildSnapshotJson(std::uint64_t tickNumber) const
     json["projectiles"] = nlohmann::json::array();
     json["targets"] = nlohmann::json::array();
 
+    std::ostringstream arenaBoundsSignature;
+    arenaBoundsSignature
+        << roomId << ':' << mapProfile << ':'
+        << arenaBounds.minX << ':' << arenaBounds.maxX << ':'
+        << arenaBounds.minY << ':' << arenaBounds.maxY;
+    const std::string arenaBoundsSignatureText = arenaBoundsSignature.str();
+    if (arenaBoundsSignatureText != lastSnapshotArenaBoundsLogSignature)
+    {
+        lastSnapshotArenaBoundsLogSignature = arenaBoundsSignatureText;
+        std::ostringstream snapshotBoundsLog;
+        snapshotBoundsLog
+            << "[BattleGridServer] snapshot arena bounds room_id="
+            << roomId
+            << " map_profile=" << mapProfile
+            << " bounds=(" << arenaBounds.minX << "," << arenaBounds.minY
+            << ")-(" << arenaBounds.maxX << "," << arenaBounds.maxY << ")";
+        Logger::Info(snapshotBoundsLog.str());
+    }
+
     for (const auto& [playerId, player] : players)
     {
         static_cast<void>(playerId);
@@ -2064,6 +2086,8 @@ std::uint64_t GameRoom::ResetMatch()
 std::uint64_t GameRoom::ApplySafeDemoMode()
 {
     std::lock_guard lock(mutex);
+    const bool bHadLevelRuntimeBounds =
+        bHasRuntimeMapMarkers || mapProfile == "level_runtime";
     bBotAttacksEnabled = bSafeDemoBotAttacksEnabled;
     bAutoEndMatchByTimer = bSafeDemoAutoEndMatchByTimer;
     bTargetsEnabled = false;
@@ -2076,6 +2100,13 @@ std::uint64_t GameRoom::ApplySafeDemoMode()
         false,
         true
     );
+    if (bHadLevelRuntimeBounds && (bHasRuntimeMapMarkers || mapProfile == "level_runtime"))
+    {
+        Logger::Info(
+            "[BattleGridServer] safe_visual applied without resetting level_runtime bounds room_id="
+            + std::to_string(roomId)
+        );
+    }
     Logger::Info("Safe demo mode applied.");
     return matchId;
 }
@@ -2083,6 +2114,8 @@ std::uint64_t GameRoom::ApplySafeDemoMode()
 bool GameRoom::ApplyDemoPreset(const std::string& presetName)
 {
     std::lock_guard lock(mutex);
+    const bool bHadLevelRuntimeBounds =
+        bHasRuntimeMapMarkers || mapProfile == "level_runtime";
 
     std::string eventMessage;
     if (presetName == "safe_visual")
@@ -2134,6 +2167,17 @@ bool GameRoom::ApplyDemoPreset(const std::string& presetName)
         "Demo preset applied preset=" + presetName
         + " match_id=" + std::to_string(matchId)
     );
+    if (
+        presetName == "safe_visual"
+        && bHadLevelRuntimeBounds
+        && (bHasRuntimeMapMarkers || mapProfile == "level_runtime")
+    )
+    {
+        Logger::Info(
+            "[BattleGridServer] safe_visual applied without resetting level_runtime bounds room_id="
+            + std::to_string(roomId)
+        );
+    }
     return true;
 }
 
@@ -3813,6 +3857,8 @@ void GameRoom::AddCombatEvent(const CombatEvent& event)
         || storedEvent.type == "bot_shot_miss"
         || storedEvent.type == "shot_hit_bot"
         || storedEvent.type == "shot_hit_player"
+        || storedEvent.type == "player_hit_player"
+        || storedEvent.type == "player_headshot_player"
         || storedEvent.type == "bot_shot_hit_player";
     if (bVerboseInputLogs || !bNoisyShotEvent)
     {
@@ -4270,62 +4316,76 @@ bool GameRoom::ApplyClientPlayerHitClaim(
 {
     std::lock_guard lock(mutex);
 
+    {
+        std::ostringstream receivedLog;
+        receivedLog
+            << "[BattleGridServer] PvP hit claim received attacker=" << playerId
+            << " target=" << targetPlayerId
+            << " zone=" << (bHeadshot ? "head" : "body")
+            << " shot_id=" << shotId;
+        Logger::Info(receivedLog.str());
+    }
+
+    auto RejectPvPClaim = [&](const std::string& reason) -> bool
+    {
+        outReason = reason;
+        std::ostringstream rejectLog;
+        rejectLog
+            << "[BattleGridServer] PvP hit claim rejected reason=" << reason
+            << " attacker=" << playerId
+            << " target=" << targetPlayerId
+            << " shot_id=" << shotId;
+        Logger::Info(rejectLog.str());
+        return false;
+    };
+
     if (!bUseClientHitClaimsForPlayers)
     {
-        outReason = "client player hit claims disabled";
-        return false;
+        return RejectPvPClaim("client player hit claims disabled");
     }
 
     if (roomFlowState != "in_game")
     {
-        outReason = "match not in progress";
-        return false;
+        return RejectPvPClaim("match not in progress");
     }
 
     const auto shooterIt = players.find(playerId);
     if (shooterIt == players.end())
     {
-        outReason = "player not found";
-        return false;
+        return RejectPvPClaim("player not found");
     }
 
     PlayerState& shooter = shooterIt->second;
     if (!shooter.connected || !shooter.alive)
     {
-        outReason = "player not alive";
-        return false;
+        return RejectPvPClaim("player not alive");
     }
 
     if (matchState.IsGameOver())
     {
-        outReason = "match over";
-        return false;
+        return RejectPvPClaim("match over");
     }
 
     if (targetPlayerId == 0 || targetPlayerId == playerId)
     {
-        outReason = "invalid target player";
-        return false;
+        return RejectPvPClaim("invalid target player");
     }
 
     const auto targetIt = players.find(targetPlayerId);
     if (targetIt == players.end())
     {
-        outReason = "target player not found";
-        return false;
+        return RejectPvPClaim("target player not found");
     }
 
     PlayerState& victimPlayer = targetIt->second;
     if (!victimPlayer.connected || !victimPlayer.alive || victimPlayer.invincible)
     {
-        outReason = "target player not damageable";
-        return false;
+        return RejectPvPClaim("target player not damageable");
     }
 
     if (shotId == 0 || shotId <= shooter.lastProcessedClientHitClaimShotId)
     {
-        outReason = "duplicate shot_id";
-        return false;
+        return RejectPvPClaim("duplicate shot_id");
     }
 
     const double cooldownRemaining =
@@ -4333,14 +4393,12 @@ bool GameRoom::ApplyClientPlayerHitClaim(
         - serverTimeSeconds;
     if (cooldownRemaining > 0.0)
     {
-        outReason = "cooldown";
-        return false;
+        return RejectPvPClaim("cooldown");
     }
 
     if (!std::isfinite(hitX) || !std::isfinite(hitY) || !std::isfinite(hitZ))
     {
-        outReason = "invalid hit position";
-        return false;
+        return RejectPvPClaim("invalid hit position");
     }
 
     const double headDx = hitX - victimPlayer.x;
@@ -4353,40 +4411,75 @@ bool GameRoom::ApplyClientPlayerHitClaim(
     const double bodyDz = hitZ - (victimPlayer.z + victimPlayer.bodyHeight);
     const double bodyDistance =
         std::sqrt((bodyDx * bodyDx) + (bodyDy * bodyDy) + (bodyDz * bodyDz));
+    const double bodyDistance2d = std::sqrt((bodyDx * bodyDx) + (bodyDy * bodyDy));
     const double effectiveHeadRadius = victimPlayer.headRadius * playerHeadshotHitboxScale;
     const double effectiveBodyRadius = victimPlayer.bodyRadius * playerBodyHitboxScale;
+    const double effectiveBodyHalfHeight =
+        std::max(victimPlayer.bodyHeight, effectiveBodyRadius);
     const bool bHeadHit = headDistance <= effectiveHeadRadius;
-    const bool bBodyHit = bodyDistance <= effectiveBodyRadius;
+    const bool bBodyHit =
+        bodyDistance <= effectiveBodyRadius
+        || (
+            bodyDistance2d <= effectiveBodyRadius
+            && std::abs(bodyDz) <= effectiveBodyHalfHeight
+        );
+    const bool bClaimedHitPositionMatchesPlayer =
+        (bHeadshot && bHeadHit)
+        || (!bHeadshot && (bBodyHit || bHeadHit));
+    double eventHitX = hitX;
+    double eventHitY = hitY;
+    double eventHitZ = hitZ;
 
-    if ((bHeadshot && !bHeadHit) || (!bHeadshot && !bBodyHit && !bHeadHit))
+    if (!bClaimedHitPositionMatchesPlayer)
     {
-        outReason = "hit position too far from player";
-        if (bVerboseInputLogs)
-        {
-            std::ostringstream rejectLog;
-            rejectLog
-                << "[BattleGridServer] Rejected client_hit_claim player=" << playerId
-                << " target_player=" << targetPlayerId
-                << " head_distance=" << headDistance
-                << " body_distance=" << bodyDistance
-                << " head_radius=" << effectiveHeadRadius
-                << " body_radius=" << effectiveBodyRadius;
-            Logger::Info(rejectLog.str());
-        }
-        return false;
+        eventHitX = victimPlayer.x;
+        eventHitY = victimPlayer.y;
+        eventHitZ = victimPlayer.z + (bHeadshot ? victimPlayer.headHeight : victimPlayer.bodyHeight);
+
+        std::ostringstream adjustedHitLog;
+        adjustedHitLog
+            << "[BattleGridServer] PvP hit claim target-id accepted with adjusted impact"
+            << " attacker=" << playerId
+            << " target=" << targetPlayerId
+            << " head_distance=" << headDistance
+            << " body_distance=" << bodyDistance
+            << " body_distance_2d=" << bodyDistance2d
+            << " body_z_delta=" << std::abs(bodyDz)
+            << " adjusted_hit=(" << eventHitX << "," << eventHitY << "," << eventHitZ << ")";
+        Logger::Info(adjustedHitLog.str());
     }
 
     const int allowedDamage = bHeadshot ? HeadshotDamage : BodyDamage;
     const int damage = std::clamp(requestedDamage, 0, allowedDamage);
     if (damage <= 0)
     {
-        outReason = "invalid damage";
-        return false;
+        return RejectPvPClaim("invalid damage");
     }
 
     shooter.lastProcessedClientHitClaimShotId = shotId;
     shooter.lastClientHitClaimTimeSeconds = serverTimeSeconds;
+    const int hpBefore = victimPlayer.hp;
     victimPlayer.hp = std::max(0, victimPlayer.hp - damage);
+
+    {
+        std::ostringstream acceptedLog;
+        acceptedLog
+            << "[BattleGridServer] PvP hit claim accepted attacker=" << playerId
+            << " target=" << targetPlayerId
+            << " damage=" << damage
+            << " headshot=" << (bHeadshot ? "true" : "false")
+            << " shot_id=" << shotId;
+        Logger::Info(acceptedLog.str());
+    }
+
+    {
+        std::ostringstream damageLog;
+        damageLog
+            << "[BattleGridServer] PvP damage applied target=" << targetPlayerId
+            << " hp_before=" << hpBefore
+            << " hp_after=" << victimPlayer.hp;
+        Logger::Info(damageLog.str());
+    }
 
     if (bVerboseInputLogs || bHeadshot)
     {
@@ -4402,7 +4495,7 @@ bool GameRoom::ApplyClientPlayerHitClaim(
     }
 
     CombatEvent shotEvent;
-    shotEvent.type = "shot_hit_player";
+    shotEvent.type = bHeadshot ? "player_headshot_player" : "player_hit_player";
     shotEvent.message = shooter.nickname
         + (bHeadshot ? " headshot " : " hit ")
         + victimPlayer.nickname
@@ -4416,12 +4509,16 @@ bool GameRoom::ApplyClientPlayerHitClaim(
     );
     shotEvent.actorPlayerId = shooter.playerId;
     shotEvent.targetPlayerId = victimPlayer.playerId;
+    shotEvent.shotId = shotId;
+    shotEvent.hit = true;
     shotEvent.headshot = bHeadshot;
+    shotEvent.victimIsPlayer = true;
+    shotEvent.killerIsPlayer = true;
     shotEvent.damage = damage;
     shotEvent.hitGroup = bHeadshot ? "client_head" : "client_body";
-    shotEvent.hitX = hitX;
-    shotEvent.hitY = hitY;
-    shotEvent.hitZ = hitZ;
+    shotEvent.hitX = eventHitX;
+    shotEvent.hitY = eventHitY;
+    shotEvent.hitZ = eventHitZ;
     AddCombatEvent(shotEvent);
 
     if (victimPlayer.hp <= 0)
@@ -4448,28 +4545,32 @@ bool GameRoom::ApplyClientPlayerHitClaim(
             << " killer_score=" << shooter.score;
         Logger::Info(killLogMessage.str());
 
+        std::ostringstream pvpKillLog;
+        pvpKillLog
+            << "[BattleGridServer] PvP kill attacker=" << shooter.playerId
+            << " target=" << victimPlayer.playerId;
+        Logger::Info(pvpKillLog.str());
+
         CombatEvent event;
-        event.type = "player_killed";
+        event.type = "player_killed_player";
         event.message = shooter.nickname
             + (bHeadshot ? " headshot " : " killed ")
             + victimPlayer.nickname;
         event.actorPlayerId = shooter.playerId;
         event.targetPlayerId = victimPlayer.playerId;
+        event.shotId = shotId;
+        event.hit = true;
         event.headshot = bHeadshot;
+        event.damage = damage;
+        event.hitGroup = bHeadshot ? "client_head" : "client_body";
+        event.hitX = eventHitX;
+        event.hitY = eventHitY;
+        event.hitZ = eventHitZ;
         event.victimIsPlayer = true;
         event.killerIsPlayer = true;
         AddCombatEvent(event);
         CheckMatchEndCondition();
     }
-
-    std::ostringstream acceptedLog;
-    acceptedLog
-        << "[BattleGridServer] client_hit_claim accepted player=" << playerId
-        << " target_player=" << targetPlayerId
-        << " damage=" << damage
-        << " headshot=" << (bHeadshot ? "true" : "false")
-        << " shot_id=" << shotId;
-    Logger::Info(acceptedLog.str());
 
     outReason = "accepted";
     return true;
@@ -4794,6 +4895,24 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         );
     }
 
+    if (
+        selectedHit.hit
+        && (bUseClientHitClaimsForBots || bUseClientHitClaimsForPlayers)
+        && serverTimeSeconds - shooter.lastClientHitClaimTimeSeconds
+            <= ClientHitClaimCooldownSeconds
+    )
+    {
+        if (bVerboseInputLogs)
+        {
+            Logger::Info(
+                "Suppressing hitscan damage after accepted client hit claim shooter="
+                + std::to_string(shooter.playerId)
+                + " seq=" + std::to_string(input.seq)
+            );
+        }
+        return;
+    }
+
     if (bTargetsEnabled && selectedHit.targetType == "target")
     {
         const auto target = targets.find(selectedHit.targetId);
@@ -4909,7 +5028,17 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         }
 
         PlayerState& victimPlayer = victim->second;
+        const int hpBefore = victimPlayer.hp;
         victimPlayer.hp = std::max(0, victimPlayer.hp - selectedHit.damage);
+
+        {
+            std::ostringstream damageLog;
+            damageLog
+                << "[BattleGridServer] PvP damage applied target=" << victimPlayer.playerId
+                << " hp_before=" << hpBefore
+                << " hp_after=" << victimPlayer.hp;
+            Logger::Info(damageLog.str());
+        }
 
         if (bVerboseInputLogs || selectedHit.headshot)
         {
@@ -4925,7 +5054,7 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         }
 
         CombatEvent shotEvent;
-        shotEvent.type = "shot_hit_player";
+        shotEvent.type = selectedHit.headshot ? "player_headshot_player" : "player_hit_player";
         shotEvent.message = shooter.nickname
             + (selectedHit.headshot ? " headshot " : " hit ")
             + victimPlayer.nickname
@@ -4939,7 +5068,11 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         );
         shotEvent.actorPlayerId = shooter.playerId;
         shotEvent.targetPlayerId = victimPlayer.playerId;
+        shotEvent.shotId = input.seq;
+        shotEvent.hit = true;
         shotEvent.headshot = selectedHit.headshot;
+        shotEvent.victimIsPlayer = true;
+        shotEvent.killerIsPlayer = true;
         shotEvent.damage = selectedHit.damage;
         shotEvent.hitGroup = selectedHit.hitGroup;
         shotEvent.hitX = selectedHit.hitX;
@@ -4972,14 +5105,27 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
                 << " killer_score=" << shooter.score;
             Logger::Info(killLogMessage.str());
 
+            std::ostringstream pvpKillLog;
+            pvpKillLog
+                << "[BattleGridServer] PvP kill attacker=" << shooter.playerId
+                << " target=" << victimPlayer.playerId;
+            Logger::Info(pvpKillLog.str());
+
             CombatEvent event;
-            event.type = "player_killed";
+            event.type = "player_killed_player";
             event.message = shooter.nickname
                 + (selectedHit.headshot ? " headshot " : " killed ")
                 + victimPlayer.nickname;
             event.actorPlayerId = shooter.playerId;
             event.targetPlayerId = victimPlayer.playerId;
+            event.shotId = input.seq;
+            event.hit = true;
             event.headshot = selectedHit.headshot;
+            event.damage = selectedHit.damage;
+            event.hitGroup = selectedHit.hitGroup;
+            event.hitX = selectedHit.hitX;
+            event.hitY = selectedHit.hitY;
+            event.hitZ = selectedHit.hitZ;
             event.victimIsPlayer = true;
             event.killerIsPlayer = true;
             AddCombatEvent(event);
@@ -4989,7 +5135,7 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
     }
 
     if (
-        bUseClientHitClaimsForBots
+        (bUseClientHitClaimsForBots || bUseClientHitClaimsForPlayers)
         && serverTimeSeconds - shooter.lastClientHitClaimTimeSeconds
             <= ClientHitClaimCooldownSeconds
     )
@@ -4997,7 +5143,7 @@ void GameRoom::ProcessHitscanFire(PlayerState& shooter, const PlayerInput& input
         if (bVerboseInputLogs)
         {
             Logger::Info(
-                "Suppressing hitscan miss after accepted client bot hit claim shooter="
+                "Suppressing hitscan miss after accepted client hit claim shooter="
                 + std::to_string(shooter.playerId)
                 + " seq=" + std::to_string(input.seq)
             );

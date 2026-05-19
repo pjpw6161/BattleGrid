@@ -241,6 +241,7 @@ private:
     std::vector<ArenaPoint> runtimeSharedSpawnPoints;
     std::vector<ArenaPoint> runtimeHealSpawnPoints;
     bool bHasRuntimeMapMarkers;
+    mutable std::string lastSnapshotArenaBoundsLogSignature;
     std::uint64_t nextProjectileId;
     std::uint64_t healthPackRespawnCounter;
     std::deque<CombatEvent> recentEvents;

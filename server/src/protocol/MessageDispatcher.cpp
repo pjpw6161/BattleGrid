@@ -843,7 +843,11 @@ std::string MessageDispatcher::HandleClientHitClaim(const nlohmann::json& messag
 
     std::string reason;
     bool bAccepted = false;
-    if (targetType == "bot")
+    const bool bTargetsBot =
+        targetType == "bot" || (targetType.empty() && botId > 0);
+    const bool bTargetsPlayer =
+        targetType == "player" || (targetType.empty() && targetPlayerId > 0);
+    if (bTargetsBot)
     {
         bAccepted = room->ApplyClientBotHitClaim(
             sessionState.playerId,
@@ -857,7 +861,7 @@ std::string MessageDispatcher::HandleClientHitClaim(const nlohmann::json& messag
             reason
         );
     }
-    else if (targetType == "player")
+    else if (bTargetsPlayer)
     {
         bAccepted = room->ApplyClientPlayerHitClaim(
             sessionState.playerId,
@@ -882,7 +886,7 @@ std::string MessageDispatcher::HandleClientHitClaim(const nlohmann::json& messag
     response["success"] = bAccepted;
     response["message"] = reason;
     response["shot_id"] = shotId;
-    response["target_type"] = targetType;
+    response["target_type"] = bTargetsPlayer ? "player" : (bTargetsBot ? "bot" : targetType);
     response["bot_id"] = botId;
     response["target_player_id"] = targetPlayerId;
     return response.dump();
@@ -998,7 +1002,9 @@ std::string MessageDispatcher::HandleDebugSetMapMarkers(const nlohmann::json& me
 
     std::ostringstream receivedLog;
     receivedLog
-        << "[BattleGridServer] Received debug_set_map_markers shared="
+        << "[BattleGridServer] Received debug_set_map_markers room_id="
+        << room->GetRoomId()
+        << " shared="
         << sharedSpawnCount
         << " heal=" << healSpawnCount
         << " profile=" << (profileName.empty() ? "level_runtime" : profileName);
@@ -1021,9 +1027,12 @@ std::string MessageDispatcher::HandleDebugSetMapMarkers(const nlohmann::json& me
     nlohmann::json response;
     response["type"] = "debug_ok";
     response["message"] = "map markers applied";
+    response["room_id"] = room->GetRoomId();
     response["map_profile"] = profileName.empty() ? "level_runtime" : profileName;
     response["shared_spawn_count"] = sharedSpawns->size();
     response["heal_spawn_count"] = healSpawns->size();
+    nlohmann::json roomDebug = room->ToDebugJson();
+    response["arena_bounds"] = roomDebug["arena_bounds"];
     return response.dump();
 }
 
