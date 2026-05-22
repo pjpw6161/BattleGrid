@@ -1,234 +1,484 @@
-# BattleGrid
+# ⚔️ Battle Grid
 
-Third-Person PvPvE Arena Shooter with Unreal Engine C++ and a Custom C++ Authoritative Server
+### C++20 WebSocket 권위 서버 기반 멀티플레이 PvPvE 슈팅 게임
 
-BattleGrid is a third-person PvPvE arena shooter prototype. The Unreal client handles controls, visuals, local feedback, HUD, and server ghost visualization. The custom C++20 server handles WebSocket sessions, room state, server tick, player input, bots, health packs, server hitscan combat, match state, scoreboard, combat events, and snapshots.
+*Unreal Engine 5 클라이언트와 C++20 WebSocket 서버를 연동하여 로비, 룸, 매치, 전투, 리스폰까지 직접 구현한 실시간 멀티플레이 프로젝트*
 
-This project exists to demonstrate both Unreal gameplay programming and custom real-time C++ server programming in one portfolio-scale repository.
+<img width="800" height="500" alt="2026-05-21 20 48 56 (1)" src="https://github.com/user-attachments/assets/1a9c4168-dda8-4919-bae4-b9aef0c31fdf" />
 
-## Demo Video
 
-Coming soon.
+<br />
 
-## Demo Status
+<div align="center">
 
-- Local Docker server: ready for the portfolio demo.
-- Unreal client: playable third-person PvPvE client.
-- Main loop: kill-race combat against humanoid shooter bots.
-- Combat: server-authoritative hitscan with server tracer/projectile ghosts.
-- HUD: HP, ammo, dynamic crosshair, top 5 ranking, kill feed, death/respawn, health pickup feedback.
-- Demo setup: one-click presets in `tools/websocket-test.html` and optional preset-on-join from Unreal.
+![Unreal Engine](https://img.shields.io/badge/Unreal%20Engine-5-0E1128?style=for-the-badge&logo=unrealengine&logoColor=white)
+![C++20](https://img.shields.io/badge/C++20-00599C?style=for-the-badge&logo=cplusplus&logoColor=white)
+![WebSocket](https://img.shields.io/badge/WebSocket-JSON-6A5ACD?style=for-the-badge)
+![Docker](https://img.shields.io/badge/Docker%20Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![GCP](https://img.shields.io/badge/GCP%20Compute%20Engine-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)
 
-## Why This Project Matters
+</div>
 
-BattleGrid shows the path from a playable Unreal prototype to a server-authoritative multiplayer architecture:
+---
 
-- Unreal gameplay programming: third-person controls, ADS, sprint, jump, weapon state, HUD, local feedback, and prototype combat visuals.
-- Custom C++ server programming: Boost.Beast WebSocket sessions, JSON protocol dispatch, fixed-rate room tick, authoritative game state, bots, pickups, match state, and snapshot broadcast.
-- Server-authoritative design: server-owned HP, deaths, respawn, bots, health packs, scoreboard, match flow, and hit result events.
-- Deployment workflow: local Docker Compose server and documented GCP VM Docker deployment.
-- Debugging workflow: browser protocol test page, one-click demo presets, compact snapshot summaries, shot result events, ghost actors, and troubleshooting docs.
+## 📋 목차
 
-## Current Demo Features
+- [프로젝트 소개](#-프로젝트-소개)
+- [핵심 특징](#-핵심-특징)
+- [주요 기능](#-주요-기능)
+- [기술 스택](#-기술-스택)
+- [시스템 아키텍처](#-시스템-아키텍처)
+- [네트워크 프로토콜](#-네트워크-프로토콜)
+- [프로젝트 구조](#-프로젝트-구조)
+- [트러블슈팅](#-트러블슈팅)
+- [프로젝트 통계](#-프로젝트-통계)
+- [역할 및 기여](#-역할-및-기여)
 
-| Area | Feature | Status |
-| --- | --- | --- |
-| Unreal client | Third-person movement | Implemented |
-| Unreal client | ADS / sprint / jump | Implemented |
-| Unreal client | Ammo / reload / automatic fire | Implemented |
-| Networking | WebSocket JSON connection | Implemented |
-| Networking | Local/remote server profiles | Implemented |
-| Demo tooling | One-click demo presets | Implemented |
-| Server state | Snapshot broadcast | Implemented |
-| Visualization | Server player ghost / SERVER ECHO | Implemented |
-| Visualization | Server bot ghosts | Implemented |
-| Visualization | Legacy server target ghosts | Debug-only |
-| Visualization | Server health pack ghosts | Implemented |
-| Combat | Server hitscan shot feedback | Implemented |
-| PvE | Bot damage, death, respawn, score | Implemented |
-| Match | Match state and scoreboard | Implemented |
-| Deployment | Docker local server | Implemented |
-| Deployment | GCP deployment flow | Documented |
+---
 
-## Architecture
+## 🎯 프로젝트 소개
+
+### 왜 Battle Grid?
+
+> "Unreal 기본 Replication 없이도 직접 만든 C++ 서버로 멀티플레이 게임을 구성할 수 있을까?"
+
+**Battle Grid**는 Unreal Engine 5 클라이언트와 독립 실행형 **C++20 WebSocket 권위 서버**를 연동한 멀티플레이 PvPvE 슈팅 게임입니다.
+
+클라이언트는 WebSocket을 통해 닉네임 설정, 로비, 방 생성/입장, 준비, 매치 시작, 이동, 사격 정보를 서버에 전송합니다. 서버는 GameRoom 단위로 플레이어, 봇, 체력팩, 전투 판정, 점수, 사망/리스폰 상태를 관리하고, 모든 클라이언트에게 `snapshot`과 `event`를 브로드캐스트합니다.
+
+Unreal의 기본 네트워크 Replication을 사용하지 않고, **직접 설계한 WebSocket + JSON 프로토콜**로 멀티플레이 흐름을 구성한 것이 핵심입니다.
+
+---
+
+## 🚀 핵심 특징
+
+- 🧠 **C++20 권위 서버**: 서버가 HP, 킬, 점수, 사망, 리스폰 등 핵심 상태를 최종 판정
+- 🔌 **WebSocket + JSON 통신**: Unreal 클라이언트와 서버가 실시간으로 메시지 송수신
+- 🏠 **로비/룸 시스템**: 닉네임 입력, 방 생성, 방 입장, 준비, 시작 흐름 구현
+- 🎮 **PvPvE 전투**: 플레이어 간 전투와 봇 전투를 하나의 전투 흐름으로 통합
+- 🤖 **봇 AI / 체력팩 / 리스폰**: 서버 Tick 루프 기반 봇, 체력팩, 리스폰 상태 관리
+- 🛰️ **Snapshot/Event 동기화**: 위치, HP, 전투 이벤트, HUD를 서버 상태 기준으로 동기화
+- 🗺️ **Runtime Map Marker Sync**: Unreal 레벨에 배치한 스폰/힐팩 마커를 서버 룸 상태로 전송
+- ☁️ **GCP + Docker 배포**: Docker Compose로 C++ 서버를 컨테이너화하여 GCP VM에 배포
+
+---
+
+## ✨ 주요 기능
+
+### 1. 🧑‍💻 닉네임 입력 및 서버 접속
+
+<img width="800" height="386" alt="2026-05-22 18 24 00 (1)" src="https://github.com/user-attachments/assets/e15e8917-cac9-4804-bf28-a67c09ead3c0" />
+
+- 클라이언트 실행 시 GCP 또는 로컬 서버로 WebSocket 자동 접속
+- 닉네임 입력 후 `set_nickname` 메시지 전송
+- 서버 응답을 기준으로 로비 화면 진입
+- 로비 상태에서는 캐릭터/무기/HUD를 숨겨 UI 흐름과 게임플레이 흐름을 분리
+
+---
+
+### 2. 🏠 로비 / 방 생성 / 방 입장 / 준비 / 시작
+
+<img width="800" height="386" alt="2026-05-22 18 24 00 (2)" src="https://github.com/user-attachments/assets/4d9da769-43df-46c2-b605-daf7d98b4839" />
+
+
+- 방 생성, 방 목록 조회, 방 입장 기능 구현
+- 방장/비방장 상태에 따라 시작/준비 버튼 표시 제어
+- 플레이어 목록, 준비 상태, 방 상태를 서버 `room_state` 기준으로 갱신
+- ESC 메뉴의 나가기 확인/취소 흐름 등 UI 상태 관리
+
+---
+
+### 3. 🎮 인게임 멀티플레이 전투
+
+<img width="800" height="386" alt="2026-05-22 18 24 00 (3)" src="https://github.com/user-attachments/assets/1f82bc39-41d6-4786-b0e1-1fe40a5ea86c" />
+
+
+- 서버 snapshot을 기반으로 원격 플레이어 위치/닉네임/체력 상태 동기화
+- 로컬 클라이언트는 사격 입력과 시각 효과를 즉시 처리
+- 서버는 `client_hit_claim`을 검증하여 최종 피해/킬/점수를 확정
+- 확정된 전투 이벤트를 기준으로 피격 이펙트와 HUD 업데이트 수행
+
+---
+
+### 4. 🤖 PvE 봇 전투 및 체력팩
+
+- 서버에서 봇 위치, HP, 공격 쿨다운, 타겟 플레이어 관리
+- 봇 공격 이벤트를 클라이언트가 받아 트레이서/VFX로 표현
+- 체력팩 획득 시 서버에서 회복 처리 후 클라이언트 HUD 갱신
+- 봇/플레이어 피격 이펙트를 공통 impact VFX 흐름으로 통합
+
+---
+
+### 5. 🗺️ 런타임 맵 마커 기반 스폰/바운더리 동기화
+
+<img width="2567" height="352" alt="image" src="https://github.com/user-attachments/assets/5911c4cd-6376-45c5-8f8c-5e4046c7c3de" />
+
+- Unreal 레벨에 배치한 `BG_Spawn_*`, `BG_HealSpawn_*` 액터를 런타임에 스캔
+- 마커 위치를 `debug_set_map_markers` 메시지로 서버에 전송
+- 서버는 해당 Room의 player spawn, heal spawn, arena bounds를 갱신
+- 클라이언트는 서버 bounds를 기준으로 이동 가능 범위와 바운더리 처리
+
+---
+
+
+
+## 🛠 기술 스택
+
+### Client
+
+| 기술 | 용도 |
+|------|------|
+| Unreal Engine 5 | 클라이언트 개발, 레벨 구성, UMG UI, 캐릭터/전투 표현 |
+| C++ | PlayerController, WebSocket 연동, 전투/VFX/HUD 동기화 |
+| UMG | 닉네임, 로비, 방, 인게임 HUD, 일시정지 UI |
+| Niagara / Spline Mesh | 총알 트레이서, 피격 이펙트, 시각 피드백 |
+| Animation Montage | 사격, 피격, 사망 연출 |
+
+### Server
+
+| 기술 | 용도 |
+|------|------|
+| C++20 | 독립 게임 서버 구현 |
+| Boost.Asio / Beast | WebSocket 세션 및 비동기 통신 |
+| nlohmann/json | JSON 프로토콜 직렬화/역직렬화 |
+| GameRoom Tick Loop | 방 단위 매치 상태 갱신 |
+| CMake | 서버 빌드 구성 |
+
+### Network / Protocol
+
+| 기술 | 용도 |
+|------|------|
+| WebSocket | 클라이언트-서버 실시간 양방향 통신 |
+| JSON Protocol | `join`, `room_state`, `snapshot`, `client_hit_claim` 등 메시지 표현 |
+| Snapshot/Event | 위치, HP, 점수, 전투 결과, 리스폰 동기화 |
+| Server Authority | 서버 기준 피해/킬/리스폰 확정 |
+
+### Infrastructure
+
+| 기술 | 용도 |
+|------|------|
+| Docker | C++ 서버 컨테이너화 |
+| Docker Compose | 서버 실행 및 포트 매핑 관리 |
+| GCP Compute Engine | 원격 게임 서버 배포 |
+| VPC Firewall | 외부 TCP 포트 접속 허용 |
+| Static External IP | 클라이언트 접속 주소 고정 |
+
+### Development Tools
 
 ```text
-Unreal Client
-  -> WebSocket JSON input
-  -> C++ Server
-  -> GameRoom tick
-  -> snapshot
-  -> Unreal ghost actors / HUD
+- IDE: Visual Studio 2022, Unreal Editor
+- Version Control: Git, GitHub
+- Build: Unreal Build Tool, CMake, Docker Compose
+- Test: Packaged EXE, PIE, Browser WebSocket Test Tool
+- Platform: Windows Client, Linux Docker Server
 ```
 
-Expanded view:
+---
+
+## 🏗 시스템 아키텍처
+
+<img width="1672" height="941" alt="image (25)" src="https://github.com/user-attachments/assets/497325f9-4307-4407-9a66-167e46da05f8" />
+
+### 전체 구조
 
 ```text
-+-----------------------+      WebSocket JSON       +------------------------+
-| Unreal Engine C++     |  input / join / debug     | C++20 Server           |
-| PlayerController      | ------------------------> | Boost.Beast sessions   |
-| Character + Weapon    |                           | MessageDispatcher      |
-| HUD / UMG             | <------------------------ | GameRoom fixed tick    |
-| Server ghost actors   |       snapshot JSON       | authoritative state    |
-+-----------------------+                           +------------------------+
+┌────────────────────────────┐
+│ Unreal Engine 5 Client      │
+│ - Lobby / Room / HUD UI     │
+│ - Input / Fire / VFX        │
+│ - Snapshot 기반 동기화       │
+└──────────────┬─────────────┘
+               │ WebSocket / JSON
+               ▼
+┌────────────────────────────┐
+│ GCP VM + Docker             │
+│ BattleGrid C++20 Server     │
+│ - Boost.Asio / Beast        │
+│ - MessageDispatcher         │
+│ - GameRoom Tick Loop        │
+│ - JsonProtocol Snapshot     │
+└──────────────┬─────────────┘
+               │ Snapshot / Event Broadcast
+               ▼
+┌────────────────────────────┐
+│ Client Visual Sync          │
+│ - Remote Player             │
+│ - Bot / HealthPack          │
+│ - HP / Score / Respawn      │
+│ - Impact VFX / HUD          │
+└────────────────────────────┘
 ```
 
-The current demo intentionally keeps two layers visible:
-
-- Server-authoritative PvPvE layer: server player HP, bots, health packs, match state, scoreboard, combat events, and shot results.
-- Local Unreal prototype layer: local projectile visuals, local target tests, local hazards, and offline gameplay fallback.
-
-The server layer is the primary portfolio demo path. The local layer remains useful for offline testing and incremental client work.
-
-## Repository Layout
+### 서버 모듈 흐름
 
 ```text
-client-unreal/   Unreal Engine C++ client project
-server/          Custom C++20 WebSocket game server
-tools/           Browser WebSocket protocol test page
-docs/            Architecture, protocol, deployment, demo, and troubleshooting docs
+WebSocket Session
+      ↓
+MessageDispatcher
+      ↓
+GameRoom
+      ↓
+Authoritative Game State
+(Player / Bot / HealthPack / Combat / Score / Respawn / Bounds)
+      ↓
+JsonProtocol
+      ↓
+Snapshot + Events Broadcast
 ```
 
-## Build And Run
+---
 
-### Quick Local Demo
+## 🔌 네트워크 프로토콜
 
-```powershell
-cd C:\dev\BattleGrid
-docker compose up -d --build battlegrid-server
+### 클라이언트 → 서버
+
+#### 닉네임 설정
+
+```json
+{
+  "type": "set_nickname",
+  "nickname": "player1"
+}
 ```
 
-Then open `tools/websocket-test.html`, click `Connect`, `Send Join`, and either `Apply Safe Visual Demo` or `Apply Combat Demo`. In Unreal, build `BattleGridClientEditor` with `Development Editor | Win64`, press Play, and verify the clean gameplay HUD.
+#### 방 생성
 
-### Docker Server
-
-Build and run the server locally:
-
-```powershell
-docker compose up -d --build battlegrid-server
-docker compose logs -f battlegrid-server
+```json
+{
+  "type": "create_room"
+}
 ```
 
-Stop the server:
+#### 매치 시작
 
-```powershell
-docker compose down
+```json
+{
+  "type": "start_match"
+}
 ```
 
-The server listens on WebSocket port `7777`, so local tools use:
+#### 입력 전송
+
+```json
+{
+  "type": "input",
+  "seq": 42,
+  "player_id": 1,
+  "move_x": 1.0,
+  "move_y": 0.0,
+  "fire": true,
+  "reload": false,
+  "jump": false,
+  "shot_dir_x": 0.9,
+  "shot_dir_y": 0.1,
+  "shot_dir_z": 0.0
+}
+```
+
+#### 피격 요청
+
+```json
+{
+  "type": "client_hit_claim",
+  "shot_id": 23,
+  "target_player_id": 2,
+  "hit_zone": "head",
+  "headshot": true,
+  "damage": 40,
+  "hit_x": 2519.29,
+  "hit_y": -2735.18,
+  "hit_z": 61.59
+}
+```
+
+### 서버 → 클라이언트
+
+#### 룸 상태
+
+```json
+{
+  "type": "room_state",
+  "room_id": 12,
+  "state": "waiting",
+  "players": 2,
+  "host": 1
+}
+```
+
+#### 스냅샷
+
+```json
+{
+  "type": "snapshot",
+  "room_id": 12,
+  "tick": 1024,
+  "players": [],
+  "bots": [],
+  "health_packs": [],
+  "scoreboard": [],
+  "events": []
+}
+```
+
+#### 전투 이벤트
+
+```json
+{
+  "event_id": 31,
+  "type": "player_hit_player",
+  "actor_player_id": 1,
+  "target_player_id": 2,
+  "damage": 20,
+  "headshot": false
+}
+```
+
+---
+
+## 📁 프로젝트 구조
 
 ```text
-ws://127.0.0.1:7777
+BattleGrid/
+├── server/
+│   ├── CMakeLists.txt
+│   └── src/
+│       ├── main.cpp
+│       ├── game/
+│       │   ├── GameRoom.h
+│       │   └── GameRoom.cpp
+│       └── protocol/
+│           ├── MessageDispatcher.h
+│           ├── MessageDispatcher.cpp
+│           ├── JsonProtocol.h
+│           └── JsonProtocol.cpp
+│
+├── client-unreal/
+│   └── BattleGridClient/
+│       ├── BattleGridClient.uproject
+│       ├── Config/
+│       ├── Content/
+│       │   └── BattleGrid/
+│       │       ├── Map/
+│       │       ├── UI/
+│       │       ├── Blueprints/
+│       │       └── FX/
+│       └── Source/
+│           └── BattleGridClient/
+│               ├── BattleGridClientPlayerController.cpp
+│               ├── BattleGridNetworkSubsystem.cpp
+│               ├── BattleGridWeaponComponent.cpp
+│               ├── BattleGridServerPlayerGhostActor.cpp
+│               ├── BattleGridServerBotGhostActor.cpp
+│               └── BattleGridArenaBoundaryActor.cpp
+│
+├── docs/
+│   ├── protocol.md
+│   ├── server-architecture.md
+│   ├── troubleshooting.md
+│   └── demo-checklist.md
+│
+├── compose.yml
+├── Dockerfile
+└── websocket-test.html
 ```
 
-### Native Server Build
+---
 
-Install dependencies with vcpkg:
 
-```powershell
-C:\tools\vcpkg\vcpkg.exe install boost-beast:x64-windows boost-system:x64-windows nlohmann-json:x64-windows
-```
+### GCP 서버 구성
 
-Configure and build:
+| 항목 | 내용 |
+|------|------|
+| Cloud | GCP Compute Engine |
+| Server Runtime | Docker Container |
+| External Port | 8080 |
+| Internal Port | 7777 |
+| Protocol | WebSocket / TCP |
+| Client URL | `ws://<GCP_EXTERNAL_IP>:8080` |
 
-```powershell
-cmake -S server -B server/build -DCMAKE_TOOLCHAIN_FILE=C:/tools/vcpkg/scripts/buildsystems/vcpkg.cmake
-cmake --build server/build --config Debug
-```
 
-Run:
+## 🧯 트러블슈팅
 
-```powershell
-.\server\build\Debug\battlegrid-server.exe --host 127.0.0.1 --port 7777 --tick-rate 30
-```
-
-### GCP Docker Server
-
-The same Docker Compose setup can run on an Ubuntu GCP VM:
-
-```bash
-git clone https://github.com/pjpw6161/BattleGrid.git
-cd BattleGrid
-docker compose up -d --build
-docker compose logs -f battlegrid-server
-```
-
-Open TCP port `7777` on the VM firewall, then test:
+### 1. GCP 서버 접속 실패
 
 ```text
-ws://<GCP_EXTERNAL_IP>:7777
+증상: WebSocket connection failed
+원인: 서버 미실행, 방화벽 포트 미개방, 포트 매핑 오류
+확인: docker ps, docker port battlegrid-server, Test-NetConnection
 ```
 
-See [GCP deployment](docs/deployment-gcp.md) for the full VM setup and operation flow.
+### 2. 패키징 EXE에서 검은 화면
 
-### Unreal Client
+```text
+증상: 게임 시작 후 검은 화면에서 멈춤
+원인: 패키징 맵 목록 누락, 기본 맵 설정 오류, UI 상태 전환 실패
+확인: Project Settings → Maps & Modes / Packaging
+```
 
-1. Open `client-unreal/BattleGridClient/BattleGridClient.uproject`.
-2. Build `BattleGridClientEditor` in Visual Studio with `Development Editor | Win64`.
-3. Open the Unreal Editor.
-4. Press Play.
+### 3. 플레이어 이동 불가
 
-Server profile settings live in the active PlayerController Blueprint defaults:
+```text
+증상: 총/점프는 되지만 WASD 이동 불가
+원인: 입력 모드가 UIOnly로 남음, 죽음 상태 Lock, 숨은 충돌체
+확인: InputMode, ServerDeathLocksInput, Player Collision View
+```
 
-- Local Docker server: `bUseRemoteServer = false`, `LocalServerUrl = ws://127.0.0.1:7777`.
-- GCP server: `bUseRemoteServer = true`, `RemoteServerUrl = ws://<GCP_EXTERNAL_IP>:7777`.
-- Visual recording startup: `bApplyDemoPresetOnJoin = true`, `DemoPresetOnJoin = safe_visual`.
-- Combat recording startup: use `DemoPresetOnJoin = combat_demo`, or click `Apply Combat Demo` in the browser page.
+### 4. 멀티에서 이동 가능 범위가 줄어듦
 
-Unreal assets such as Input Actions, Mapping Contexts, Blueprints, maps, materials, and Widget Blueprints are created or adjusted manually in Unreal Editor.
+```text
+증상: 솔로에서는 정상인데 멀티에서 바운더리가 작아짐
+원인: 비호스트가 demo_arena_v1 기본 bounds를 적용
+해결: level_runtime bounds만 accepted bounds로 사용하고 stale bounds 무시
+```
 
-## Current Demo Flow
+### 5. 디버그 오브젝트가 보임
 
-1. Start the server with Docker Compose.
-2. Open `tools/websocket-test.html`.
-3. Connect, send join, and click `Apply Safe Visual Demo` or `Apply Combat Demo`.
-4. Use `Fire 5 Shots At Nearest Bot` to verify server shot events and bot HP changes.
-5. Open Unreal and press Play.
-6. Verify the HUD shows HP, ammo, top 5 ranking, kill feed, and center crosshair.
-7. Move, ADS, sprint, jump, and fire.
-8. Show humanoid bot ghosts, health pack ghosts, server tracer ghosts, and server shot result text.
-9. Hold Tab to show the server scoreboard if needed.
-10. Stop the server and confirm local offline gameplay still exists.
+```text
+증상: 스폰 큐브, 힐팩 큐브, 서버 디버그 텍스트가 인게임에 노출
+해결: Runtime marker visuals hidden, code-generated debug UI disabled
+```
 
-See [demo checklist](docs/demo-checklist.md) and [demo script](docs/demo-script.md) for a recording-ready sequence.
+---
 
-## Current Limitations
+## 📊 프로젝트 통계
 
-- Legacy local projectile/target gameplay is still present for offline testing, but it is not the connected demo path.
-- Server ghost actors are prototype visualization, not final player/bot presentation.
-- No production matchmaking or lobby flow.
-- No database or persistence.
-- No advanced lag compensation, rollback, or anti-cheat.
-- Some placeholder visuals still use Unreal built-in shapes and local materials.
-- No final character, weapon, animation, audio, or VFX assets yet.
-- GCP deployment is documented and manual, not fully automated infrastructure.
-- Networking is not production-ready.
+| 항목 | 내용 |
+|------|------|
+| 개발 기간 | 2026.04 ~ 2026.05 |
+| 참여 인원 | 1명 |
+| 장르 | 멀티플레이 PvPvE 슈팅 |
+| 클라이언트 | Unreal Engine 5 |
+| 서버 | C++20 WebSocket Server |
+| 배포 | GCP Compute Engine + Docker Compose |
+| 통신 방식 | WebSocket + JSON |
+| 동기화 방식 | Snapshot / Event |
+| 기본 봇 수 | 8개 |
+| 체력팩 | Runtime Marker 기반 배치 |
+| 주요 UI | Nickname, Lobby, Room, Combat HUD, Pause |
 
-## Next Steps
+---
 
-- Polish arena art and map layout.
-- Add character and weapon models.
-- Add Niagara muzzle flash, tracer, and impact effects.
-- Improve bot behavior and presentation.
-- Replace text scoreboard with a dedicated UMG scoreboard.
-- Polish GCP demo server operation.
-- Record and publish a demo video/GIF.
-- Continue prediction/reconciliation and server authority improvements.
+## 🙋 역할 및 기여
 
-## Documentation
+**박지원 / 1인 개발**
 
-- [Project brief](PROJECT_BRIEF.md)
-- [Portfolio summary](docs/portfolio-summary.md)
-- [Demo script](docs/demo-script.md)
-- [Game design](docs/game-design.md)
-- [Implementation roadmap](docs/implementation-roadmap.md)
-- [Overall architecture](docs/architecture.md)
-- [Unreal client](docs/unreal-client.md)
-- [Server architecture](docs/server-architecture.md)
-- [WebSocket JSON protocol](docs/protocol.md)
-- [Docker deployment](docs/deployment-docker.md)
-- [GCP deployment](docs/deployment-gcp.md)
-- [Asset credits](docs/asset-credits.md)
-- [Development log](docs/development-log.md)
-- [Demo checklist](docs/demo-checklist.md)
-- [Troubleshooting](docs/troubleshooting.md)
+- C++20 WebSocket 권위 서버 구현
+- GameRoom 기반 매치 상태, 봇, 체력팩, 전투 판정 관리
+- Unreal Engine 5 클라이언트 C++ 연동
+- 닉네임, 로비, 방 생성/입장, 준비/시작 UI 흐름 구현
+- 서버 snapshot/event 기반 플레이어, 봇, 체력, HUD 동기화
+- 원격 플레이어 비주얼, 닉네임, 히트박스, 사망/리스폰 표현 구현
+- 총알 트레이서, 피격 VFX, 카메라 반동 등 전투 피드백 구현
+- Docker Compose 기반 서버 컨테이너화
+- GCP VM 배포, 포트 매핑, 방화벽 설정, 원격 접속 테스트
+- 패키징 EXE 실행 이슈 및 디버그 오브젝트 노출 문제 해결
+
+---
+
+<div align="center">
+
+### ⚔️ Battle Grid
+
+*C++20 WebSocket Authoritative Server × Unreal Engine 5 Multiplayer Shooter*
+
+</div>
